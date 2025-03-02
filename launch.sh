@@ -188,6 +188,7 @@ configure_game_settings() {
 	glide_aspect="$(get_glide_aspect)"
 
 	if [ "$video_plugin" = "glide64mk2" ]; then
+		mkdir -p "$HOME/.cache/mupen64plus/glidehq"
 		set_ra_cfg.sh "$XDG_CONFIG_HOME/mupen64plus.cfg" "VideoPlugin" "mupen64plus-video-glide64mk2.so"
 		set_ra_cfg.sh "$XDG_CONFIG_HOME/mupen64plus.cfg" "aspect" "0"
 		if [ "$glide_aspect" = "16:9" ]; then
