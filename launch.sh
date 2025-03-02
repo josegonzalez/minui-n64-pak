@@ -105,7 +105,7 @@ settings_menu() {
 			fi
 
 			if echo "$selection" | grep -q "^Video Plugin: Rice$"; then
-				video_plugin="glide"
+				video_plugin="glide64mk2"
 			elif echo "$selection" | grep -q "^Video Plugin: Glide$"; then
 				video_plugin="rice"
 			elif echo "$selection" | grep -q "^Glide aspect ratio: 4:3$"; then
