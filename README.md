@@ -42,19 +42,33 @@ To enable debug logging, create a file named debug in `$SDCARD_PATH/.userdata/$P
 
 ### Emulator settings
 
-To change emulator settings, press and hold the `L2` button while selecting/resuming a game to play. Hold L2 until a menu appears. The following settings can be modified:
-
-- Video Plugin: Allows changing the `mupen64plus` video plugin.
-  - default: `rice`
-  - options: `rice`, `glide64`
-- Aspect Ratio: When `glide64` is selected as the video plugin, this allows changing the aspect ratio
-  - default: `4:3`
-  - options: `4:3`, `16:9`
-- DPAD Mode: Allows changing how the dpad is used in game
-  - default: `dpad`
-  - options: `dpad`, `joystick`, `joystick on f2`
+To change emulator settings, press and hold the `L2` button while selecting/resuming a game to play. Hold L2 until a menu appears.
 
 If the `B` or `MENU` buttons are pressed, the user is returned to the MinUI game selection screen. Settings are managed on a per-game basis, and can be saved for future gameplay, or the game can be started with the current settings as is.
+
+#### Video Plugin
+
+> [!WARNING]
+> Setting the video plugin to `glide64` on `tg5040` devices currently results in an error, resulting in no video being shown on screen.
+
+Allows changing the `mupen64plus` video plugin.
+
+- default: `rice`
+- options: `rice`, `glide64`
+
+#### Aspect Ratio
+
+When `glide64` is selected as the video plugin, this allows changing the aspect ratio
+
+- default: `4:3`
+- options: `4:3`, `16:9`
+
+#### DPAD Mode
+
+Allows changing how the dpad is used in game
+
+- default: `dpad`
+- options: `dpad`, `joystick`, `joystick on f2`
 
 ### In-Game saves
 
