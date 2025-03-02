@@ -14,7 +14,7 @@ clean:
 	rm -f bin/minui-list-* || true
 	rm -f res/fonts/BPreplayBold.otf || true
 
-build: $(foreach platform,$(PLATFORMS),bin/minui-list-$(platform)) bin/7zzs-arm bin/7zzs-arm64 bin/evtest bin/sdl2imgshow bin/coreutils bin/gptokeyb2.LICENSE res/fonts/BPreplayBold.otf
+build: $(foreach platform,$(PLATFORMS),bin/minui-list-$(platform)) bin/7zzs-arm64 bin/evtest bin/sdl2imgshow bin/coreutils bin/gptokeyb2.LICENSE res/fonts/BPreplayBold.otf
 
 bin/7zzs-arm64:
 	curl -sSL -o bin/7z.tar.xz "https://www.7-zip.org/a/7z2409-linux-arm64.tar.xz"
@@ -22,14 +22,6 @@ bin/7zzs-arm64:
 	tar -xJf bin/7z.tar.xz -C bin/7z
 	mv bin/7z/7zzs bin/7zzs-arm64
 	mv bin/7z/License.txt bin/7zzs-arm64.LICENSE
-	rm -rf bin/7z bin/7z.tar.xz
-
-bin/7zzs-arm:
-	curl -sSL -o bin/7z.tar.xz "https://www.7-zip.org/a/7z2409-linux-arm.tar.xz"
-	mkdir -p bin/7z
-	tar -xJf bin/7z.tar.xz -C bin/7z
-	mv bin/7z/7zzs bin/7zzs-arm
-	mv bin/7z/License.txt bin/7zzs-arm.LICENSE
 	rm -rf bin/7z bin/7z.tar.xz
 
 bin/coreutils:

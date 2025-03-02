@@ -116,12 +116,7 @@ get_rom_path() {
 		ROM_PATH="$TEMP_ROM"
 
 		# get the 7zzs binary for the current architecture
-		unzip7="$PACK_DIR/bin/7zzs-arm"
-		if uname -m | grep -q '64'; then
-			unzip7="$PACK_DIR/bin/7zzs-arm64"
-		fi
-
-		"$unzip7" e "$*" -so >"$TEMP_ROM"
+		7zzs-arm64 e "$*" -so >"$TEMP_ROM"
 		;;
 	esac
 

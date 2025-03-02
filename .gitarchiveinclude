@@ -1,7 +1,5 @@
-bin/7zzs-arm
-bin/7zzs-arm.LICENSE
-bin/7zzs-arm
-bin/7zzs-arm.LICENSE
+bin/7zzs-arm64
+bin/7zzs-arm64.LICENSE
 bin/coreutils
 bin/coreutils.LICENSE
 bin/evtest
