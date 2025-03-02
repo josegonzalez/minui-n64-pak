@@ -1,0 +1,8 @@
+dist
+bin/*
+!bin/.gitkeep
+res/fonts/*
+!res/fonts/.gitkeep
+
+!bin/gptokeyb2
+!bin/set_ra_cfg.sh
