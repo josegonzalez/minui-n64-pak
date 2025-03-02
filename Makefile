@@ -6,7 +6,7 @@ MINUI_LIST_VERSION := 0.4.0
 COREUTILS_VERSION := 0.0.28
 
 clean:
-	rm -f bin/7zzs-* || true 
+	rm -f bin/7zzs* || true 
 	rm -f bin/evtest || true
 	rm -f bin/sdl2imgshow || true
 	rm -f bin/coreutils || true
@@ -14,14 +14,14 @@ clean:
 	rm -f bin/minui-list-* || true
 	rm -f res/fonts/BPreplayBold.otf || true
 
-build: $(foreach platform,$(PLATFORMS),bin/minui-list-$(platform)) bin/7zzs-arm64 bin/evtest bin/sdl2imgshow bin/coreutils bin/gptokeyb2.LICENSE res/fonts/BPreplayBold.otf
+build: $(foreach platform,$(PLATFORMS),bin/minui-list-$(platform)) bin/7zzs bin/evtest bin/sdl2imgshow bin/coreutils bin/gptokeyb2.LICENSE res/fonts/BPreplayBold.otf
 
-bin/7zzs-arm64:
+bin/7zzs:
 	curl -sSL -o bin/7z.tar.xz "https://www.7-zip.org/a/7z2409-linux-arm64.tar.xz"
 	mkdir -p bin/7z
 	tar -xJf bin/7z.tar.xz -C bin/7z
-	mv bin/7z/7zzs bin/7zzs-arm64
-	mv bin/7z/License.txt bin/7zzs-arm64.LICENSE
+	mv bin/7z/7zzs bin/7zzs
+	mv bin/7z/License.txt bin/7zzs.LICENSE
 	rm -rf bin/7z bin/7z.tar.xz
 
 bin/coreutils:

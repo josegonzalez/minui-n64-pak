@@ -115,8 +115,7 @@ get_rom_path() {
 		echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
 		ROM_PATH="$TEMP_ROM"
 
-		# get the 7zzs binary for the current architecture
-		7zzs-arm64 e "$*" -so >"$TEMP_ROM"
+		7zzs e "$*" -so >"$TEMP_ROM"
 		;;
 	esac
 
