@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eo pipefail
-set -x
+[ -f "$USERDATA_PATH/N64-mupen64plus/debug" ] && set -x
 echo $0 $*
 
 rm "$LOGS_PATH/N64.txt"

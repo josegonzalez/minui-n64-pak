@@ -36,6 +36,10 @@ Extraction happens prior to game loading using 7-zip and can cause delays in loa
 - Speed up: Press `SELECT + A`. This will speed up the emulator in 5% increments.
 - Slow down: Press `SELECT + B`. This will slow down the emulator in 5% increments.
 
+### Debug Logging
+
+To enable debug logging, create a file named debug in `$SDCARD_PATH/.userdata/$PLATFORM/N64-mupen64plus` folder. Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
+
 ### Emulator settings
 
 To change emulator settings, press and hold the `L2` button while selecting/resuming a game to play. Hold L2 until a menu appears. The following settings can be modified:
