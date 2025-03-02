@@ -56,6 +56,10 @@ To change emulator settings, press and hold the `L2` button while selecting/resu
 
 If the `B` or `MENU` buttons are pressed, the user is returned to the MinUI game selection screen. Settings are managed on a per-game basis, and can be saved for future gameplay, or the game can be started with the current settings as is.
 
+### In-Game saves
+
+Any game that creates in-game saves will generate a `.eep` and `.mpk` file. These will be stored in `$SDCARD_PATH/Saves/N64`.
+
 ### Muting Audio
 
 To mute audo, press `SELECT + Y`. Pressing `SELECT + Y` again will unmute audio.
