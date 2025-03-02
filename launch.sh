@@ -22,25 +22,54 @@ export GAMESETTINGS_DIR="$USERDATA_PATH/N64-mupen64plus/game-settings/$ROM_NAME"
 export SCREENSHOT_DIR="$SDCARD_PATH/Screenshots"
 export PLUGIN_DIR="$EMU_DIR/plugin/$PLATFORM"
 
-settings_menu() {
-	mkdir -p "$GAMESETTINGS_DIR"
-
-	# get video plugin
-	video_plugin="rice"
-	if [ -f "$GAMESETTINGS_DIR/video-plugin" ]; then
-		video_plugin="$(cat "$GAMESETTINGS_DIR/video-plugin")"
-	fi
-
-	# get the aspect ratio for glide
-	glide_aspect="4:3"
-	if [ -f "$GAMESETTINGS_DIR/glide-aspect" ]; then
-		glide_aspect="$(cat "$GAMESETTINGS_DIR/glide-aspect")"
-	fi
-
+get_dpad_mode() {
 	dpad_mode="dpad"
 	if [ -f "$GAMESETTINGS_DIR/dpad-mode" ]; then
 		dpad_mode="$(cat "$GAMESETTINGS_DIR/dpad-mode")"
 	fi
+	if [ -f "$GAMESETTINGS_DIR/dpad-mode.tmp" ]; then
+		dpad_mode="$(cat "$GAMESETTINGS_DIR/dpad-mode.tmp")"
+	fi
+	echo "$dpad_mode"
+}
+
+get_glide_aspect() {
+	glide_aspect="4:3"
+	if [ -f "$GAMESETTINGS_DIR/glide-aspect" ]; then
+		glide_aspect="$(cat "$GAMESETTINGS_DIR/glide-aspect")"
+	fi
+	if [ -f "$GAMESETTINGS_DIR/glide-aspect.tmp" ]; then
+		glide_aspect="$(cat "$GAMESETTINGS_DIR/glide-aspect.tmp")"
+	fi
+	echo "$glide_aspect"
+}
+
+get_video_plugin() {
+	video_plugin="rice"
+	if [ -f "$GAMESETTINGS_DIR/video-plugin" ]; then
+		video_plugin="$(cat "$GAMESETTINGS_DIR/video-plugin")"
+	fi
+	if [ -f "$GAMESETTINGS_DIR/video-plugin.tmp" ]; then
+		video_plugin="$(cat "$GAMESETTINGS_DIR/video-plugin.tmp")"
+	fi
+	echo "$video_plugin"
+}
+
+settings_menu() {
+	mkdir -p "$GAMESETTINGS_DIR"
+
+	rm -f "$GAMESETTINGS_DIR/dpad-mode.tmp"
+	rm -f "$GAMESETTINGS_DIR/glide-aspect.tmp"
+	rm -f "$GAMESETTINGS_DIR/video-plugin.tmp"
+
+	# get video plugin
+	video_plugin="$(get_video_plugin)"
+
+	# get the aspect ratio for glide
+	glide_aspect="$(get_glide_aspect)"
+
+	# get the dpad mode
+	dpad_mode="$(get_dpad_mode)"
 
 	l2_value="$(coreutils timeout .1s evtest /dev/input/event3 2>/dev/null | awk '/ABS_RZ/{getline; print}' | awk '{print $2}' || true)"
 	if [ "$l2_value" = "255" ]; then
@@ -94,6 +123,9 @@ settings_menu() {
 				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect"
 				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode"
 			elif echo "$selection" | grep -q "^Start game$"; then
+				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin.tmp"
+				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect.tmp"
+				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode.tmp"
 				break
 			fi
 		done
@@ -152,15 +184,8 @@ configure_platform() {
 }
 
 configure_game_settings() {
-	video_plugin="rice"
-	if [ -f "$GAMESETTINGS_DIR/video-plugin" ]; then
-		video_plugin="$(cat "$GAMESETTINGS_DIR/video-plugin")"
-	fi
-
-	glide_aspect="4:3"
-	if [ -f "$GAMESETTINGS_DIR/glide-aspect" ]; then
-		glide_aspect="$(cat "$GAMESETTINGS_DIR/glide-aspect")"
-	fi
+	video_plugin="$(get_video_plugin)"
+	glide_aspect="$(get_glide_aspect)"
 
 	if [ "$video_plugin" = "glide64mk2" ]; then
 		set_ra_cfg.sh "$XDG_CONFIG_HOME/mupen64plus.cfg" "VideoPlugin" "mupen64plus-video-glide64mk2.so"
@@ -174,10 +199,7 @@ configure_game_settings() {
 }
 
 configure_controls() {
-	dpad_mode="dpad"
-	if [ -f "$GAMESETTINGS_DIR/dpad-mode" ]; then
-		dpad_mode="$(cat "$GAMESETTINGS_DIR/dpad-mode")"
-	fi
+	dpad_mode="$(get_dpad_mode)"
 
 	if [ "$dpad_mode" = "f2" ]; then
 		mkdir -p /tmp/trimui_inputd/
