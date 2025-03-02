@@ -4,12 +4,12 @@ config_file="$1"
 shift 1
 
 if [ "$#" -lt 2 ] || [ $(($# % 2)) -ne 0 ]; then
-	echo "Usage: $0 <config_file> <key1> <value1> [<key2> <value2> ...]"
+	echo "Usage: $0 <config_file> <key1> <value1> [<key2> <value2> ...]" 1>&2
 	exit 1
 fi
 
 if [ ! -f "$config_file" ]; then
-	echo "Config file $config_file does not exist."
+	echo "Config file $config_file does not exist." 1>&2
 	exit 1
 fi
 
@@ -29,8 +29,6 @@ while [ "$#" -ge 2 ]; do
 		# If the key does not exist, add a new line with the correct format (space before the equals sign and quotes)
 		echo "$key = \"$formatted_value\"" >>"$config_file"
 	fi
-
-	echo "Updated $config_file with $key = \"$formatted_value\""
 
 	shift 2
 done
