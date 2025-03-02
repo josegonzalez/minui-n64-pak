@@ -70,7 +70,7 @@ To quit, press the `MENU` button.
 
 ### Save states
 
-In addition to in-game saves, this pak supports a single save state.
+In addition to in-game saves, this pak supports a single save state. Save states are stored in `$SDCARD_PATH/.userdata/shared/N64-mupen64plus`
 
 - Save: To create a save state, press `SELECT + L2`.
 - Load: To load a save state, press `SELECT + R2`.
