@@ -32,12 +32,12 @@ get_rom_name() {
 	echo "$SANITIZED_ROM_NAME"
 }
 
-get_controller_mode() {
-	controller_mode="default"
-	if [ -f "$GAMESETTINGS_DIR/controller-mode" ]; then
-		controller_mode="$(cat "$GAMESETTINGS_DIR/controller-mode")"
+get_controller_layout() {
+	controller_layout="default"
+	if [ -f "$GAMESETTINGS_DIR/controller-layout" ]; then
+		controller_layout="$(cat "$GAMESETTINGS_DIR/controller-layout")"
 	fi
-	echo "$controller_mode"
+	echo "$controller_layout"
 }
 
 get_dpad_mode() {
@@ -86,8 +86,8 @@ settings_menu() {
 	# get the aspect ratio for glide
 	glide_aspect="$(get_glide_aspect)"
 
-	# get the config mode
-	controller_mode="$(get_controller_mode)"
+	# get the controller layout
+	controller_layout="$(get_controller_layout)"
 
 	# get the dpad mode
 	dpad_mode="$(get_dpad_mode)"
@@ -99,10 +99,10 @@ settings_menu() {
 			rm -f "$minui_list_file"
 			touch "$minui_list_file"
 
-			if [ "$controller_mode" = "default" ]; then
-				echo "Controller Mode: Default" >>"$minui_list_file"
+			if [ "$controller_layout" = "default" ]; then
+				echo "Controller Layout: Default" >>"$minui_list_file"
 			else
-				echo "Controller Mode: Lonko" >>"$minui_list_file"
+				echo "Controller Layout: Lonko" >>"$minui_list_file"
 			fi
 
 			if [ "$video_plugin" = "rice" ]; then
@@ -132,10 +132,10 @@ settings_menu() {
 				break
 			fi
 
-			if echo "$selection" | grep -q "^Controller Mode: Default$"; then
-				controller_mode="lonko"
-			elif echo "$selection" | grep -q "^Controller Mode: Lonko$"; then
-				controller_mode="default"
+			if echo "$selection" | grep -q "^Controller Layout: Default$"; then
+				controller_layout="lonko"
+			elif echo "$selection" | grep -q "^Controller Layout: Lonko$"; then
+				controller_layout="default"
 			elif echo "$selection" | grep -q "^Video Plugin: Rice$"; then
 				video_plugin="glide64mk2"
 			elif echo "$selection" | grep -q "^Video Plugin: Glide$"; then
@@ -151,12 +151,12 @@ settings_menu() {
 			elif echo "$selection" | grep -q "^DPAD Mode: Joystick on F2$"; then
 				dpad_mode="dpad"
 			elif echo "$selection" | grep -q "^Save settings for game$"; then
-				echo "$controller_mode" >"$GAMESETTINGS_DIR/controller-mode"
+				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout"
 				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin"
 				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect"
 				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode"
 			elif echo "$selection" | grep -q "^Start game$"; then
-				echo "$controller_mode" >"$GAMESETTINGS_DIR/controller-mode.tmp"
+				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout.tmp"
 				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin.tmp"
 				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect.tmp"
 				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode.tmp"
@@ -173,16 +173,16 @@ get_rom_path() {
 
 	ROM_PATH=""
 	case "$*" in
-		*.n64 | *.v64 | *.z64)
-			ROM_PATH="$*"
-			;;
-		*.zip | *.7z)
-			echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-			echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-			ROM_PATH="$TEMP_ROM"
+	*.n64 | *.v64 | *.z64)
+		ROM_PATH="$*"
+		;;
+	*.zip | *.7z)
+		echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+		echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+		ROM_PATH="$TEMP_ROM"
 
-			7zzs e "$*" -so >"$TEMP_ROM"
-			;;
+		7zzs e "$*" -so >"$TEMP_ROM"
+		;;
 	esac
 
 	echo "$ROM_PATH"
@@ -196,11 +196,11 @@ copy_libmupen64plus() {
 }
 
 configure_platform() {
-	controller_mode="$(get_controller_mode)"
+	controller_layout="$(get_controller_layout)"
 	mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
 
-	cp -f "$EMU_DIR/config/$PLATFORM/modes/$controller_mode/mupen64plus.cfg" "$XDG_CONFIG_HOME/mupen64plus.cfg"
-	cp -f "$EMU_DIR/config/$PLATFORM/modes/$controller_mode/InputAutoCfg.ini" "$XDG_DATA_HOME/InputAutoCfg.ini"
+	cp -f "$EMU_DIR/config/$PLATFORM/modes/$controller_layout/mupen64plus.cfg" "$XDG_CONFIG_HOME/mupen64plus.cfg"
+	cp -f "$EMU_DIR/config/$PLATFORM/modes/$controller_layout/InputAutoCfg.ini" "$XDG_DATA_HOME/InputAutoCfg.ini"
 	cp -f "$EMU_DIR/config/$PLATFORM/font.ttf" "$XDG_DATA_HOME/font.ttf"
 	cp -f "$EMU_DIR/config/$PLATFORM/Glide64mk2.ini" "$XDG_DATA_HOME/Glide64mk2.ini"
 	cp -f "$EMU_DIR/config/$PLATFORM/mupen64plus.ini" "$XDG_DATA_HOME/mupen64plus.ini"
@@ -238,8 +238,8 @@ configure_controls() {
 	fi
 
 	# remap keys
-	controller_mode="$(get_controller_mode)"
-	gptokeyb2 -c "$EMU_DIR/config/$PLATFORM/modes/$controller_mode/defkeys.gptk" &
+	controller_layout="$(get_controller_layout)"
+	gptokeyb2 -c "$EMU_DIR/config/$PLATFORM/modes/$controller_layout/defkeys.gptk" &
 	GPTOKEYB2_PID="$!"
 	sleep 0.3
 
