@@ -22,6 +22,16 @@ export GAMESETTINGS_DIR="$USERDATA_PATH/N64-mupen64plus/game-settings/$ROM_NAME"
 export SCREENSHOT_DIR="$SDCARD_PATH/Screenshots"
 export PLUGIN_DIR="$EMU_DIR/plugin/$PLATFORM"
 
+get_rom_name() {
+	ROM_NAME="$1"
+	SANITIZED_ROM_NAME="${ROM_NAME%.*}"
+	if [ -f "$GAMESETTINGS_DIR/goodname" ]; then
+		SANITIZED_ROM_NAME="$(cat "$GAMESETTINGS_DIR/goodname")"
+	fi
+
+	echo "$SANITIZED_ROM_NAME"
+}
+
 get_dpad_mode() {
 	dpad_mode="dpad"
 	if [ -f "$GAMESETTINGS_DIR/dpad-mode" ]; then
@@ -139,16 +149,16 @@ get_rom_path() {
 
 	ROM_PATH=""
 	case "$*" in
-	*.n64 | *.v64 | *.z64)
-		ROM_PATH="$*"
-		;;
-	*.zip | *.7z)
-		echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-		echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-		ROM_PATH="$TEMP_ROM"
+		*.n64 | *.v64 | *.z64)
+			ROM_PATH="$*"
+			;;
+		*.zip | *.7z)
+			echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+			echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+			ROM_PATH="$TEMP_ROM"
 
-		7zzs e "$*" -so >"$TEMP_ROM"
-		;;
+			7zzs e "$*" -so >"$TEMP_ROM"
+			;;
 	esac
 
 	echo "$ROM_PATH"
@@ -229,79 +239,32 @@ configure_cpu() {
 
 copy_save_states_for_game() {
 	mkdir -p "$XDG_DATA_HOME/mupen64plus/save" "$SDCARD_PATH/Saves/N64/"
-	ROM_NO_EXTENSION="${ROM_NAME%.*}"
+	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
 
 	# check and copy platform-specific eep, mpk and st0 files that already exist
 	# this may happen if the game was saved on the device but we lost power before
 	# we could restore them to the normal MinUI paths
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.eep" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.eep" "$SDCARD_PATH/Saves/N64/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.eep" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.eep" "$SDCARD_PATH/Saves/N64/"
 	fi
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.mpk" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.mpk" "$SDCARD_PATH/Saves/N64/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.mpk" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.mpk" "$SDCARD_PATH/Saves/N64/"
 	fi
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st0" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
 	fi
 
 	# eep and mpk files are the in-game saves and should be restored from SDCARD_PATH/Saves/N64/
-	if [ -f "$SDCARD_PATH/Saves/N64/$ROM_NO_EXTENSION.eep" ]; then
-		cp -f "$SDCARD_PATH/Saves/N64/$ROM_NO_EXTENSION.eep" "$XDG_DATA_HOME/mupen64plus/save/"
+	if [ -f "$SDCARD_PATH/Saves/N64/$sanitized_rom_name.eep" ]; then
+		cp -f "$SDCARD_PATH/Saves/N64/$sanitized_rom_name.eep" "$XDG_DATA_HOME/mupen64plus/save/"
 	fi
-	if [ -f "$SDCARD_PATH/Saves/N64/$ROM_NO_EXTENSION.mpk" ]; then
-		cp -f "$SDCARD_PATH/Saves/N64/$ROM_NO_EXTENSION.mpk" "$XDG_DATA_HOME/mupen64plus/save/"
+	if [ -f "$SDCARD_PATH/Saves/N64/$sanitized_rom_name.mpk" ]; then
+		cp -f "$SDCARD_PATH/Saves/N64/$sanitized_rom_name.mpk" "$XDG_DATA_HOME/mupen64plus/save/"
 	fi
 
 	# st0 files are the save states and should be restored from SHARED_USERDATA_PATH/N64-mupen64plus/
-	if [ -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$ROM_NO_EXTENSION.st0" ]; then
-		cp -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$ROM_NO_EXTENSION.st0" "$XDG_DATA_HOME/mupen64plus/save/"
-	fi
-}
-
-cleanup() {
-	rm -f "/tmp/minui-list"
-
-	rm -f /tmp/stay_awake
-	killall sdl2imgshow >/dev/null 2>&1 || true
-
-	# cleanup remap
-	rm -f /tmp/trimui_inputd/input_no_dpad
-	rm -f /tmp/trimui_inputd/input_dpad_to_joystick
-	rm -f /tmp/trimui_inputd/dpad2axis_hold_f2
-
-	# remove resume slot
-	rm -f /tmp/resume_slot.txt
-
-	# copy the latest save if one was created
-	mkdir -p "$SHARED_USERDATA_PATH/.minui/N64"
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st0" ]; then
-		echo "0" >"$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
-	else
-		rm -f "$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
-	fi
-
-	mkdir -p "$SHARED_USERDATA_PATH/N64-mupen64plus"
-
-	ROM_NO_EXTENSION="${ROM_NAME%.*}"
-
-	# restore saves to the normal MinUI paths
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.eep" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.eep" "$SDCARD_PATH/Saves/N64/"
-	fi
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.mpk" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.mpk" "$SDCARD_PATH/Saves/N64/"
-	fi
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st0" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
-	fi
-
-	if [ -f "$TEMP_ROM" ]; then
-		rm -f "$TEMP_ROM"
-	fi
-
-	if [ -f "/tmp/gptokeyb2.pid" ]; then
-		kill -9 "$(cat "/tmp/gptokeyb2.pid")"
-		rm -f "/tmp/gptokeyb2.pid"
+	if [ -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st0" ]; then
+		cp -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st0" "$XDG_DATA_HOME/mupen64plus/save/"
 	fi
 }
 
@@ -345,6 +308,65 @@ show_message() {
 	fi
 }
 
+cleanup() {
+	GOODNAME=""
+	if [ -f "$LOGS_PATH/N64-mupen64plus.txt" ]; then
+		GOODNAME="$(grep 'Core: Goodname:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		rm -f "$LOGS_PATH/N64-mupen64plus.txt"
+	elif [ -f "$GAMESETTINGS_DIR/goodname" ]; then
+		GOODNAME="$(cat "$GAMESETTINGS_DIR/goodname")"
+	fi
+
+	rm -f "/tmp/minui-list"
+
+	rm -f /tmp/stay_awake
+	killall sdl2imgshow >/dev/null 2>&1 || true
+
+	# cleanup remap
+	rm -f /tmp/trimui_inputd/input_no_dpad
+	rm -f /tmp/trimui_inputd/input_dpad_to_joystick
+	rm -f /tmp/trimui_inputd/dpad2axis_hold_f2
+
+	# remove resume slot
+	rm -f /tmp/resume_slot.txt
+
+	if [ -n "$GOODNAME" ]; then
+		echo "$GOODNAME" >"$GAMESETTINGS_DIR/goodname"
+	fi
+
+	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
+
+	# create the resume slot if st0 exists
+	mkdir -p "$SHARED_USERDATA_PATH/.minui/N64"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
+		echo "0" >"$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
+	else
+		rm -f "$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
+	fi
+
+	mkdir -p "$SHARED_USERDATA_PATH/N64-mupen64plus"
+
+	# restore saves to the normal MinUI paths
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.eep" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.eep" "$SDCARD_PATH/Saves/N64/"
+	fi
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.mpk" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.mpk" "$SDCARD_PATH/Saves/N64/"
+	fi
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	fi
+
+	if [ -f "$TEMP_ROM" ]; then
+		rm -f "$TEMP_ROM"
+	fi
+
+	if [ -f "/tmp/gptokeyb2.pid" ]; then
+		kill -9 "$(cat "/tmp/gptokeyb2.pid")"
+		rm -f "/tmp/gptokeyb2.pid"
+	fi
+}
+
 main() {
 	if [ "$PLATFORM" = "tg3040" ] && [ -z "$DEVICE" ]; then
 		export DEVICE="brick"
@@ -375,20 +397,21 @@ main() {
 	copy_save_states_for_game
 
 	# handle loading the save state if it exists
-	ROM_NO_EXTENSION="${ROM_NAME%.*}"
+	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
 	save_state=""
 	if [ -f "/tmp/resume_slot.txt" ]; then
 		save_state="$(xargs <"/tmp/resume_slot.txt")"
 	fi
-	SAVESTATE_PATH="$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st${save_state}"
+	SAVESTATE_PATH="$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st${save_state}"
 
 	resolution="$(get_resolution)"
 
 	mkdir -p "$SDCARD_PATH/Screenshots"
+	rm -f "$LOGS_PATH/N64-mupen64plus.txt"
 	if [ -f "$SAVESTATE_PATH" ]; then
-		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" || true
+		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
 	else
-		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" || true
+		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
 	fi
 }
 
