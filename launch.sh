@@ -321,7 +321,7 @@ cleanup() {
 	# remove resume slot
 	rm -f /tmp/resume_slot.txt
 
-	if [ -z "$GOODNAME" ]; then
+	if [ -n "$GOODNAME" ]; then
 		echo "$GOODNAME" >"$GAMESETTINGS_DIR/goodname"
 		ROM_NO_EXTENSION="$GOODNAME"
 	fi
