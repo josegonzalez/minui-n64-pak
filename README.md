@@ -45,16 +45,17 @@ N64 Controller Keys:
 | `B`             | `A`         |
 | `Y`             | `B`         |
 
-| Action                  | Combination   |
-|-------------------------|---------------|
-| Toggle Pause            | `SELECT + X`  |
-| Save State              | `SELECT + L2` |
-| Load State              | `SELECT + R2` |
-| MinUI Menu Resume State | `X`           |
-| Quit Game               | `MENU`        |
-| Toggle Mute             | `SELECT + Y`  |
-| Speed up by 5%          | `SELECT + A`  |
-| Slow up by 5%           | `SELECT + B`  |
+| Action                  | Hardware Combination   |
+|-------------------------|------------------------|
+| MinUI Menu Resume State | `X`                    |
+| Quit Game               | `MENU`                 |
+| Load State              | `SELECT + R2`          |
+| Save State              | `SELECT + L2`          |
+| Screenshot              | `SELECT + L1`          |
+| Toggle Pause            | `SELECT + X`           |
+| Toggle Mute             | `SELECT + Y`           |
+| Speed up by 5%          | `SELECT + A`           |
+| Slow up by 5%           | `SELECT + B`           |
 
 #### Lonko Controller Layout
 
