@@ -189,10 +189,8 @@ get_rom_path() {
 }
 
 copy_libmupen64plus() {
-	if [ ! -f /usr/local/lib/libmupen64plus.so.2 ] && [ -f "$EMU_DIR/lib/libmupen64plus.so.2" ]; then
-		mkdir -p /usr/local/lib
-		cp "$EMU_DIR/lib/libmupen64plus.so.2" /usr/local/lib/libmupen64plus.so.2
-	fi
+	mkdir -p /usr/local/lib
+	cp -f "$EMU_DIR/lib/libmupen64plus.so.2" /usr/local/lib/libmupen64plus.so.2
 }
 
 configure_platform() {
