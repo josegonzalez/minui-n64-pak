@@ -105,23 +105,6 @@ Allows changing the CPU Mode the emulator uses at runtime
 - default: `ondemand`
 - options: `ondemand`, `performance`
 
-#### Video Plugin
-
-> [!WARNING]
-> Setting the video plugin to `glide64` on `tg5040` devices currently results in an error, resulting in no video being shown on screen.
-
-Allows changing the `mupen64plus` video plugin.
-
-- default: `rice`
-- options: `rice`, `glide64`
-
-#### Aspect Ratio
-
-When `glide64` is selected as the video plugin, this allows changing the aspect ratio
-
-- default: `4:3`
-- options: `4:3`, `16:9`
-
 #### DPAD Mode
 
 Allows changing how the dpad is used in game
