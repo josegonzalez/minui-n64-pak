@@ -259,6 +259,15 @@ copy_save_states_for_game() {
 }
 
 cleanup() {
+	ROM_NO_EXTENSION="${ROM_NAME%.*}"
+	GOODNAME=""
+	if [ -f "$LOGS_PATH/N64-mupen64plus.txt" ]; then
+		GOODNAME="$(grep -oP 'Core: Goodname: \K[^ ]+' "$LOGS_PATH/N64-mupen64plus.txt" || true)"
+		rm -f "$LOGS_PATH/N64-mupen64plus.txt"
+	elif [ -f "$GAMESETTINGS_DIR/goodname" ]; then
+		GOODNAME="$(cat "$GAMESETTINGS_DIR/goodname")"
+	fi
+
 	rm -f "/tmp/minui-list"
 
 	rm -f /tmp/stay_awake
@@ -272,7 +281,11 @@ cleanup() {
 	# remove resume slot
 	rm -f /tmp/resume_slot.txt
 
-	ROM_NO_EXTENSION="${ROM_NAME%.*}"
+	if [ -z "$GOODNAME" ]; then
+		echo "$GOODNAME" >"$GAMESETTINGS_DIR/goodname"
+		ROM_NO_EXTENSION="$GOODNAME"
+	fi
+
 	# copy the latest save if one was created
 	mkdir -p "$SHARED_USERDATA_PATH/.minui/N64"
 	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st0" ]; then
@@ -384,10 +397,11 @@ main() {
 	resolution="$(get_resolution)"
 
 	mkdir -p "$SDCARD_PATH/Screenshots"
+	rm -f "$LOGS_PATH/N64-mupen64plus.txt"
 	if [ -f "$SAVESTATE_PATH" ]; then
-		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" || true
+		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
 	else
-		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" || true
+		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
 	fi
 }
 
