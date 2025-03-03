@@ -6,3 +6,4 @@ res/fonts/*
 
 !bin/gptokeyb2
 !bin/set_ra_cfg.sh
+mupen64plus/config/shared/mupencheat.txt

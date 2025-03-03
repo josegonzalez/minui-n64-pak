@@ -12,9 +12,10 @@ clean:
 	rm -f bin/coreutils || true
 	rm -f bin/coreutils.LICENSE || true
 	rm -f bin/minui-list-* || true
+	rm -f mupen64plus/config/shared/mupencheat.txt || true
 	rm -f res/fonts/BPreplayBold.otf || true
 
-build: $(foreach platform,$(PLATFORMS),bin/minui-list-$(platform)) bin/7zzs bin/evtest bin/sdl2imgshow bin/coreutils bin/gptokeyb2.LICENSE res/fonts/BPreplayBold.otf
+build: $(foreach platform,$(PLATFORMS),bin/minui-list-$(platform)) bin/7zzs bin/evtest bin/sdl2imgshow bin/coreutils bin/gptokeyb2.LICENSE mupen64plus/config/shared/mupencheat.txt res/fonts/BPreplayBold.otf
 
 bin/7zzs:
 	curl -sSL -o bin/7z.tar.xz "https://www.7-zip.org/a/7z2409-linux-arm64.tar.xz"
@@ -52,6 +53,9 @@ bin/sdl2imgshow:
 	docker container cp extract:/go/src/github.com/kloptops/sdl2imgshow/build/sdl2imgshow bin/sdl2imgshow
 	docker container rm extract
 	chmod +x bin/sdl2imgshow
+
+mupen64plus/config/shared/mupencheat.txt:
+	curl -sSL -o mupen64plus/config/shared/mupencheat.txt "https://raw.githubusercontent.com/mupen64plus/mupen64plus-core/refs/heads/master/data/mupencheat.txt"
 
 res/fonts/BPreplayBold.otf:
 	mkdir -p res/fonts

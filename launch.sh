@@ -163,6 +163,9 @@ copy_libmupen64plus() {
 
 configure_platform() {
 	mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
+	if [ ! -f "$XDG_DATA_HOME/mupencheat.txt" ]; then
+		cp "$EMU_DIR/config/shared/mupencheat.txt" "$XDG_DATA_HOME/mupencheat.txt"
+	fi
 	if [ ! -f "$XDG_CONFIG_HOME/mupen64plus.cfg" ]; then
 		cp "$EMU_DIR/config/$PLATFORM/mupen64plus.cfg" "$XDG_CONFIG_HOME/mupen64plus.cfg"
 	fi

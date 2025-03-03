@@ -6,4 +6,5 @@ bin/evtest
 bin/gptokeyb2.LICENSE
 bin/minui-list-tg5040
 bin/sdl2imgshow
+mupen64plus/config/shared/mupencheat.txt
 res/fonts/BPreplayBold.otf
