@@ -139,16 +139,16 @@ get_rom_path() {
 
 	ROM_PATH=""
 	case "$*" in
-	*.n64 | *.v64 | *.z64)
-		ROM_PATH="$*"
-		;;
-	*.zip | *.7z)
-		echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-		echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-		ROM_PATH="$TEMP_ROM"
+		*.n64 | *.v64 | *.z64)
+			ROM_PATH="$*"
+			;;
+		*.zip | *.7z)
+			echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+			echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+			ROM_PATH="$TEMP_ROM"
 
-		7zzs e "$*" -so >"$TEMP_ROM"
-		;;
+			7zzs e "$*" -so >"$TEMP_ROM"
+			;;
 	esac
 
 	echo "$ROM_PATH"
