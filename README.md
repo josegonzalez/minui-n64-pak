@@ -41,6 +41,20 @@ To change emulator settings, press and hold the `R2` button while selecting/resu
 
 If the `B` or `MENU` buttons are pressed, the user is returned to the MinUI game selection screen. Settings are managed on a per-game basis, and can be saved for future gameplay, or the game can be started with the current settings as is.
 
+#### Controller Layout
+
+Allows changing between controller layouts
+
+- default: `default`
+- options: `default`, `lonko`
+
+#### CPU Mode
+
+Allows changing the CPU Mode the emulator uses at runtime
+
+- default: `ondemand`
+- options: `ondemand`, `performance`
+
 #### Video Plugin
 
 > [!WARNING]

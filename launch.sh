@@ -37,7 +37,21 @@ get_controller_layout() {
 	if [ -f "$GAMESETTINGS_DIR/controller-layout" ]; then
 		controller_layout="$(cat "$GAMESETTINGS_DIR/controller-layout")"
 	fi
+	if [ -f "$GAMESETTINGS_DIR/controller-layout.tmp" ]; then
+		controller_layout="$(cat "$GAMESETTINGS_DIR/controller-layout.tmp")"
+	fi
 	echo "$controller_layout"
+}
+
+get_cpu_mode() {
+	cpu_mode="ondemand"
+	if [ -f "$GAMESETTINGS_DIR/cpu-mode" ]; then
+		cpu_mode="$(cat "$GAMESETTINGS_DIR/cpu-mode")"
+	fi
+	if [ -f "$GAMESETTINGS_DIR/cpu-mode.tmp" ]; then
+		cpu_mode="$(cat "$GAMESETTINGS_DIR/cpu-mode.tmp")"
+	fi
+	echo "$cpu_mode"
 }
 
 get_dpad_mode() {
@@ -92,6 +106,9 @@ settings_menu() {
 	# get the dpad mode
 	dpad_mode="$(get_dpad_mode)"
 
+	# get the cpu mode
+	cpu_mode="$(get_cpu_mode)"
+
 	r2_value="$(coreutils timeout .1s evtest /dev/input/event3 2>/dev/null | awk '/ABS_RZ/{getline; print}' | awk '{print $2}' || true)"
 	if [ "$r2_value" = "255" ]; then
 		while true; do
@@ -103,6 +120,12 @@ settings_menu() {
 				echo "Controller Layout: Default" >>"$minui_list_file"
 			else
 				echo "Controller Layout: Lonko" >>"$minui_list_file"
+			fi
+
+			if [ "$cpu_mode" = "ondemand" ]; then
+				echo "CPU Mode: On Demand" >>"$minui_list_file"
+			else
+				echo "CPU Mode: Performance" >>"$minui_list_file"
 			fi
 
 			if [ "$video_plugin" = "rice" ]; then
@@ -136,6 +159,10 @@ settings_menu() {
 				controller_layout="lonko"
 			elif echo "$selection" | grep -q "^Controller Layout: Lonko$"; then
 				controller_layout="default"
+			elif echo "$selection" | grep -q "^CPU Mode: On Demand$"; then
+				cpu_mode="performance"
+			elif echo "$selection" | grep -q "^CPU Mode: Performance$"; then
+				cpu_mode="ondemand"
 			elif echo "$selection" | grep -q "^Video Plugin: Rice$"; then
 				video_plugin="glide64mk2"
 			elif echo "$selection" | grep -q "^Video Plugin: Glide$"; then
@@ -152,11 +179,13 @@ settings_menu() {
 				dpad_mode="dpad"
 			elif echo "$selection" | grep -q "^Save settings for game$"; then
 				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout"
+				echo "$cpu_mode" >"$GAMESETTINGS_DIR/cpu-mode"
 				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin"
 				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect"
 				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode"
 			elif echo "$selection" | grep -q "^Start game$"; then
 				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout.tmp"
+				echo "$cpu_mode" >"$GAMESETTINGS_DIR/cpu-mode.tmp"
 				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin.tmp"
 				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect.tmp"
 				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode.tmp"
@@ -245,9 +274,17 @@ configure_controls() {
 }
 
 configure_cpu() {
-	echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-	echo 1608000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
-	echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+	cpu_mode="$(get_cpu_mode)"
+
+	if [ "$cpu_mode" = "performance" ]; then
+		echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+		echo 1608000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+		echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+	else
+		echo ondemand >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+		echo 1200000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+		echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+	fi
 }
 
 copy_save_states_for_game() {
