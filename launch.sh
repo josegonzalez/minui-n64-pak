@@ -272,6 +272,7 @@ cleanup() {
 	# remove resume slot
 	rm -f /tmp/resume_slot.txt
 
+	ROM_NO_EXTENSION="${ROM_NAME%.*}"
 	# copy the latest save if one was created
 	mkdir -p "$SHARED_USERDATA_PATH/.minui/N64"
 	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st0" ]; then
@@ -281,8 +282,6 @@ cleanup() {
 	fi
 
 	mkdir -p "$SHARED_USERDATA_PATH/N64-mupen64plus"
-
-	ROM_NO_EXTENSION="${ROM_NAME%.*}"
 
 	# restore saves to the normal MinUI paths
 	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.eep" ]; then
