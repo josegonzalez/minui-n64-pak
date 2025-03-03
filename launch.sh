@@ -239,32 +239,32 @@ configure_cpu() {
 
 copy_save_states_for_game() {
 	mkdir -p "$XDG_DATA_HOME/mupen64plus/save" "$SDCARD_PATH/Saves/N64/"
-	ROM_NO_EXTENSION="${ROM_NAME%.*}"
+	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
 
 	# check and copy platform-specific eep, mpk and st0 files that already exist
 	# this may happen if the game was saved on the device but we lost power before
 	# we could restore them to the normal MinUI paths
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.eep" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.eep" "$SDCARD_PATH/Saves/N64/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.eep" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.eep" "$SDCARD_PATH/Saves/N64/"
 	fi
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.mpk" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.mpk" "$SDCARD_PATH/Saves/N64/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.mpk" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.mpk" "$SDCARD_PATH/Saves/N64/"
 	fi
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st0" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
 	fi
 
 	# eep and mpk files are the in-game saves and should be restored from SDCARD_PATH/Saves/N64/
-	if [ -f "$SDCARD_PATH/Saves/N64/$ROM_NO_EXTENSION.eep" ]; then
-		cp -f "$SDCARD_PATH/Saves/N64/$ROM_NO_EXTENSION.eep" "$XDG_DATA_HOME/mupen64plus/save/"
+	if [ -f "$SDCARD_PATH/Saves/N64/$sanitized_rom_name.eep" ]; then
+		cp -f "$SDCARD_PATH/Saves/N64/$sanitized_rom_name.eep" "$XDG_DATA_HOME/mupen64plus/save/"
 	fi
-	if [ -f "$SDCARD_PATH/Saves/N64/$ROM_NO_EXTENSION.mpk" ]; then
-		cp -f "$SDCARD_PATH/Saves/N64/$ROM_NO_EXTENSION.mpk" "$XDG_DATA_HOME/mupen64plus/save/"
+	if [ -f "$SDCARD_PATH/Saves/N64/$sanitized_rom_name.mpk" ]; then
+		cp -f "$SDCARD_PATH/Saves/N64/$sanitized_rom_name.mpk" "$XDG_DATA_HOME/mupen64plus/save/"
 	fi
 
 	# st0 files are the save states and should be restored from SHARED_USERDATA_PATH/N64-mupen64plus/
-	if [ -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$ROM_NO_EXTENSION.st0" ]; then
-		cp -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$ROM_NO_EXTENSION.st0" "$XDG_DATA_HOME/mupen64plus/save/"
+	if [ -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st0" ]; then
+		cp -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st0" "$XDG_DATA_HOME/mupen64plus/save/"
 	fi
 }
 
