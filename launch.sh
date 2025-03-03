@@ -294,7 +294,7 @@ configure_cpu() {
 	fi
 }
 
-copy_save_states_for_game() {
+restore_save_states_for_game() {
 	mkdir -p "$XDG_DATA_HOME/mupen64plus/save" "$SDCARD_PATH/Saves/N64/"
 	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
 
@@ -323,6 +323,8 @@ copy_save_states_for_game() {
 	if [ -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st0" ]; then
 		cp -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st0" "$XDG_DATA_HOME/mupen64plus/save/"
 	fi
+
+	touch /tmp/n64-saves-restored
 }
 
 get_resolution() {
@@ -393,13 +395,17 @@ cleanup() {
 
 	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
 
-	# create the resume slot if st0 exists
-	mkdir -p "$SHARED_USERDATA_PATH/.minui/N64"
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
-		echo "0" >"$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
-	else
-		rm -f "$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
+	# do not touch the resume slot if the saves were not restored
+	if [ -f "/tmp/n64-saves-restored" ]; then
+		mkdir -p "$SHARED_USERDATA_PATH/.minui/N64"
+		# create the resume slot if st0 exists
+		if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
+			echo "0" >"$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
+		else
+			rm -f "$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
+		fi
 	fi
+	rm -f /tmp/n64-saves-restored
 
 	mkdir -p "$SHARED_USERDATA_PATH/N64-mupen64plus"
 
@@ -451,7 +457,7 @@ main() {
 	configure_game_settings
 	configure_controls
 	configure_cpu
-	copy_save_states_for_game
+	restore_save_states_for_game
 
 	# handle loading the save state if it exists
 	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
