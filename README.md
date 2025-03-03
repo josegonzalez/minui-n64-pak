@@ -37,7 +37,7 @@ To enable debug logging, create a file named debug in `$SDCARD_PATH/.userdata/$P
 
 ### Emulator settings
 
-To change emulator settings, press and hold the `L2` button while selecting/resuming a game to play. Hold L2 until a menu appears.
+To change emulator settings, press and hold the `R2` button while selecting/resuming a game to play. Hold R2 until a menu appears.
 
 If the `B` or `MENU` buttons are pressed, the user is returned to the MinUI game selection screen. Settings are managed on a per-game basis, and can be saved for future gameplay, or the game can be started with the current settings as is.
 
