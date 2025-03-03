@@ -93,24 +93,31 @@ If the `B` or `MENU` buttons are pressed, the user is returned to the MinUI game
 
 #### Controller Layout
 
-Allows changing between controller layouts
+Allows changing between controller layouts.
 
 - default: `default`
 - options: `default`, `lonko`
 
 #### CPU Mode
 
-Allows changing the CPU Mode the emulator uses at runtime
+Allows changing the CPU Mode the emulator uses at runtime.
 
 - default: `ondemand`
 - options: `ondemand`, `performance`
 
 #### DPAD Mode
 
-Allows changing how the dpad is used in game
+Allows changing how the dpad is used in game.
 
 - default: `dpad`
 - options: `dpad`, `joystick`, `joystick on f2`
+
+#### Mupen64Plus Version
+
+Allows toggling between supported versions.
+
+- default: `2.6.0`
+- options: `2.6.0`, `2.5.9`
 
 ### In-Game saves
 
@@ -127,3 +134,9 @@ Screenshots are written to `/Screenshots` with a sanitized version of the rom na
 ### Debug Logging
 
 To enable debug logging, create a file named debug in `$SDCARD_PATH/.userdata/$PLATFORM/N64-mupen64plus` folder. Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
+
+## Screenshots
+
+| Name               | Image                                                     |
+|--------------------|-----------------------------------------------------------|
+| Emulator Settings  | <img src="screenshots/emulator-settings.png" width=240 /> |
