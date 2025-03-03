@@ -130,17 +130,6 @@ settings_menu() {
 				echo "CPU Mode: Performance" >>"$minui_list_file"
 			fi
 
-			if [ "$video_plugin" = "rice" ]; then
-				echo "Video Plugin: Rice" >>"$minui_list_file"
-			else
-				echo "Video Plugin: Glide" >>"$minui_list_file"
-				if [ "$glide_aspect" = "4:3" ]; then
-					echo "Glide aspect ratio: 4:3" >>"$minui_list_file"
-				else
-					echo "Glide aspect ratio: 16:9" >>"$minui_list_file"
-				fi
-			fi
-
 			if [ "$dpad_mode" = "dpad" ]; then
 				echo "DPAD Mode: DPAD" >>"$minui_list_file"
 			elif [ "$dpad_mode" = "joystick" ]; then
@@ -218,16 +207,16 @@ get_rom_path() {
 
 	ROM_PATH=""
 	case "$*" in
-	*.n64 | *.v64 | *.z64)
-		ROM_PATH="$*"
-		;;
-	*.zip | *.7z)
-		echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-		echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-		ROM_PATH="$TEMP_ROM"
+		*.n64 | *.v64 | *.z64)
+			ROM_PATH="$*"
+			;;
+		*.zip | *.7z)
+			echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+			echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+			ROM_PATH="$TEMP_ROM"
 
-		7zzs e "$*" -so >"$TEMP_ROM"
-		;;
+			7zzs e "$*" -so >"$TEMP_ROM"
+			;;
 	esac
 
 	echo "$ROM_PATH"
