@@ -1,6 +1,6 @@
 # minui-n64.pak
 
-A MinUI Emu Pak for N64, wrapping the standalone `mupen64plus` N64 emulator (version 2.5.9).
+A MinUI Emu Pak for N64, wrapping the standalone `mupen64plus` N64 emulator (version 2.6.0).
 
 ## Requirements
 

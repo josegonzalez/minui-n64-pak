@@ -20,7 +20,6 @@ export XDG_DATA_HOME="$USERDATA_PATH/N64-mupen64plus/data"
 export ROM_NAME="$(basename -- "$*")"
 export GAMESETTINGS_DIR="$USERDATA_PATH/N64-mupen64plus/game-settings/$ROM_NAME"
 export SCREENSHOT_DIR="$SDCARD_PATH/Screenshots"
-export PLUGIN_DIR="$EMU_DIR/plugin/$PLATFORM"
 
 get_rom_name() {
 	ROM_NAME="$1"
@@ -76,6 +75,17 @@ get_glide_aspect() {
 	echo "$glide_aspect"
 }
 
+get_mupen64plus_version() {
+	mupen64plus_version="2.6.0"
+	if [ -f "$GAMESETTINGS_DIR/mupen64plus-version" ]; then
+		mupen64plus_version="$(cat "$GAMESETTINGS_DIR/mupen64plus-version")"
+	fi
+	if [ -f "$GAMESETTINGS_DIR/mupen64plus-version.tmp" ]; then
+		mupen64plus_version="$(cat "$GAMESETTINGS_DIR/mupen64plus-version.tmp")"
+	fi
+	echo "$mupen64plus_version"
+}
+
 get_video_plugin() {
 	video_plugin="rice"
 	if [ -f "$GAMESETTINGS_DIR/video-plugin" ]; then
@@ -94,20 +104,12 @@ settings_menu() {
 	rm -f "$GAMESETTINGS_DIR/glide-aspect.tmp"
 	rm -f "$GAMESETTINGS_DIR/video-plugin.tmp"
 
-	# get video plugin
-	video_plugin="$(get_video_plugin)"
-
-	# get the aspect ratio for glide
-	glide_aspect="$(get_glide_aspect)"
-
-	# get the controller layout
 	controller_layout="$(get_controller_layout)"
-
-	# get the dpad mode
-	dpad_mode="$(get_dpad_mode)"
-
-	# get the cpu mode
 	cpu_mode="$(get_cpu_mode)"
+	dpad_mode="$(get_dpad_mode)"
+	glide_aspect="$(get_glide_aspect)"
+	mupen64plus_version="$(get_mupen64plus_version)"
+	video_plugin="$(get_video_plugin)"
 
 	r2_value="$(coreutils timeout .1s evtest /dev/input/event3 2>/dev/null | awk '/ABS_RZ/{getline; print}' | awk '{print $2}' || true)"
 	if [ "$r2_value" = "255" ]; then
@@ -138,6 +140,7 @@ settings_menu() {
 					echo "Glide aspect ratio: 16:9" >>"$minui_list_file"
 				fi
 			fi
+
 			if [ "$dpad_mode" = "dpad" ]; then
 				echo "DPAD Mode: DPAD" >>"$minui_list_file"
 			elif [ "$dpad_mode" = "joystick" ]; then
@@ -145,6 +148,13 @@ settings_menu() {
 			else
 				echo "DPAD Mode: Joystick on F2" >>"$minui_list_file"
 			fi
+
+			if [ "$mupen64plus_version" = "2.6.0" ]; then
+				echo "Mupen64Plus Version: 2.6.0" >>"$minui_list_file"
+			else
+				echo "Mupen64Plus Version: 2.5.9" >>"$minui_list_file"
+			fi
+
 			echo "Save settings for game" >>"$minui_list_file"
 			echo "Start game" >>"$minui_list_file"
 
@@ -177,18 +187,24 @@ settings_menu() {
 				dpad_mode="f2"
 			elif echo "$selection" | grep -q "^DPAD Mode: Joystick on F2$"; then
 				dpad_mode="dpad"
+			elif echo "$selection" | grep -q "^Mupen64Plus Version: 2.5.9$"; then
+				mupen64plus_version="2.6.0"
+			elif echo "$selection" | grep -q "^Mupen64Plus Version: 2.6.0$"; then
+				mupen64plus_version="2.5.9"
 			elif echo "$selection" | grep -q "^Save settings for game$"; then
 				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout"
 				echo "$cpu_mode" >"$GAMESETTINGS_DIR/cpu-mode"
-				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin"
-				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect"
 				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode"
+				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect"
+				echo "$mupen64plus_version" >"$GAMESETTINGS_DIR/mupen64plus-version"
+				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin"
 			elif echo "$selection" | grep -q "^Start game$"; then
 				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout.tmp"
 				echo "$cpu_mode" >"$GAMESETTINGS_DIR/cpu-mode.tmp"
-				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin.tmp"
-				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect.tmp"
 				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode.tmp"
+				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect.tmp"
+				echo "$mupen64plus_version" >"$GAMESETTINGS_DIR/mupen64plus-version.tmp"
+				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin.tmp"
 				break
 			fi
 		done
@@ -218,8 +234,9 @@ get_rom_path() {
 }
 
 copy_libmupen64plus() {
+	mupen64plus_version="$(get_mupen64plus_version)"
 	mkdir -p /usr/local/lib
-	cp -f "$EMU_DIR/lib/libmupen64plus.so.2" /usr/local/lib/libmupen64plus.so.2
+	cp -f "$EMU_DIR/lib/${mupen64plus_version}/libmupen64plus.so.2" /usr/local/lib/libmupen64plus.so.2
 }
 
 configure_platform() {
@@ -265,8 +282,9 @@ configure_controls() {
 	fi
 
 	# remap keys
+	mupen64plus_version="$(get_mupen64plus_version)"
 	controller_layout="$(get_controller_layout)"
-	gptokeyb2 -c "$EMU_DIR/config/$PLATFORM/modes/$controller_layout/defkeys.gptk" &
+	LD_LIBRARY_PATH="$EMU_DIR/lib/${mupen64plus_version}:$LD_LIBRARY_PATH" gptokeyb2 -c "$EMU_DIR/config/$PLATFORM/modes/$controller_layout/defkeys.gptk" &
 	GPTOKEYB2_PID="$!"
 	sleep 0.3
 
@@ -456,12 +474,17 @@ main() {
 
 	resolution="$(get_resolution)"
 
+	mupen64plus_version="$(get_mupen64plus_version)"
+	mupen64plus_bin="mupen64plus-${mupen64plus_version}"
+	PLUGIN_DIR="$EMU_DIR/plugin/$PLATFORM/${mupen64plus_version}"
+	export LD_LIBRARY_PATH="$EMU_DIR/lib/${mupen64plus_version}:$LD_LIBRARY_PATH"
+
 	mkdir -p "$SDCARD_PATH/Screenshots"
 	rm -f "$LOGS_PATH/N64-mupen64plus.txt"
 	if [ -f "$SAVESTATE_PATH" ]; then
-		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
+		"$mupen64plus_bin" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
 	else
-		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
+		"$mupen64plus_bin" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
 	fi
 }
 
