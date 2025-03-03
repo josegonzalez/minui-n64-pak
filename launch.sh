@@ -387,6 +387,13 @@ main() {
 
 	resolution="$(get_resolution)"
 
+	# date in timestamp format
+	date +%s
+	cheat_output=$(mupen64plus --cheats list --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" | grep -e "UI-Console" | grep -v -e "attached to core library" -e "Includes support for Dynamic Recompiler" -e "found for ROM" || true)
+	date +%s
+	cheat_output=$(echo "$cheat_output" | sed -e "s/^UI-Console:.\{4\}//")
+	date +%s
+
 	mkdir -p "$SDCARD_PATH/Screenshots"
 	if [ -f "$SAVESTATE_PATH" ]; then
 		mupen64plus --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" || true
