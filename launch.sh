@@ -3,7 +3,7 @@ set -eo pipefail
 [ -f "$USERDATA_PATH/N64-mupen64plus/debug" ] && set -x
 echo $0 $*
 
-rm "$LOGS_PATH/N64.txt"
+rm -f "$LOGS_PATH/N64.txt"
 exec >>"$LOGS_PATH/N64.txt"
 exec 2>&1
 
