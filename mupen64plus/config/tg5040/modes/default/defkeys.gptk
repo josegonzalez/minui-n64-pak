@@ -1,10 +1,19 @@
-
-l1_hk = f12
-l2_hk = f5
-r2_hk = f7
-a_hk = f11
-b_hk = f10
-x_hk = p
-y_hk = m
+[controls]
+overlay = clear
+a = a # B -> A button
+x = b # Y -> B button
 
 guide = esc
+select = hold_state hotkey1
+
+[controls:hotkey1]
+overlay = parent
+
+l1 = f12 # Screenshot
+l2 = f5  # Save State
+r2 = f7  # Load State
+
+b = f11 # A -> Speed up by 50%
+a = f10 # B -> Slow down by 50%
+y = p   # Y -> Toggle pause
+x = m   # X -> Toggle mute

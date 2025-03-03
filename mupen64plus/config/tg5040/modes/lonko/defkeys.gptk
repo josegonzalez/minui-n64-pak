@@ -2,21 +2,27 @@
 #Xbox360 Controller Button Layout (Swap a/b & x/y)
 [controls]
 overlay = clear
-a = a # B->A button
-x = b # Y->B button
+a = a # B -> A button
+x = b # Y -> B button
 
 r2 = hold_state hotkey1
 guide = hold_state hotkey2
 
-[controls:hotkey1]
-overlay = clear
+r3 = f5 # Save State
+l3 = f7 # Load State
 
-y = i # X->C up
-x = j # Y->C left
-a = k # B->C down
-b = l # A->C right
+[controls:hotkey1]
+overlay = parent
+
+y = i # X -> C up
+x = j # Y -> C left
+a = k # B -> C down
+b = l # A -> C right
 
 [controls:hotkey2]
-overlay = clear
+overlay = parent
 
 select = y
+
+r1 = f5 # Save State
+l1 = f7 # Load State
