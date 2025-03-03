@@ -31,11 +31,6 @@ The following filetypes are supported:
 
 Extraction happens prior to game loading using 7-zip and can cause delays in loading the game. To avoid this, extract the game on your SD card instead.
 
-### Adjusting speed
-
-- Speed up: Press `SELECT + A`. This will speed up the emulator in 5% increments.
-- Slow down: Press `SELECT + B`. This will slow down the emulator in 5% increments.
-
 ### Debug Logging
 
 To enable debug logging, create a file named debug in `$SDCARD_PATH/.userdata/$PLATFORM/N64-mupen64plus` folder. Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
@@ -74,26 +69,25 @@ Allows changing how the dpad is used in game
 
 Any game that creates in-game saves will generate a `.eep` and `.mpk` file. These will be stored in `$SDCARD_PATH/Saves/N64`.
 
-### Muting Audio
-
-To mute audo, press `SELECT + Y`. Pressing `SELECT + Y` again will unmute audio.
-
-### Quitting
-
-To quit, press the `MENU` button.
-
 ### Save states
 
 In addition to in-game saves, this pak supports a single save state. Save states are stored in `$SDCARD_PATH/.userdata/shared/N64-mupen64plus`
 
-- Save: To create a save state, press `SELECT + L2`.
-- Load: To load a save state, press `SELECT + R2`.
-- Resume: When browsing a game in the MinUI list, if there is a save state, press the `X` button to resume the game at that save state.
-
 ### Screenshots
 
-To take a screenshot, press `SELECT + L1`. This will create a screenshot in `/Screenshots` with a sanitized version of the rom name as the screenshot prefix.
+Screenshots are written to `/Screenshots` with a sanitized version of the rom name as the screenshot prefix.
 
-### Pause
+### Hotkeys
 
-To pause the game, press `SELECT + X`. Pressing `SELECT + X` again will unpause the game.
+In default controller mode
+
+| Action                  | Combination   |
+|-------------------------|---------------|
+| Toggle Pause            | `SELECT + X`  |
+| Save State              | `SELECT + L2` |
+| Load State              | `SELECT + R2` |
+| MinUI Menu Resume State | `X`           |
+| Quit Game               | `MENU`        |
+| Toggle Mute             | `SELECT + Y`  |
+| Speed up by 5%          | `SELECT + A`  |
+| Slow up by 5%           | `SELECT + B`  |

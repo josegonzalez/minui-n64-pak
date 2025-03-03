@@ -32,6 +32,14 @@ get_rom_name() {
 	echo "$SANITIZED_ROM_NAME"
 }
 
+get_controller_layout() {
+	controller_layout="default"
+	if [ -f "$GAMESETTINGS_DIR/controller-layout" ]; then
+		controller_layout="$(cat "$GAMESETTINGS_DIR/controller-layout")"
+	fi
+	echo "$controller_layout"
+}
+
 get_dpad_mode() {
 	dpad_mode="dpad"
 	if [ -f "$GAMESETTINGS_DIR/dpad-mode" ]; then
@@ -78,6 +86,9 @@ settings_menu() {
 	# get the aspect ratio for glide
 	glide_aspect="$(get_glide_aspect)"
 
+	# get the controller layout
+	controller_layout="$(get_controller_layout)"
+
 	# get the dpad mode
 	dpad_mode="$(get_dpad_mode)"
 
@@ -87,6 +98,13 @@ settings_menu() {
 			minui_list_file="/tmp/minui-list"
 			rm -f "$minui_list_file"
 			touch "$minui_list_file"
+
+			if [ "$controller_layout" = "default" ]; then
+				echo "Controller Layout: Default" >>"$minui_list_file"
+			else
+				echo "Controller Layout: Lonko" >>"$minui_list_file"
+			fi
+
 			if [ "$video_plugin" = "rice" ]; then
 				echo "Video Plugin: Rice" >>"$minui_list_file"
 			else
@@ -114,7 +132,11 @@ settings_menu() {
 				break
 			fi
 
-			if echo "$selection" | grep -q "^Video Plugin: Rice$"; then
+			if echo "$selection" | grep -q "^Controller Layout: Default$"; then
+				controller_layout="lonko"
+			elif echo "$selection" | grep -q "^Controller Layout: Lonko$"; then
+				controller_layout="default"
+			elif echo "$selection" | grep -q "^Video Plugin: Rice$"; then
 				video_plugin="glide64mk2"
 			elif echo "$selection" | grep -q "^Video Plugin: Glide$"; then
 				video_plugin="rice"
@@ -129,10 +151,12 @@ settings_menu() {
 			elif echo "$selection" | grep -q "^DPAD Mode: Joystick on F2$"; then
 				dpad_mode="dpad"
 			elif echo "$selection" | grep -q "^Save settings for game$"; then
+				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout"
 				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin"
 				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect"
 				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode"
 			elif echo "$selection" | grep -q "^Start game$"; then
+				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout.tmp"
 				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin.tmp"
 				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect.tmp"
 				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode.tmp"
@@ -149,16 +173,16 @@ get_rom_path() {
 
 	ROM_PATH=""
 	case "$*" in
-		*.n64 | *.v64 | *.z64)
-			ROM_PATH="$*"
-			;;
-		*.zip | *.7z)
-			echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-			echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-			ROM_PATH="$TEMP_ROM"
+	*.n64 | *.v64 | *.z64)
+		ROM_PATH="$*"
+		;;
+	*.zip | *.7z)
+		echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+		echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+		ROM_PATH="$TEMP_ROM"
 
-			7zzs e "$*" -so >"$TEMP_ROM"
-			;;
+		7zzs e "$*" -so >"$TEMP_ROM"
+		;;
 	esac
 
 	echo "$ROM_PATH"
@@ -172,25 +196,15 @@ copy_libmupen64plus() {
 }
 
 configure_platform() {
+	controller_layout="$(get_controller_layout)"
 	mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
-	if [ ! -f "$XDG_CONFIG_HOME/mupen64plus.cfg" ]; then
-		cp "$EMU_DIR/config/$PLATFORM/mupen64plus.cfg" "$XDG_CONFIG_HOME/mupen64plus.cfg"
-	fi
-	if [ ! -f "$XDG_DATA_HOME/font.ttf" ]; then
-		cp "$EMU_DIR/config/$PLATFORM/font.ttf" "$XDG_DATA_HOME/font.ttf"
-	fi
-	if [ ! -f "$XDG_DATA_HOME/Glide64mk2.ini" ]; then
-		cp "$EMU_DIR/config/$PLATFORM/Glide64mk2.ini" "$XDG_DATA_HOME/Glide64mk2.ini"
-	fi
-	if [ ! -f "$XDG_DATA_HOME/InputAutoCfg.ini" ]; then
-		cp "$EMU_DIR/config/$PLATFORM/InputAutoCfg.ini" "$XDG_DATA_HOME/InputAutoCfg.ini"
-	fi
-	if [ ! -f "$XDG_DATA_HOME/mupen64plus.ini" ]; then
-		cp "$EMU_DIR/config/$PLATFORM/mupen64plus.ini" "$XDG_DATA_HOME/mupen64plus.ini"
-	fi
-	if [ ! -f "$XDG_DATA_HOME/RiceVideoLinux.ini" ]; then
-		cp "$EMU_DIR/config/$PLATFORM/RiceVideoLinux.ini" "$XDG_DATA_HOME/RiceVideoLinux.ini"
-	fi
+
+	cp -f "$EMU_DIR/config/$PLATFORM/modes/$controller_layout/mupen64plus.cfg" "$XDG_CONFIG_HOME/mupen64plus.cfg"
+	cp -f "$EMU_DIR/config/$PLATFORM/modes/$controller_layout/InputAutoCfg.ini" "$XDG_DATA_HOME/InputAutoCfg.ini"
+	cp -f "$EMU_DIR/config/$PLATFORM/font.ttf" "$XDG_DATA_HOME/font.ttf"
+	cp -f "$EMU_DIR/config/$PLATFORM/Glide64mk2.ini" "$XDG_DATA_HOME/Glide64mk2.ini"
+	cp -f "$EMU_DIR/config/$PLATFORM/mupen64plus.ini" "$XDG_DATA_HOME/mupen64plus.ini"
+	cp -f "$EMU_DIR/config/$PLATFORM/RiceVideoLinux.ini" "$XDG_DATA_HOME/RiceVideoLinux.ini"
 }
 
 configure_game_settings() {
@@ -224,7 +238,8 @@ configure_controls() {
 	fi
 
 	# remap keys
-	gptokeyb2 -c "$EMU_DIR/config/$PLATFORM/defkeys.gptk" &
+	controller_layout="$(get_controller_layout)"
+	gptokeyb2 -c "$EMU_DIR/config/$PLATFORM/modes/$controller_layout/defkeys.gptk" &
 	GPTOKEYB2_PID="$!"
 	sleep 0.3
 
