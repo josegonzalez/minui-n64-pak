@@ -31,9 +31,59 @@ The following filetypes are supported:
 
 Extraction happens prior to game loading using 7-zip and can cause delays in loading the game. To avoid this, extract the game on your SD card instead.
 
-### Debug Logging
+### Controller Layouts
 
-To enable debug logging, create a file named debug in `$SDCARD_PATH/.userdata/$PLATFORM/N64-mupen64plus` folder. Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
+#### Default Controller Layout
+
+N64 Controller Keys:
+
+| Hardware Button | N64 Mapping |
+|-----------------|-------------|
+| `L2`            | `Z`         |
+| `L1`            | `L`         |
+| `R1`            | `R`         |
+| `B`             | `A`         |
+| `Y`             | `B`         |
+
+| Action                  | Combination   |
+|-------------------------|---------------|
+| Toggle Pause            | `SELECT + X`  |
+| Save State              | `SELECT + L2` |
+| Load State              | `SELECT + R2` |
+| MinUI Menu Resume State | `X`           |
+| Quit Game               | `MENU`        |
+| Toggle Mute             | `SELECT + Y`  |
+| Speed up by 5%          | `SELECT + A`  |
+| Slow up by 5%           | `SELECT + B`  |
+
+#### Lonko Controller Layout
+
+N64 Controller Keys:
+
+| Hardware Button | N64 Mapping |
+|-----------------|-------------|
+| `L2`            | `Z`         |
+| `L1`            | `L`         |
+| `R1`            | `R`         |
+| `B`             | `A`         |
+| `Y`             | `B`         |
+| `R2 + X`        | `C-Up`      |
+| `R2 + Y`        | `C-Left`    |
+| `R2 + A`        | `C-Right`   |
+| `R2 + B`        | `C-Down`    |
+
+Hotkeys
+
+| Action                  | Combination     |
+|-------------------------|-----------------|
+| Toggle Pause            | `MENU + X`      |
+| Save State              | `MENU + R1`     |
+| Load State              | `MENU + L1`     |
+| MinUI Menu Resume State | `X`             |
+| Quit Game               | `MENU + START`  |
+| Reset Game              | `MENU + B`      |
+| Toggle Mute             | `MENU + A`      |
+| Fast Forward            | `MENU + SELECT` |
 
 ### Emulator settings
 
@@ -91,17 +141,6 @@ In addition to in-game saves, this pak supports a single save state. Save states
 
 Screenshots are written to `/Screenshots` with a sanitized version of the rom name as the screenshot prefix.
 
-### Hotkeys
+### Debug Logging
 
-In default controller mode
-
-| Action                  | Combination   |
-|-------------------------|---------------|
-| Toggle Pause            | `SELECT + X`  |
-| Save State              | `SELECT + L2` |
-| Load State              | `SELECT + R2` |
-| MinUI Menu Resume State | `X`           |
-| Quit Game               | `MENU`        |
-| Toggle Mute             | `SELECT + Y`  |
-| Speed up by 5%          | `SELECT + A`  |
-| Slow up by 5%           | `SELECT + B`  |
+To enable debug logging, create a file named debug in `$SDCARD_PATH/.userdata/$PLATFORM/N64-mupen64plus` folder. Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
