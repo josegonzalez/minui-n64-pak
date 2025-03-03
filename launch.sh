@@ -397,12 +397,12 @@ main() {
 	copy_save_states_for_game
 
 	# handle loading the save state if it exists
-	ROM_NO_EXTENSION="${ROM_NAME%.*}"
+	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
 	save_state=""
 	if [ -f "/tmp/resume_slot.txt" ]; then
 		save_state="$(xargs <"/tmp/resume_slot.txt")"
 	fi
-	SAVESTATE_PATH="$XDG_DATA_HOME/mupen64plus/save/$ROM_NO_EXTENSION.st${save_state}"
+	SAVESTATE_PATH="$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st${save_state}"
 
 	resolution="$(get_resolution)"
 
