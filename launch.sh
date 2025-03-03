@@ -92,8 +92,8 @@ settings_menu() {
 	# get the dpad mode
 	dpad_mode="$(get_dpad_mode)"
 
-	l2_value="$(coreutils timeout .1s evtest /dev/input/event3 2>/dev/null | awk '/ABS_RZ/{getline; print}' | awk '{print $2}' || true)"
-	if [ "$l2_value" = "255" ]; then
+	r2_value="$(coreutils timeout .1s evtest /dev/input/event3 2>/dev/null | awk '/ABS_RZ/{getline; print}' | awk '{print $2}' || true)"
+	if [ "$r2_value" = "255" ]; then
 		while true; do
 			minui_list_file="/tmp/minui-list"
 			rm -f "$minui_list_file"
