@@ -75,16 +75,17 @@ N64 Controller Keys:
 
 Hotkeys
 
-| Action                  | Combination     |
-|-------------------------|-----------------|
-| Toggle Pause            | `MENU + X`      |
-| Save State              | `MENU + R1`     |
-| Load State              | `MENU + L1`     |
-| MinUI Menu Resume State | `X`             |
-| Quit Game               | `MENU + START`  |
-| Reset Game              | `MENU + B`      |
-| Toggle Mute             | `MENU + A`      |
-| Fast Forward            | `MENU + SELECT` |
+| Action                  | Hardware Combination             |
+|-------------------------|----------------------------------|
+| MinUI Menu Resume State | `X`                              |
+| Quit Game               | `MENU + START`                   |
+| Load State              | `MENU + L1`, `L3`, or `HOTKEY 1` |
+| Save State              | `MENU + R1`, `R3`, or `HOTKEY 2` |
+| Screenshot              | `MENU + Y`                       |
+| Toggle Pause            | `MENU + X`                       |
+| Toggle Mute             | `MENU + B`                       |
+| Reset Game              | `MENU + A`                       |
+| Fast Forward            | `MENU + SELECT`                  |
 
 ### Emulator settings
 
