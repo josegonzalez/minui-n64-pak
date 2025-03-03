@@ -258,6 +258,46 @@ copy_save_states_for_game() {
 	fi
 }
 
+get_resolution() {
+	if [ "$PLATFORM" = "tg5040" ]; then
+		if [ "$DEVICE" = "brick" ]; then
+			echo "1024x768"
+		else
+			echo "1280x720"
+		fi
+	fi
+}
+
+show_message() {
+	message="$1"
+	seconds="$2"
+
+	if [ -z "$seconds" ]; then
+		seconds="forever"
+	fi
+
+	killall sdl2imgshow >/dev/null 2>&1 || true
+	echo "$message" 1>&2
+	if [ "$seconds" = "forever" ]; then
+		sdl2imgshow \
+			-i "$PAK_DIR/res/background.png" \
+			-f "$PAK_DIR/res/fonts/BPreplayBold.otf" \
+			-s 27 \
+			-c "220,220,220" \
+			-q \
+			-t "$message" >/dev/null 2>&1 &
+	else
+		sdl2imgshow \
+			-i "$PAK_DIR/res/background.png" \
+			-f "$PAK_DIR/res/fonts/BPreplayBold.otf" \
+			-s 27 \
+			-c "220,220,220" \
+			-q \
+			-t "$message" >/dev/null 2>&1
+		sleep "$seconds"
+	fi
+}
+
 cleanup() {
 	ROM_NO_EXTENSION="${ROM_NAME%.*}"
 	GOODNAME=""
@@ -314,46 +354,6 @@ cleanup() {
 	if [ -f "/tmp/gptokeyb2.pid" ]; then
 		kill -9 "$(cat "/tmp/gptokeyb2.pid")"
 		rm -f "/tmp/gptokeyb2.pid"
-	fi
-}
-
-get_resolution() {
-	if [ "$PLATFORM" = "tg5040" ]; then
-		if [ "$DEVICE" = "brick" ]; then
-			echo "1024x768"
-		else
-			echo "1280x720"
-		fi
-	fi
-}
-
-show_message() {
-	message="$1"
-	seconds="$2"
-
-	if [ -z "$seconds" ]; then
-		seconds="forever"
-	fi
-
-	killall sdl2imgshow >/dev/null 2>&1 || true
-	echo "$message" 1>&2
-	if [ "$seconds" = "forever" ]; then
-		sdl2imgshow \
-			-i "$PAK_DIR/res/background.png" \
-			-f "$PAK_DIR/res/fonts/BPreplayBold.otf" \
-			-s 27 \
-			-c "220,220,220" \
-			-q \
-			-t "$message" >/dev/null 2>&1 &
-	else
-		sdl2imgshow \
-			-i "$PAK_DIR/res/background.png" \
-			-f "$PAK_DIR/res/fonts/BPreplayBold.otf" \
-			-s 27 \
-			-c "220,220,220" \
-			-q \
-			-t "$message" >/dev/null 2>&1
-		sleep "$seconds"
 	fi
 }
 
