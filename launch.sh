@@ -100,8 +100,11 @@ get_video_plugin() {
 settings_menu() {
 	mkdir -p "$GAMESETTINGS_DIR"
 
+	rm -f "$GAMESETTINGS_DIR/controller-layout.tmp"
+	rm -f "$GAMESETTINGS_DIR/cpu-mode.tmp"
 	rm -f "$GAMESETTINGS_DIR/dpad-mode.tmp"
 	rm -f "$GAMESETTINGS_DIR/glide-aspect.tmp"
+	rm -f "$GAMESETTINGS_DIR/mupen64plus-version.tmp"
 	rm -f "$GAMESETTINGS_DIR/video-plugin.tmp"
 
 	controller_layout="$(get_controller_layout)"
