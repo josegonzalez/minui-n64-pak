@@ -145,14 +145,27 @@ settings_menu() {
 			fi
 
 			echo "Save settings for game" >>"$minui_list_file"
-			echo "Start game" >>"$minui_list_file"
 
-			selection="$("minui-list-$PLATFORM" --format text --file "$minui_list_file" --header "N64 Settings")"
-			exit_code=$?
-			# exit codes: 2 = back button, 3 = menu button
-			if [ "$exit_code" -ne 0 ]; then
-				break
-			fi
+			selection="$("minui-list-$PLATFORM" --format text --file "$minui_list_file" --header "N64 Settings" --action-button "X" --action-text "PLAY")" || {
+				exit_code="$?"
+				# 4 = action button
+				# we break out of the loop because the action button is the play button
+				if [ "$exit_code" -eq 4 ]; then
+					echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout.tmp"
+					echo "$cpu_mode" >"$GAMESETTINGS_DIR/cpu-mode.tmp"
+					echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode.tmp"
+					echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect.tmp"
+					echo "$mupen64plus_version" >"$GAMESETTINGS_DIR/mupen64plus-version.tmp"
+					echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin.tmp"
+					break
+				fi
+
+				# 2 = back button, 3 = menu button
+				# both are errors, so we exit with the exit code
+				if [ "$exit_code" -ne 0 ]; then
+					exit "$exit_code"
+				fi
+			}
 
 			if echo "$selection" | grep -q "^Controller Layout: Default$"; then
 				controller_layout="lonko"
