@@ -10,10 +10,10 @@ exec 2>&1
 echo "1" >/tmp/stay_awake
 
 export EMU_DIR="$SDCARD_PATH/Emus/$PLATFORM/N64.pak/mupen64plus"
-export PACK_DIR="$SDCARD_PATH/Emus/$PLATFORM/N64.pak"
+export PAK_DIR="$SDCARD_PATH/Emus/$PLATFORM/N64.pak"
 export HOME="$USERDATA_PATH/N64-mupen64plus"
 export LD_LIBRARY_PATH="$EMU_DIR/lib:$LD_LIBRARY_PATH"
-export PATH="$EMU_DIR:$PACK_DIR/bin:$PATH"
+export PATH="$EMU_DIR:$PAK_DIR/bin:$PATH"
 export XDG_CONFIG_HOME="$USERDATA_PATH/N64-mupen64plus/config"
 export XDG_DATA_HOME="$USERDATA_PATH/N64-mupen64plus/data"
 
@@ -61,6 +61,11 @@ get_dpad_mode() {
 	if [ -f "$GAMESETTINGS_DIR/dpad-mode.tmp" ]; then
 		dpad_mode="$(cat "$GAMESETTINGS_DIR/dpad-mode.tmp")"
 	fi
+
+	if [ "$dpad_mode" = "f2" ]; then
+		dpad_mode="joystick-on-f2"
+	fi
+
 	echo "$dpad_mode"
 }
 
@@ -97,6 +102,48 @@ get_video_plugin() {
 	echo "$video_plugin"
 }
 
+write_settings_json() {
+	# name: Controller Layout
+	controller_layout="$(get_controller_layout)"
+	# name: CPU Mode
+	cpu_mode="$(get_cpu_mode)"
+	# name: DPAD Mode
+	dpad_mode="$(get_dpad_mode)"
+	# name: Glide Aspect
+	glide_aspect="$(get_glide_aspect)"
+	# name: Mupen64Plus Version
+	mupen64plus_version="$(get_mupen64plus_version)"
+	# name: Video Plugin
+	video_plugin="$(get_video_plugin)"
+
+	jq -rM '{settings: .settings}' "$PAK_DIR/config.json" >"$GAMESETTINGS_DIR/settings.json"
+
+	update_setting_key "$GAMESETTINGS_DIR/settings.json" "Controller Layout" "$controller_layout"
+	update_setting_key "$GAMESETTINGS_DIR/settings.json" "CPU Mode" "$cpu_mode"
+	update_setting_key "$GAMESETTINGS_DIR/settings.json" "DPAD Mode" "$dpad_mode"
+	update_setting_key "$GAMESETTINGS_DIR/settings.json" "Glide Aspect Ratio" "$glide_aspect"
+	update_setting_key "$GAMESETTINGS_DIR/settings.json" "Mupen64Plus Version" "$mupen64plus_version"
+	update_setting_key "$GAMESETTINGS_DIR/settings.json" "Video Plugin" "$video_plugin"
+}
+
+# the settings.json file contains a "settings" array
+# we have a series of settings that we need to update based on the values above
+# for each setting, we need to find the index of the setting where the setting's name key matches the name above
+# then we need to find the index of the option in the setting's options array that matches the value above
+# and finally we need to update the setting's selected_option key to the index of the option
+# the final settings.json should have a "settings" array, where each of the settings has an updated selected_option key
+update_setting_key() {
+	settings_file="$1"
+	setting_name="$2"
+	option_value="$3"
+
+	# fetch the option index
+	jq --arg name "$setting_name" --arg option "$option_value" '
+ 		.settings |= map(if .name == $name then . + {"selected_option": ((.options // []) | index($option) // -1)} else . end)
+	' "$settings_file" >"$settings_file.tmp"
+	mv -f "$settings_file.tmp" "$settings_file"
+}
+
 settings_menu() {
 	mkdir -p "$GAMESETTINGS_DIR"
 
@@ -113,6 +160,8 @@ settings_menu() {
 	glide_aspect="$(get_glide_aspect)"
 	mupen64plus_version="$(get_mupen64plus_version)"
 	video_plugin="$(get_video_plugin)"
+
+	write_settings_json
 
 	r2_value="$(coreutils timeout .1s evtest /dev/input/event3 2>/dev/null | awk '/ABS_RZ/{getline; print}' | awk '{print $2}' || true)"
 	if [ "$r2_value" = "255" ]; then
