@@ -124,14 +124,15 @@ write_settings_json() {
 	update_setting_key "$GAMESETTINGS_DIR/settings.json" "Glide Aspect Ratio" "$glide_aspect"
 	update_setting_key "$GAMESETTINGS_DIR/settings.json" "Mupen64Plus Version" "$mupen64plus_version"
 	update_setting_key "$GAMESETTINGS_DIR/settings.json" "Video Plugin" "$video_plugin"
+	sync
 }
 
 # the settings.json file contains a "settings" array
 # we have a series of settings that we need to update based on the values above
 # for each setting, we need to find the index of the setting where the setting's name key matches the name above
 # then we need to find the index of the option in the setting's options array that matches the value above
-# and finally we need to update the setting's selected_option key to the index of the option
-# the final settings.json should have a "settings" array, where each of the settings has an updated selected_option key
+# and finally we need to update the setting's selected key to the index of the option
+# the final settings.json should have a "settings" array, where each of the settings has an updated selected key
 update_setting_key() {
 	settings_file="$1"
 	setting_name="$2"
@@ -139,7 +140,7 @@ update_setting_key() {
 
 	# fetch the option index
 	jq --arg name "$setting_name" --arg option "$option_value" '
- 		.settings |= map(if .name == $name then . + {"selected_option": ((.options // []) | index($option) // -1)} else . end)
+ 		.settings |= map(if .name == $name then . + {"selected": ((.options // []) | index($option) // -1)} else . end)
 	' "$settings_file" >"$settings_file.tmp"
 	mv -f "$settings_file.tmp" "$settings_file"
 }
@@ -150,65 +151,33 @@ settings_menu() {
 	rm -f "$GAMESETTINGS_DIR/controller-layout.tmp"
 	rm -f "$GAMESETTINGS_DIR/cpu-mode.tmp"
 	rm -f "$GAMESETTINGS_DIR/dpad-mode.tmp"
-	rm -f "$GAMESETTINGS_DIR/glide-aspect.tmp"
 	rm -f "$GAMESETTINGS_DIR/mupen64plus-version.tmp"
-	rm -f "$GAMESETTINGS_DIR/video-plugin.tmp"
 
 	controller_layout="$(get_controller_layout)"
 	cpu_mode="$(get_cpu_mode)"
 	dpad_mode="$(get_dpad_mode)"
-	glide_aspect="$(get_glide_aspect)"
 	mupen64plus_version="$(get_mupen64plus_version)"
-	video_plugin="$(get_video_plugin)"
 
 	write_settings_json
 
 	r2_value="$(coreutils timeout .1s evtest /dev/input/event3 2>/dev/null | awk '/ABS_RZ/{getline; print}' | awk '{print $2}' || true)"
 	if [ "$r2_value" = "255" ]; then
 		while true; do
-			minui_list_file="/tmp/minui-list"
-			rm -f "$minui_list_file"
-			touch "$minui_list_file"
 
-			if [ "$controller_layout" = "default" ]; then
-				echo "Controller Layout: Default" >>"$minui_list_file"
-			else
-				echo "Controller Layout: Lonko" >>"$minui_list_file"
-			fi
-
-			if [ "$cpu_mode" = "ondemand" ]; then
-				echo "CPU Mode: On Demand" >>"$minui_list_file"
-			else
-				echo "CPU Mode: Performance" >>"$minui_list_file"
-			fi
-
-			if [ "$dpad_mode" = "dpad" ]; then
-				echo "DPAD Mode: DPAD" >>"$minui_list_file"
-			elif [ "$dpad_mode" = "joystick" ]; then
-				echo "DPAD Mode: Joystick" >>"$minui_list_file"
-			else
-				echo "DPAD Mode: Joystick on F2" >>"$minui_list_file"
-			fi
-
-			if [ "$mupen64plus_version" = "2.6.0" ]; then
-				echo "Mupen64Plus Version: 2.6.0" >>"$minui_list_file"
-			else
-				echo "Mupen64Plus Version: 2.5.9" >>"$minui_list_file"
-			fi
-
-			echo "Save settings for game" >>"$minui_list_file"
-
-			selection="$("minui-list-$PLATFORM" --format text --file "$minui_list_file" --header "N64 Settings" --action-button "X" --action-text "PLAY")" || {
+			minui_list_output="$("minui-list-$PLATFORM" --file "$GAMESETTINGS_DIR/settings.json" --item-key "settings" --header "N64 Settings" --action-button "X" --action-text "PLAY" --stdout-value state --confirm-text "CONFIRM")" || {
 				exit_code="$?"
 				# 4 = action button
 				# we break out of the loop because the action button is the play button
 				if [ "$exit_code" -eq 4 ]; then
-					echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout.tmp"
-					echo "$cpu_mode" >"$GAMESETTINGS_DIR/cpu-mode.tmp"
-					echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode.tmp"
-					echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect.tmp"
-					echo "$mupen64plus_version" >"$GAMESETTINGS_DIR/mupen64plus-version.tmp"
-					echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin.tmp"
+					# shellcheck disable=SC2016
+					echo "$minui_list_output" | jq -r --arg name "Controller Layout" '.settings[] | select(.name == $name) | .options[.selected]' >"$GAMESETTINGS_DIR/controller-layout.tmp"
+					# shellcheck disable=SC2016
+					echo "$minui_list_output" | jq -r --arg name "CPU Mode" '.settings[] | select(.name == $name) | .options[.selected]' >"$GAMESETTINGS_DIR/cpu-mode.tmp"
+					# shellcheck disable=SC2016
+					echo "$minui_list_output" | jq -r --arg name "DPAD Mode" '.settings[] | select(.name == $name) | .options[.selected]' >"$GAMESETTINGS_DIR/dpad-mode.tmp"
+					# shellcheck disable=SC2016
+					echo "$minui_list_output" | jq -r --arg name "Mupen64Plus Version" '.settings[] | select(.name == $name) | .options[.selected]' >"$GAMESETTINGS_DIR/mupen64plus-version.tmp"
+
 					break
 				fi
 
@@ -219,48 +188,19 @@ settings_menu() {
 				fi
 			}
 
-			if echo "$selection" | grep -q "^Controller Layout: Default$"; then
-				controller_layout="lonko"
-			elif echo "$selection" | grep -q "^Controller Layout: Lonko$"; then
-				controller_layout="default"
-			elif echo "$selection" | grep -q "^CPU Mode: On Demand$"; then
-				cpu_mode="performance"
-			elif echo "$selection" | grep -q "^CPU Mode: Performance$"; then
-				cpu_mode="ondemand"
-			elif echo "$selection" | grep -q "^Video Plugin: Rice$"; then
-				video_plugin="glide64mk2"
-			elif echo "$selection" | grep -q "^Video Plugin: Glide$"; then
-				video_plugin="rice"
-			elif echo "$selection" | grep -q "^Glide aspect ratio: 4:3$"; then
-				glide_aspect="16:9"
-			elif echo "$selection" | grep -q "^Glide aspect ratio: 16:9$"; then
-				glide_aspect="4:3"
-			elif echo "$selection" | grep -q "^DPAD Mode: DPAD$"; then
-				dpad_mode="joystick"
-			elif echo "$selection" | grep -q "^DPAD Mode: Joystick$"; then
-				dpad_mode="f2"
-			elif echo "$selection" | grep -q "^DPAD Mode: Joystick on F2$"; then
-				dpad_mode="dpad"
-			elif echo "$selection" | grep -q "^Mupen64Plus Version: 2.5.9$"; then
-				mupen64plus_version="2.6.0"
-			elif echo "$selection" | grep -q "^Mupen64Plus Version: 2.6.0$"; then
-				mupen64plus_version="2.5.9"
-			elif echo "$selection" | grep -q "^Save settings for game$"; then
-				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout"
-				echo "$cpu_mode" >"$GAMESETTINGS_DIR/cpu-mode"
-				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode"
-				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect"
-				echo "$mupen64plus_version" >"$GAMESETTINGS_DIR/mupen64plus-version"
-				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin"
-			elif echo "$selection" | grep -q "^Start game$"; then
-				echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout.tmp"
-				echo "$cpu_mode" >"$GAMESETTINGS_DIR/cpu-mode.tmp"
-				echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode.tmp"
-				echo "$glide_aspect" >"$GAMESETTINGS_DIR/glide-aspect.tmp"
-				echo "$mupen64plus_version" >"$GAMESETTINGS_DIR/mupen64plus-version.tmp"
-				echo "$video_plugin" >"$GAMESETTINGS_DIR/video-plugin.tmp"
-				break
-			fi
+			# fetch values for next loop
+			controller_layout="$(echo "$minui_list_output" | jq -r --arg name "Controller Layout" '.settings[] | select(.name == $name) | .options[.selected]')"
+			cpu_mode="$(echo "$minui_list_output" | jq -r --arg name "CPU Mode" '.settings[] | select(.name == $name) | .options[.selected]')"
+			dpad_mode="$(echo "$minui_list_output" | jq -r --arg name "DPAD Mode" '.settings[] | select(.name == $name) | .options[.selected]')"
+			mupen64plus_version="$(echo "$minui_list_output" | jq -r --arg name "Mupen64Plus Version" '.settings[] | select(.name == $name) | .options[.selected]')"
+
+			# save values to disk
+			echo "$minui_list_output" >"$GAMESETTINGS_DIR/settings.json"
+			echo "$controller_layout" >"$GAMESETTINGS_DIR/controller-layout"
+			echo "$cpu_mode" >"$GAMESETTINGS_DIR/cpu-mode"
+			echo "$dpad_mode" >"$GAMESETTINGS_DIR/dpad-mode"
+			echo "$mupen64plus_version" >"$GAMESETTINGS_DIR/mupen64plus-version"
+			sync
 		done
 	fi
 }

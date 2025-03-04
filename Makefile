@@ -2,7 +2,7 @@ TAG ?= latest
 PAK_NAME := $(shell jq -r .label config.json)
 
 PLATFORMS := tg5040
-MINUI_LIST_VERSION := 0.5.0
+MINUI_LIST_VERSION := 0.6.0
 COREUTILS_VERSION := 0.0.28
 
 clean:

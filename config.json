@@ -10,44 +10,28 @@
             "name": "Controller Layout",
             "options": ["default", "lonko"],
             "features": {
-                "confirm": false
+                "hide_confirm": false
             }
         },
         {
             "name": "DPAD Mode",
             "options": ["dpad", "joystick", "joystick-on-f2"],
             "features": {
-                "confirm": false
+                "hide_confirm": false
             }
         },
         {
             "name": "CPU Mode",
             "options": ["ondemand", "performance"],
             "features": {
-                "confirm": false
-            }
-        },
-        {
-            "name": "Video Plugin",
-            "options": ["rice", "glide64mk2"],
-            "features": {
-                "confirm": false,
-                "hidden": true
-            }
-        },
-        {
-            "name": "Glide Aspect Ratio",
-            "options": ["4:3", "16:9"],
-            "features": {
-                "confirm": false,
-                "hidden": true
+                "hide_confirm": false
             }
         },
         {
             "name": "Mupen64Plus Version",
             "options": ["2.5.9", "2.6.0"],
             "features": {
-                "confirm": false
+                "hide_confirm": false
             }
         },
         {
