@@ -2,19 +2,20 @@ TAG ?= latest
 PAK_NAME := $(shell jq -r .label config.json)
 
 PLATFORMS := tg5040
-MINUI_LIST_VERSION := 0.4.0
+MINUI_LIST_VERSION := 0.6.0
 COREUTILS_VERSION := 0.0.28
 
 clean:
 	rm -f bin/7zzs* || true 
 	rm -f bin/evtest || true
+	rm -f bin/jq || true
 	rm -f bin/sdl2imgshow || true
 	rm -f bin/coreutils || true
 	rm -f bin/coreutils.LICENSE || true
 	rm -f bin/minui-list-* || true
 	rm -f res/fonts/BPreplayBold.otf || true
 
-build: $(foreach platform,$(PLATFORMS),bin/minui-list-$(platform)) bin/7zzs bin/evtest bin/sdl2imgshow bin/coreutils bin/gptokeyb2.LICENSE res/fonts/BPreplayBold.otf
+build: $(foreach platform,$(PLATFORMS),bin/minui-list-$(platform)) bin/7zzs bin/evtest bin/jq bin/sdl2imgshow bin/coreutils bin/gptokeyb2.LICENSE res/fonts/BPreplayBold.otf
 
 bin/7zzs:
 	curl -sSL -o bin/7z.tar.xz "https://www.7-zip.org/a/7z2409-linux-arm64.tar.xz"
@@ -41,6 +42,9 @@ bin/evtest:
 
 bin/gptokeyb2.LICENSE:
 	curl -sSL -o bin/gptokeyb2.LICENSE "https://raw.githubusercontent.com/PortsMaster/gptokeyb2/refs/heads/master/LICENSE.txt"
+
+bin/jq:
+	curl -f -o bin/jq -sSL https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-arm64
 
 bin/minui-list-%:
 	curl -f -o bin/minui-list-$* -sSL https://github.com/josegonzalez/minui-list/releases/download/$(MINUI_LIST_VERSION)/minui-list-$*

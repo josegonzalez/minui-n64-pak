@@ -1,5 +1,41 @@
 {
     "label": "N64",
     "launch": "launch.sh",
-    "description": "Runs mupen64plus in standalone mode for the specified rom"
+    "description": "Runs mupen64plus in standalone mode for the specified rom",
+    "platforms": [
+        "tg5040"
+    ],
+    "settings": [
+        {
+            "name": "Controller Layout",
+            "options": ["default", "lonko"],
+            "features": {
+                "hide_confirm": false
+            }
+        },
+        {
+            "name": "DPAD Mode",
+            "options": ["dpad", "joystick", "joystick-on-f2"],
+            "features": {
+                "hide_confirm": false
+            }
+        },
+        {
+            "name": "CPU Mode",
+            "options": ["ondemand", "performance"],
+            "features": {
+                "hide_confirm": false
+            }
+        },
+        {
+            "name": "Mupen64Plus Version",
+            "options": ["2.5.9", "2.6.0"],
+            "features": {
+                "hide_confirm": false
+            }
+        },
+        {
+            "name": "Save settings for game"
+        }
+    ]
 }
