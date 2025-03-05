@@ -133,6 +133,10 @@ In addition to in-game saves, this pak supports a single save state. Save states
 
 Screenshots are written to `/Screenshots` with a sanitized version of the rom name as the screenshot prefix.
 
+### Sleep Mode
+
+Built-in MinUI cores have support for turning off the display and eventually shutting down when the power button is pressed. Standalone emulators do not have this functionality due to needing support inside of the console for this. At this time, this pak does not implement sleep mode.
+
 ### Debug Logging
 
 To enable debug logging, create a file named debug in `$SDCARD_PATH/.userdata/$PLATFORM/N64-mupen64plus` folder. Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
