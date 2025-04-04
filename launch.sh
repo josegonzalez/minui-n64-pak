@@ -1,19 +1,27 @@
 #!/bin/sh
-set -eo pipefail
-[ -f "$USERDATA_PATH/N64-mupen64plus/debug" ] && set -x
-echo $0 $*
+PAK_DIR="$(dirname "$0")"
+PAK_NAME="$(basename "$PAK_DIR")"
+PAK_NAME="${PAK_NAME%.*}"
+set -x
 
-rm -f "$LOGS_PATH/N64.txt"
-exec >>"$LOGS_PATH/N64.txt"
+rm -f "$LOGS_PATH/$PAK_NAME.txt"
+exec >>"$LOGS_PATH/$PAK_NAME.txt"
 exec 2>&1
 
-echo "1" >/tmp/stay_awake
+echo "$0" "$@"
+cd "$PAK_DIR" || exit 1
+mkdir -p "$USERDATA_PATH/$PAK_NAME"
+
+architecture=arm
+if uname -m | grep -q '64'; then
+	architecture=arm64
+fi
 
 export EMU_DIR="$SDCARD_PATH/Emus/$PLATFORM/N64.pak/mupen64plus"
 export PAK_DIR="$SDCARD_PATH/Emus/$PLATFORM/N64.pak"
 export HOME="$USERDATA_PATH/N64-mupen64plus"
 export LD_LIBRARY_PATH="$EMU_DIR/lib:$LD_LIBRARY_PATH"
-export PATH="$EMU_DIR:$PAK_DIR/bin:$PATH"
+export PATH="$EMU_DIR:$PAK_DIR/bin/$architecture:$PAK_DIR/bin/$PLATFORM:$PAK_DIR/bin:$PATH"
 export XDG_CONFIG_HOME="$USERDATA_PATH/N64-mupen64plus/config"
 export XDG_DATA_HOME="$USERDATA_PATH/N64-mupen64plus/data"
 
@@ -164,7 +172,7 @@ settings_menu() {
 	if [ "$r2_value" = "255" ]; then
 		while true; do
 
-			minui_list_output="$("minui-list-$PLATFORM" --file "$GAMESETTINGS_DIR/settings.json" --item-key "settings" --header "N64 Settings" --action-button "X" --action-text "PLAY" --stdout-value state --confirm-text "CONFIRM")" || {
+			minui_list_output="$(minui-list --file "$GAMESETTINGS_DIR/settings.json" --item-key "settings" --title "N64 Settings" --action-button "X" --action-text "PLAY" --write-value state --confirm-text "CONFIRM")" || {
 				exit_code="$?"
 				# 4 = action button
 				# we break out of the loop because the action button is the play button
@@ -350,25 +358,12 @@ show_message() {
 		seconds="forever"
 	fi
 
-	killall sdl2imgshow >/dev/null 2>&1 || true
+	killall minui-presenter >/dev/null 2>&1 || true
 	echo "$message" 1>&2
 	if [ "$seconds" = "forever" ]; then
-		sdl2imgshow \
-			-i "$PAK_DIR/res/background.png" \
-			-f "$PAK_DIR/res/fonts/BPreplayBold.otf" \
-			-s 27 \
-			-c "220,220,220" \
-			-q \
-			-t "$message" >/dev/null 2>&1 &
+		minui-presenter --message "$message" --timeout -1 &
 	else
-		sdl2imgshow \
-			-i "$PAK_DIR/res/background.png" \
-			-f "$PAK_DIR/res/fonts/BPreplayBold.otf" \
-			-s 27 \
-			-c "220,220,220" \
-			-q \
-			-t "$message" >/dev/null 2>&1
-		sleep "$seconds"
+		minui-presenter --message "$message" --timeout "$seconds"
 	fi
 }
 
@@ -384,7 +379,7 @@ cleanup() {
 	rm -f "/tmp/minui-list"
 
 	rm -f /tmp/stay_awake
-	killall sdl2imgshow >/dev/null 2>&1 || true
+	killall minui-presenter >/dev/null 2>&1 || true
 
 	# cleanup remap
 	rm -f /tmp/trimui_inputd/input_no_dpad
@@ -436,6 +431,9 @@ cleanup() {
 }
 
 main() {
+	echo "1" >/tmp/stay_awake
+	trap "cleanup" EXIT INT TERM HUP QUIT
+
 	if [ "$PLATFORM" = "tg3040" ] && [ -z "$DEVICE" ]; then
 		export DEVICE="brick"
 		export PLATFORM="tg5040"
@@ -451,8 +449,6 @@ main() {
 	if [ -z "$ROM_PATH" ]; then
 		return
 	fi
-
-	trap cleanup INT TERM EXIT
 
 	mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
 
