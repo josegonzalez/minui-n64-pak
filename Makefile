@@ -5,7 +5,7 @@ ARCHITECTURES := arm64
 PLATFORMS := tg5040
 
 COREUTILS_VERSION := 0.0.28
-EVTEST_VERSION := 1.35
+EVTEST_VERSION := 0.1.0
 JQ_VERSION := 1.7
 MINUI_LIST_VERSION := 0.10.1
 MINUI_PRESENTER_VERSION := 0.7.0
@@ -41,12 +41,9 @@ bin/arm64/coreutils:
 
 bin/%/evtest:
 	mkdir -p bin/$*
-	docker buildx build --platform linux/$* --load -f docker/$*/evtest/Dockerfile --progress plain --build-arg EVTEST_VERSION=$(EVTEST_VERSION) -t app/evtest:$*-latest docker/$*/evtest
-	docker container create --name extract app/evtest:$*-latest
-	docker container cp extract:/go/src/github.com/freedesktop/evtest/evtest bin/$*/evtest
-	docker container rm extract
-	chmod +x bin/$*/evtest
+	curl -sSL -o bin/$*/evtest https://github.com/josegonzalez/compiled-evtest/releases/download/$(EVTEST_VERSION)/evtest-$*
 	curl -sSL -o bin/$*/evtest.LICENSE "https://raw.githubusercontent.com/freedesktop-unofficial-mirror/evtest/refs/heads/master/COPYING"
+	chmod +x bin/$*/evtest
 
 bin/arm64/gptokeyb2.LICENSE:
 	mkdir -p bin/arm64
