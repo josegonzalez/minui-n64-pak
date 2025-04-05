@@ -6,3 +6,4 @@ res/fonts/*
 
 !bin/arm64/gptokeyb2
 !bin/arm64/set_ra_cfg.sh
+!bin/tg5040/handle-power-button

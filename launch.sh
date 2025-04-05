@@ -498,6 +498,12 @@ main() {
 
 	mkdir -p "$SDCARD_PATH/Screenshots"
 	rm -f "$LOGS_PATH/N64-mupen64plus.txt"
+
+	if [ -f "$PAK_DIR/bin/$PLATFORM/handle-power-button" ]; then
+		chmod +x "$PAK_DIR/bin/$PLATFORM/handle-power-button"
+		handle-power-button "$mupen64plus_bin" "$ROM_PATH" &
+	fi
+
 	if [ -f "$SAVESTATE_PATH" ]; then
 		"$mupen64plus_bin" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
 	else

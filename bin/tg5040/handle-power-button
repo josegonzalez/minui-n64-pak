@@ -1,0 +1,112 @@
+#!/bin/sh
+
+POWER_DEVICE="/dev/input/event1"
+BUTTON_CODE="code 116 (KEY_POWER)"
+BUTTON_VALUE="value 1"
+
+show_message() {
+	message="$1"
+	seconds="$2"
+
+	if [ -z "$seconds" ]; then
+		seconds="forever"
+	fi
+
+	killall minui-presenter >/dev/null 2>&1 || true
+	echo "$message" 1>&2
+	if [ "$seconds" = "forever" ]; then
+		minui-presenter --message "$message" --timeout -1 &
+	else
+		minui-presenter --message "$message" --timeout "$seconds"
+	fi
+}
+
+execute_power_off() {
+	PROCESS_PID="$1"
+	ROM_PATH="$2"
+	IS_STOPPED="$3"
+
+	# save the current state of the game with a save state
+	# TODO: implement me (via a faux keypress?)
+	# TODO: wait until the save state is created
+	sync
+
+	RELATIVE_ROM_PATH="${ROM_PATH#$SDCARD_PATH/}"
+	echo "$RELATIVE_ROM_PATH" >"$SHARED_USERDATA_PATH/.minui/auto_resume.txt"
+	sync
+
+	kill -9 "$PROCESS_PID"
+	sleep 0.5
+
+	show_message "Quicksave created, powering off" 1
+
+	poweroff
+}
+
+main() {
+	PROCESS_NAME="$1" ROM_PATH="$2"
+
+	just_pressed=false
+	is_pressed=false
+	just_released=false
+	pressed_at=""
+	sleep_at=""
+	is_stopped=false
+
+	PROCESS_PID="$(pgrep -f "$PROCESS_NAME")"
+	while kill -0 "$PROCESS_PID" 2>/dev/null; do
+		now="$(coreutils date +%s%N)"
+		now="${now%??????}"
+		force_power_off=false
+
+		if coreutils timeout 0.04s evtest "$POWER_DEVICE" 2>/dev/null | grep "$BUTTON_CODE" | grep -q "$BUTTON_VALUE"; then
+			if [ "$is_pressed" = "false" ]; then
+				just_pressed=true
+				pressed_at="$now"
+			else
+				just_pressed=false
+			fi
+			is_pressed=true
+			just_released=false
+		else
+			if [ "$is_pressed" = "true" ]; then
+				just_released=true
+				time_since_power_pressed=$((now - pressed_at))
+				if [ "$time_since_power_pressed" -ge 1000 ]; then
+					force_power_off=true
+				fi
+			else
+				just_released=false
+			fi
+			just_pressed=false
+			is_pressed=false
+			pressed_at=""
+		fi
+
+		if [ "$force_power_off" = "true" ]; then
+			execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
+			break
+		elif [ "$just_pressed" = "true" ]; then
+			# go to sleep
+			if [ "$is_stopped" = "false" ]; then
+				# only pause the game and power off the screen
+				kill -STOP "$PROCESS_PID"
+				is_stopped=true
+				sleep_at="$now"
+			else
+				# resume the game
+				kill -CONT "$PROCESS_PID"
+				is_stopped=false
+				sleep_at=""
+			fi
+		elif [ "$sleep_at" != "" ]; then
+			time_since_sleep=$((now - sleep_at))
+			if [ "$time_since_sleep" -ge 30000 ]; then
+				execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
+				break
+			fi
+		fi
+	done
+}
+
+main "$@"
