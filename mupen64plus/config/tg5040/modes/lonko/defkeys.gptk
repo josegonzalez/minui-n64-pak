@@ -22,7 +22,7 @@ b = l # A -> C right
 [controls:hotkey2]
 overlay = parent
 
-select = y
+select = y # Screenshot
 
 r1 = f5 # Save State
 l1 = f7 # Load State
