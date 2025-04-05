@@ -4,9 +4,18 @@ a = a # B -> A button
 x = b # Y -> B button
 
 guide = esc
-select = hold_state hotkey1
+r2 = hold_state hotkey1
+select = hold_state hotkey2
 
 [controls:hotkey1]
+overlay = parent
+
+y = i # X -> C up
+x = j # Y -> C left
+a = k # B -> C down
+b = l # A -> C right
+
+[controls:hotkey2]
 overlay = parent
 
 l1 = f12 # Screenshot
