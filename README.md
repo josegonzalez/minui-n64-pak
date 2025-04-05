@@ -44,6 +44,10 @@ N64 Controller Keys:
 | `R1`            | `R`         |
 | `B`             | `A`         |
 | `Y`             | `B`         |
+| `R2 + X`        | `C-Up`      |
+| `R2 + Y`        | `C-Left`    |
+| `R2 + A`        | `C-Right`   |
+| `R2 + B`        | `C-Down`    |
 
 | Action                  | Hardware Combination   |
 |-------------------------|------------------------|
