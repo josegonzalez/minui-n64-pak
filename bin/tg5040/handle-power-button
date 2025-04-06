@@ -159,6 +159,11 @@ main() {
 			is_pressed=true
 			just_pressed=false
 			just_released=false
+			time_since_power_pressed=$((now - pressed_at))
+			if [ "$time_since_power_pressed" -ge 1000 ]; then
+				echo "Will force a power off: $time_since_power_pressed"
+				force_power_off=true
+			fi
 		elif echo "$line" | grep -q -v "$BUTTON_CODE"; then
 			continue
 		fi
