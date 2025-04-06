@@ -53,7 +53,10 @@ main() {
     value_pressed="value 1"
     value_held="value 2"
 
-    GOODNAME="$(get_rom_name "$ROM_PATH")"
+    game_name="$(cat "$SDCARD_PATH/.userdata/shared/.minui/recent.txt" | head -n1 | cut -d$'\t' -f2)"
+    if [ -z "$game_name" ]; then
+        game_name="$(get_rom_name "$ROM_PATH")"
+    fi
 
     evtest "$MENU_DEVICE" 2>/dev/null | while read -r line; do
         now="$(coreutils date +%s%N)"
@@ -92,7 +95,7 @@ main() {
             kill -USR1 "$PAUSE_EMIT_KEY_PID"
             echo "Taking a screenshot"
             pngwrite "$screenshot_path"
-            minui-list --file "$PAK_DIR/res/menu.json" --background-image "$screenshot_path" --title "$GOODNAME" --confirm-text "OKAY" --cancel-text "BACK" --write-value state --write-location /tmp/minui-list-state --item-key menu
+            minui-list --file "$PAK_DIR/res/menu.json" --background-image "$screenshot_path" --title "$game_name" --confirm-text "OKAY" --cancel-text "BACK" --write-value state --write-location /tmp/minui-list-state --item-key menu
             exit_code=$?
             # exit codes: 2 = back button, 3 = menu button
             if [ "$exit_code" -ne 0 ]; then
