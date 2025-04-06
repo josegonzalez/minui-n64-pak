@@ -315,16 +315,6 @@ configure_cpu() {
 	fi
 }
 
-get_resolution() {
-	if [ "$PLATFORM" = "tg5040" ]; then
-		if [ "$DEVICE" = "brick" ]; then
-			echo "1024x768"
-		else
-			echo "1280x720"
-		fi
-	fi
-}
-
 show_message() {
 	message="$1"
 	seconds="$2"
@@ -410,17 +400,6 @@ cleanup() {
 	sync
 }
 
-launch_mupen64plus() {
-	ROM_PATH="$1"
-	SAVESTATE_PATH="$2"
-
-	if [ -f "$SAVESTATE_PATH" ]; then
-		"$mupen64plus_bin" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt"
-	else
-		"$mupen64plus_bin" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt"
-	fi
-}
-
 main() {
 	echo "1" >/tmp/stay_awake
 	trap "cleanup" EXIT INT TERM HUP QUIT
@@ -464,23 +443,21 @@ main() {
 	fi
 	SAVESTATE_PATH="$SDCARD_PATH/Saves/N64/$sanitized_rom_name.st${save_state}"
 
-	resolution="$(get_resolution)"
-
 	mupen64plus_version="$(get_mupen64plus_version)"
-	mupen64plus_bin="mupen64plus-${mupen64plus_version}"
-	PLUGIN_DIR="$EMU_DIR/plugin/$PLATFORM/${mupen64plus_version}"
+	export MUPEN64PLUS_BIN="mupen64plus-${mupen64plus_version}"
+	export PLUGIN_DIR="$EMU_DIR/plugin/$PLATFORM/${mupen64plus_version}"
 	export LD_LIBRARY_PATH="$EMU_DIR/lib/${mupen64plus_version}:$LD_LIBRARY_PATH"
 
 	mkdir -p "$SDCARD_PATH/Screenshots"
 	rm -f "$LOGS_PATH/N64-mupen64plus.txt"
 
-	launch_mupen64plus "$ROM_PATH" "$SAVESTATE_PATH" &
+	launch-mupen64plus "$ROM_PATH" "$SAVESTATE_PATH" &
 	sleep 0.5
 
 	emit-key -k p -s &
 	PAUSE_EMIT_KEY_PID="$!"
 
-	pgrep -f "$mupen64plus_bin" | tail -n 1 >"/tmp/mupen64plus.pid"
+	pgrep -f "$MUPEN64PLUS_BIN" | tail -n 1 >"/tmp/mupen64plus.pid"
 	PROCESS_PID="$(cat "/tmp/mupen64plus.pid")"
 	if [ -f "$PAK_DIR/bin/$PLATFORM/handle-power-button" ]; then
 		chmod +x "$PAK_DIR/bin/$PLATFORM/handle-power-button"
