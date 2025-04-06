@@ -6,4 +6,7 @@ res/fonts/*
 
 !bin/arm64/gptokeyb2
 !bin/arm64/set_ra_cfg.sh
+!bin/arm64/pngwrite
+!bin/arm64/pngwrite.LICENSE
 !bin/tg5040/handle-power-button
+!bin/tg5040/handle-menu-button
