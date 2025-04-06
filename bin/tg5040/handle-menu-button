@@ -96,6 +96,9 @@ main() {
             exit_code=$?
             # exit codes: 2 = back button, 3 = menu button
             if [ "$exit_code" -ne 0 ]; then
+                if [ "$exit_code" -eq 3 ]; then
+                    skip_next_menu=true
+                fi
                 # unpause
                 kill -USR1 "$PAUSE_EMIT_KEY_PID"
             else
