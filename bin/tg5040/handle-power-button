@@ -83,7 +83,6 @@ main() {
 		now="${now%??????}"
 		force_power_off=false
 
-		echo "Checking if the power button is pressed: time=$now"
 		if coreutils timeout 0.04s evtest "$POWER_DEVICE" 2>/dev/null | grep "$BUTTON_CODE" | grep -q "$BUTTON_VALUE"; then
 			echo "The power button is pressed: time=$now"
 			if [ "$is_pressed" = "false" ]; then
