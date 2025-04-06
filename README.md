@@ -139,7 +139,16 @@ Screenshots are written to `/Screenshots` with a sanitized version of the rom na
 
 ### Sleep Mode
 
-Built-in MinUI cores have support for turning off the display and eventually shutting down when the power button is pressed. Standalone emulators do not have this functionality due to needing support inside of the console for this. At this time, this pak does not implement sleep mode.
+> [!NOTE]
+> The screen will not turn off during the initial faux-sleep mode. This will be implemented in a future revision.
+
+This N64.pak partially emulates sleep mode:
+
+- Pressing the `POWER` button will pause the emulator, but will not disable the screen.
+- Pressing and holding the `POWER` button for a second will shut down the device.
+- If the emulator is paused for 30 seconds, the device will shut down.
+
+If the device is shut down through either pressing and holding `POWER` _or_ waiting the 30 seconds for sleep, the emulator will briefly wake up, take an auto-resume save state, go back to sleep, and then the device will shut down. Once the device turns back on, the game will be loaded with the correct save state.
 
 ### Debug Logging
 
