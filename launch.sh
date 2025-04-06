@@ -220,20 +220,20 @@ get_rom_path() {
 
 	ROM_PATH=""
 	case "$*" in
-		*.n64 | *.v64 | *.z64)
-			ROM_PATH="$*"
-			;;
-		*.zip | *.7z)
-			existing_governor="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
-			existing_max_freq="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq)"
-			echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-			echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-			ROM_PATH="$TEMP_ROM"
+	*.n64 | *.v64 | *.z64)
+		ROM_PATH="$*"
+		;;
+	*.zip | *.7z)
+		existing_governor="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
+		existing_max_freq="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq)"
+		echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+		echo 1800000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+		ROM_PATH="$TEMP_ROM"
 
-			7zzs e "$*" -so >"$TEMP_ROM"
-			echo "$existing_governor" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-			echo "$existing_max_freq" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-			;;
+		7zzs e "$*" -so >"$TEMP_ROM"
+		echo "$existing_governor" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+		echo "$existing_max_freq" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+		;;
 	esac
 
 	echo "$ROM_PATH"
@@ -388,10 +388,10 @@ cleanup() {
 	rm -f "/tmp/mupen64plus.pid"
 	rm -f "/tmp/stay_awake"
 	killall minui-presenter >/dev/null 2>&1 || true
-	if [ -s "/tmp/handle-power-button.pid" ]; then
+	if [ -s "/tmp/handle-power-button.pid" ] && [ "$(cat "/tmp/handle-power-button.pid")" != "0" ]; then
 		kill -9 "$(cat "/tmp/handle-power-button.pid")"
-		rm -f "/tmp/handle-power-button.pid"
 	fi
+	rm -f "/tmp/handle-power-button.pid"
 
 	if [ -f "$HOME/cpu_governor.txt" ]; then
 		cat "$HOME/cpu_governor.txt" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
