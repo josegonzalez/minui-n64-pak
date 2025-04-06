@@ -53,10 +53,24 @@ execute_power_off() {
 
 	killall emit-key >/dev/null 2>&1 || true
 
-	# switch to the autoresume state slot and save
-	ROM_NAME="$(basename -- "$ROM_PATH")"
-	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
-	rm -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st9"
+	GOODNAME=""
+	if [ -f "$LOGS_PATH/N64-mupen64plus.txt" ]; then
+		GOODNAME="$(grep 'Core: Goodname:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		OVERRIDE_GOODNAME="$(grep 'Core: Name:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		if [ -n "$OVERRIDE_GOODNAME" ]; then
+			GOODNAME="$OVERRIDE_GOODNAME"
+		fi
+
+		rm -f "$LOGS_PATH/N64-mupen64plus.txt"
+	elif [ -f "$GAMESETTINGS_DIR/goodname" ]; then
+		GOODNAME="$(cat "$GAMESETTINGS_DIR/goodname")"
+	fi
+	if [ -n "$GOODNAME" ]; then
+		echo "$GOODNAME" >"$GAMESETTINGS_DIR/goodname"
+		sync
+	fi
+
+	rm -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st9"
 
 	# games must be unpaused to save
 	if [ "$IS_STOPPED" = "true" ]; then
