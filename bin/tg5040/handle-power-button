@@ -135,7 +135,7 @@ main() {
 			time_since_sleep=$((now - sleep_at))
 			if [ "$time_since_sleep" -ge 30000 ]; then
 				sleep 1
-				echo "Forcing a power off"
+				echo "Forcing a power off after enough sleep: $time_since_sleep"
 				PAUSE_EMIT_KEY_PID="$PAUSE_EMIT_KEY_PID" execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
 				break
 			fi
