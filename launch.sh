@@ -387,7 +387,7 @@ cleanup() {
 	rm -f "/tmp/minui-list"
 	rm -f "/tmp/mupen64plus.pid"
 	rm -f "/tmp/stay_awake"
-	rm -f "/tmp/force-power-off"
+	rm -f "/tmp/force-power-off" "/tmp/force-power-off-tracker"
 	killall emit-key >/dev/null 2>&1 || true
 	killall evtest >/dev/null 2>&1 || true
 	killall minui-presenter >/dev/null 2>&1 || true
@@ -532,6 +532,17 @@ main() {
 	while kill -0 "$PROCESS_PID" 2>/dev/null; do
 		sleep 1
 	done
+
+	if [ -f "/tmp/force-power-off" ]; then
+		AUTO_RESUME_FILE="$SHARED_USERDATA_PATH/.minui/auto_resume.txt"
+		echo "$ROM_PATH" >"$AUTO_RESUME_FILE"
+		sync
+		rm /tmp/minui_exec
+		shutdown
+		while :; do
+			sleep 1
+		done
+	fi
 }
 
 main "$@"
