@@ -387,9 +387,10 @@ cleanup() {
 	GOODNAME=""
 	if [ -f "$LOGS_PATH/N64-mupen64plus.txt" ]; then
 		GOODNAME="$(grep 'Core: Goodname:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
-		OVERRIDE_GOODNAME="$(grep 'Core: Name:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		OVERRIDE_GOODNAME="$(grep 'Core Status: Saved state to:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
 		if [ -n "$OVERRIDE_GOODNAME" ]; then
-			GOODNAME="$OVERRIDE_GOODNAME"
+			# remove the st0 from the override goodname
+			GOODNAME="${OVERRIDE_GOODNAME%.st0}"
 		fi
 
 		rm -f "$LOGS_PATH/N64-mupen64plus.txt"
@@ -437,7 +438,7 @@ cleanup() {
 	if [ -f "/tmp/n64-saves-restored" ]; then
 		mkdir -p "$SHARED_USERDATA_PATH/.minui/N64"
 		# create the resume slot if st0 exists
-		if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st0" ]; then
+		if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st0" ] || [ -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$GOODNAME.st0" ]; then
 			echo "0" >"$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
 		else
 			rm -f "$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
