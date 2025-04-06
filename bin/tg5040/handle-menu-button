@@ -92,7 +92,7 @@ main() {
             kill -USR1 "$PAUSE_EMIT_KEY_PID"
             echo "Taking a screenshot"
             pngwrite "$screenshot_path"
-            echo -e "Continue\nSave\nLoad\nExit" | minui-list --format text --file - --background-image "$screenshot_path" --title "$GOODNAME" --confirm-text "OKAY" --cancel-text "BACK" --write-value state --write-location /tmp/minui-list-state
+            minui-list --file "$PAK_DIR/res/menu.json" --background-image "$screenshot_path" --title "$GOODNAME" --confirm-text "OKAY" --cancel-text "BACK" --write-value state --write-location /tmp/minui-list-state --item-key menu
             exit_code=$?
             # exit codes: 2 = back button, 3 = menu button
             if [ "$exit_code" -ne 0 ]; then
@@ -101,7 +101,7 @@ main() {
             else
                 output="$(cat /tmp/minui-list-state)"
                 selected_index="$(echo "$output" | jq -r '.selected')"
-                selection="$(echo "$output" | jq -r ".settings[$selected_index].name")"
+                selection="$(echo "$output" | jq -r ".menu[$selected_index].name")"
                 if [ "$selection" = "Continue" ]; then
                     kill -USR1 "$PAUSE_EMIT_KEY_PID"
                 elif [ "$selection" = "Save" ]; then

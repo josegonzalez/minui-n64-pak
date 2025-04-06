@@ -1,0 +1,16 @@
+{
+    "menu": [
+        {
+            "name": "Continue"
+        },
+        {
+            "name": "Save"
+        },
+        {
+            "name": "Load"
+        },
+        {
+            "name": "Exit"
+        }
+    ]
+}
