@@ -5,9 +5,10 @@ ARCHITECTURES := arm64
 PLATFORMS := tg5040
 
 COREUTILS_VERSION := 0.0.28
+EMIT_KEY_VERSION := 0.2.0
 EVTEST_VERSION := 0.1.0
 JQ_VERSION := 1.7
-MINUI_LIST_VERSION := 0.10.1
+MINUI_LIST_VERSION := 0.11.0
 MINUI_PRESENTER_VERSION := 0.7.0
 
 clean:
@@ -18,8 +19,9 @@ clean:
 	rm -f bin/*/minui-presenter || true
 	rm -f bin/*/coreutils || true
 	rm -f bin/*/coreutils.LICENSE || true
+	rm -f bin/*/emit-key || true
 
-build: $(foreach platform,$(PLATFORMS),bin/$(platform)/minui-list bin/$(platform)/minui-presenter) $(foreach arch,$(ARCHITECTURES),bin/$(arch)/7zzs bin/$(arch)/evtest bin/$(arch)/coreutils bin/$(arch)/jq) bin/arm64/gptokeyb2.LICENSE
+build: $(foreach platform,$(PLATFORMS),bin/$(platform)/minui-list bin/$(platform)/minui-presenter bin/$(platform)/emit-key) $(foreach arch,$(ARCHITECTURES),bin/$(arch)/7zzs bin/$(arch)/evtest bin/$(arch)/coreutils bin/$(arch)/jq) bin/arm64/gptokeyb2.LICENSE
 
 bin/arm64/7zzs:
 	mkdir -p bin/arm64
@@ -53,6 +55,11 @@ bin/arm64/jq:
 	mkdir -p bin/arm64
 	curl -f -o bin/arm64/jq -sSL https://github.com/jqlang/jq/releases/download/jq-$(JQ_VERSION)/jq-linux-arm64
 	curl -sSL -o bin/arm64/jq.LICENSE "https://raw.githubusercontent.com/jqlang/jq/refs/heads/$(JQ_VERSION)/COPYING"
+
+bin/%/emit-key:
+	mkdir -p bin/$*
+	curl -f -o bin/$*/emit-key -sSL https://github.com/josegonzalez/emit-key/releases/download/$(EMIT_KEY_VERSION)/emit-key-$*
+	chmod +x bin/$*/emit-key
 
 bin/%/minui-list:
 	mkdir -p bin/$*

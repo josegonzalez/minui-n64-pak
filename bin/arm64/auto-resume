@@ -1,0 +1,16 @@
+#!/bin/sh
+BIN_DIR="$(dirname "$0")"
+PAK_DIR="$(dirname "$(dirname "$BIN_DIR")")"
+PAK_NAME="$(basename "$PAK_DIR")"
+PAK_NAME="${PAK_NAME%.*}"
+
+ROM_PATH="$1"
+
+# remove the auto-resume line from the auto.sh file
+sed -i "/${PAK_NAME}.pak-auto-resume/d" "$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
+
+# set the resume slot
+echo 9 >/tmp/resume_slot.txt
+
+# launch the game
+"$PAK_DIR/launch.sh" "$ROM_PATH"

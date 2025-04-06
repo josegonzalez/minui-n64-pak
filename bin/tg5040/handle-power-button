@@ -1,0 +1,233 @@
+#!/bin/sh
+BIN_DIR="$(dirname "$0")"
+PAK_DIR="$(dirname "$(dirname "$BIN_DIR")")"
+PAK_NAME="$(basename "$PAK_DIR")"
+PAK_NAME="${PAK_NAME%.*}"
+
+rm -f "$LOGS_PATH/$PAK_NAME.power-button.txt"
+exec >>"$LOGS_PATH/$PAK_NAME.power-button.txt"
+exec 2>&1
+
+echo "$0" "$@"
+cd "$PAK_DIR" || exit 1
+
+architecture=arm
+if uname -m | grep -q '64'; then
+	architecture=arm64
+fi
+
+export PATH="$PAK_DIR/bin/$architecture:$PAK_DIR/bin/$PLATFORM:$PAK_DIR/bin:$PATH"
+
+POWER_DEVICE="/dev/input/event1"
+BUTTON_CODE="code 116 (KEY_POWER)"
+
+show_message() {
+	message="$1"
+	seconds="$2"
+
+	if [ -z "$seconds" ]; then
+		seconds="forever"
+	fi
+
+	killall minui-presenter >/dev/null 2>&1 || true
+	echo "$message" 1>&2
+	if [ "$seconds" = "forever" ]; then
+		minui-presenter --message "$message" --timeout -1 &
+	else
+		minui-presenter --message "$message" --timeout "$seconds"
+	fi
+}
+
+execute_power_off() {
+	set -x
+	PROCESS_PID="$1"
+	ROM_PATH="$2"
+	IS_STOPPED="$3"
+
+	if [ -f "/tmp/force-power-off" ]; then
+		return
+	fi
+
+	touch "/tmp/force-power-off"
+	sync
+
+	killall emit-key >/dev/null 2>&1 || true
+
+	GOODNAME=""
+	if [ -f "$LOGS_PATH/N64-mupen64plus.txt" ]; then
+		GOODNAME="$(grep 'Core: Goodname:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		OVERRIDE_GOODNAME="$(grep 'Core: Name:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		if [ -n "$OVERRIDE_GOODNAME" ]; then
+			GOODNAME="$OVERRIDE_GOODNAME"
+		fi
+
+		rm -f "$LOGS_PATH/N64-mupen64plus.txt"
+	elif [ -f "$GAMESETTINGS_DIR/goodname" ]; then
+		GOODNAME="$(cat "$GAMESETTINGS_DIR/goodname")"
+	fi
+	if [ -n "$GOODNAME" ]; then
+		echo "$GOODNAME" >"$GAMESETTINGS_DIR/goodname"
+		sync
+	fi
+
+	rm -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st9"
+
+	# games must be unpaused to save
+	if [ "$IS_STOPPED" = "true" ]; then
+		emit-key -k p,9,f5:500000,p
+	else
+		emit-key -k 9,f5:500000,p
+	fi
+	sync
+
+	# restore saves to the normal MinUI paths
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.eep" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.eep" "$SDCARD_PATH/Saves/N64/"
+	fi
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.mpk" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.mpk" "$SDCARD_PATH/Saves/N64/"
+	fi
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st0" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	fi
+	# auto-resume slot
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st9" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st9" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	fi
+	sync
+
+	if [ ! -f "$SDCARD_PATH/.userdata/$PLATFORM/auto.sh" ]; then
+		echo '#!/bin/sh' >"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
+		echo '' >>"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
+	fi
+
+	RELATIVE_ROM_PATH="${ROM_PATH#$SDCARD_PATH}"
+	echo "test -f \"\$SDCARD_PATH/Emus/\$PLATFORM/$PAK_NAME.pak/bin/$architecture/auto-resume\" && \"\$SDCARD_PATH/Emus/\$PLATFORM/$PAK_NAME.pak/bin/$architecture/auto-resume\" \"$ROM_PATH\" # ${PAK_NAME}.pak-auto-resume" >>"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
+
+	sync
+	show_message "Quicksave created, powering off" forever
+
+	kill -9 "$PROCESS_PID"
+	killall minui-presenter >/dev/null 2>&1 || true
+}
+
+force_power_off_timer() {
+	PROCESS_PID="$1"
+	ROM_PATH="$2"
+
+	echo "Starting force power off timer"
+	sleep_at=""
+	while true; do
+		if [ -f "/tmp/force-power-off-tracker" ]; then
+			echo "Power off in progress, exiting"
+			break
+		fi
+
+		sleep 1
+		now="$(coreutils date +%s%N)"
+		now="${now%??????}"
+
+		if [ ! -f "/tmp/force-power-off-tracker" ]; then
+			sleep_at=""
+			continue
+		elif [ "$sleep_at" = "" ]; then
+			echo "Starting sleep timer"
+			sleep_at="$now"
+		fi
+
+		time_since_sleep=$((now - sleep_at))
+		if [ "$time_since_sleep" -ge 30000 ]; then
+			echo "Forcing a power off after enough sleep: $time_since_sleep"
+			PAUSE_EMIT_KEY_PID="$PAUSE_EMIT_KEY_PID" execute_power_off "$PROCESS_PID" "$ROM_PATH" "true"
+			break
+		fi
+	done
+
+	echo "Force power off timer exited"
+}
+
+main() {
+	PROCESS_PID="$1" ROM_PATH="$2"
+
+	just_pressed=false
+	is_pressed=false
+	just_released=false
+	pressed_at=""
+	is_stopped=false
+
+	value_unpressed="value 0"
+	value_pressed="value 1"
+	value_held="value 2"
+
+	force_power_off_timer "$PROCESS_PID" "$ROM_PATH" >"$LOGS_PATH/$PAK_NAME.power-off-timer.txt" 2>&1 &
+
+	evtest "/dev/input/event1" 2>/dev/null | while read -r line; do
+		now="$(coreutils date +%s%N)"
+		now="${now%??????}"
+		force_power_off=false
+
+		if echo "$line" | grep "$BUTTON_CODE" | grep -q "$value_pressed"; then
+			echo "The power button is pressed: time=$now"
+			if [ "$is_pressed" = "false" ]; then
+				echo "The power button was just pressed: time=$now"
+				just_pressed=true
+				pressed_at="$now"
+			else
+				echo "The power button was already pressed: time=$now"
+				just_pressed=false
+			fi
+			is_pressed=true
+			just_released=false
+		elif echo "$line" | grep "$BUTTON_CODE" | grep -q "$value_unpressed"; then
+			if [ "$is_pressed" = "true" ]; then
+				echo "The power button was just released: time=$now"
+				just_released=true
+				time_since_power_pressed=$((now - pressed_at))
+				if [ "$time_since_power_pressed" -ge 1000 ]; then
+					echo "Will force a power off: $time_since_power_pressed"
+					force_power_off=true
+				fi
+			else
+				just_released=false
+			fi
+			just_pressed=false
+			is_pressed=false
+			pressed_at=""
+		elif echo "$line" | grep "$BUTTON_CODE" | grep -q "$value_held"; then
+			is_pressed=true
+			just_pressed=false
+			just_released=false
+			time_since_power_pressed=$((now - pressed_at))
+			if [ "$time_since_power_pressed" -ge 1000 ]; then
+				echo "Will force a power off: $time_since_power_pressed"
+				force_power_off=true
+			fi
+		elif echo "$line" | grep -q -v "$BUTTON_CODE"; then
+			continue
+		fi
+
+		if [ "$force_power_off" = "true" ]; then
+			sleep 1
+			echo "Forcing a power off"
+			PAUSE_EMIT_KEY_PID="$PAUSE_EMIT_KEY_PID" execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
+			break
+		elif [ "$just_pressed" = "true" ]; then
+			# go to sleep
+			if [ "$is_stopped" = "false" ]; then
+				echo "Pausing the game with a signal"
+				kill -USR1 "$PAUSE_EMIT_KEY_PID"
+				is_stopped=true
+				touch "/tmp/force-power-off-tracker"
+			else
+				echo "Resuming the game with a signal"
+				kill -USR1 "$PAUSE_EMIT_KEY_PID"
+				is_stopped=false
+				rm -f "/tmp/force-power-off-tracker"
+			fi
+		fi
+
+		sleep 0.02
+	done
+}
+
+main "$@"

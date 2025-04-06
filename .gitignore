@@ -4,5 +4,6 @@ bin/*
 res/fonts/*
 !res/fonts/.gitkeep
 
-!bin/gptokeyb2
-!bin/set_ra_cfg.sh
+!bin/arm64/gptokeyb2
+!bin/arm64/set_ra_cfg.sh
+!bin/tg5040/handle-power-button
