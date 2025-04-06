@@ -80,6 +80,22 @@ execute_power_off() {
 	fi
 	sync
 
+	# restore saves to the normal MinUI paths
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.eep" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.eep" "$SDCARD_PATH/Saves/N64/"
+	fi
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.mpk" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.mpk" "$SDCARD_PATH/Saves/N64/"
+	fi
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st0" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	fi
+	# auto-resume slot
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st9" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st9" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	fi
+	sync
+
 	if [ ! -f "$SDCARD_PATH/.userdata/$PLATFORM/auto.sh" ]; then
 		echo '#!/bin/sh' >"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
 		echo '' >>"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
