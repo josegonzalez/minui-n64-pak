@@ -48,6 +48,9 @@ execute_power_off() {
 	# save the current state of the game with a save state
 	# TODO: implement me (via a faux keypress?)
 	# TODO: wait until the save state is created
+	if [ "$IS_STOPPED" = "true" ]; then
+		kill -CONT "$PROCESS_PID"
+	fi
 	sync
 
 	RELATIVE_ROM_PATH="${ROM_PATH#$SDCARD_PATH/}"
