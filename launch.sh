@@ -383,6 +383,11 @@ cleanup() {
 	GOODNAME=""
 	if [ -f "$LOGS_PATH/N64-mupen64plus.txt" ]; then
 		GOODNAME="$(grep 'Core: Goodname:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		OVERRIDE_GOODNAME="$(grep 'Core: Name:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		if [ -n "$OVERRIDE_GOODNAME" ]; then
+			GOODNAME="$OVERRIDE_GOODNAME"
+		fi
+
 		rm -f "$LOGS_PATH/N64-mupen64plus.txt"
 	elif [ -f "$GAMESETTINGS_DIR/goodname" ]; then
 		GOODNAME="$(cat "$GAMESETTINGS_DIR/goodname")"
