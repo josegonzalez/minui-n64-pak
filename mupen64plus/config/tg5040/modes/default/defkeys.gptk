@@ -3,7 +3,6 @@ overlay = clear
 a = a # B -> A button
 x = b # Y -> B button
 
-guide = esc
 r2 = hold_state hotkey1
 select = hold_state hotkey2
 
