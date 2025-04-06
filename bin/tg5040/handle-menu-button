@@ -52,6 +52,7 @@ main() {
     value_unpressed="value 0"
     value_pressed="value 1"
     value_held="value 2"
+    skip_next_menu=false
 
     game_name="$(cat "$SDCARD_PATH/.userdata/shared/.minui/recent.txt" | head -n1 | cut -d$'\t' -f2)"
     if [ -z "$game_name" ]; then
@@ -64,13 +65,14 @@ main() {
 
         if echo "$line" | grep "$BUTTON_CODE" | grep -q "$value_pressed"; then
             echo "The menu button is pressed: time=$now"
-            if [ "$is_pressed" = "false" ]; then
+            if [ "$is_pressed" = "false" ] && [ "$skip_next_menu" = "false" ]; then
                 echo "The menu button was just pressed: time=$now"
                 just_pressed=true
             else
                 echo "The menu button was already pressed: time=$now"
                 just_pressed=false
             fi
+            skip_next_menu=false
             is_pressed=true
             just_released=false
         elif echo "$line" | grep "$BUTTON_CODE" | grep -q "$value_unpressed"; then
