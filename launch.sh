@@ -515,7 +515,6 @@ main() {
 	mkdir -p "$SDCARD_PATH/Screenshots"
 	rm -f "$LOGS_PATH/N64-mupen64plus.txt"
 
-	date >"$LOGS_PATH/$PAK_NAME.start.txt"
 	launch_mupen64plus "$ROM_PATH" "$SAVESTATE_PATH" &
 	sleep 0.5
 
