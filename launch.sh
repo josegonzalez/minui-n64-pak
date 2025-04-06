@@ -389,6 +389,7 @@ cleanup() {
 	rm -f "/tmp/stay_awake"
 	rm -f "/tmp/force-power-off"
 	killall emit-key >/dev/null 2>&1 || true
+	killall evtest >/dev/null 2>&1 || true
 	killall minui-presenter >/dev/null 2>&1 || true
 
 	if [ -f "$HOME/cpu_governor.txt" ]; then
