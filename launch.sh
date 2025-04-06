@@ -392,15 +392,18 @@ cleanup() {
 	killall minui-presenter >/dev/null 2>&1 || true
 
 	if [ -f "$HOME/cpu_governor.txt" ]; then
-		cat "$HOME/cpu_governor.txt" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+		governor="$(cat "$HOME/cpu_governor.txt")"
+		echo "$governor" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
 		rm -f "$HOME/cpu_governor.txt"
 	fi
 	if [ -f "$HOME/cpu_min_freq.txt" ]; then
-		cat "$HOME/cpu_min_freq.txt" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+		min_freq="$(cat "$HOME/cpu_min_freq.txt")"
+		echo "$min_freq" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
 		rm -f "$HOME/cpu_min_freq.txt"
 	fi
 	if [ -f "$HOME/cpu_max_freq.txt" ]; then
-		cat "$HOME/cpu_max_freq.txt" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+		max_freq="$(cat "$HOME/cpu_max_freq.txt")"
+		echo "$max_freq" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
 		rm -f "$HOME/cpu_max_freq.txt"
 	fi
 
