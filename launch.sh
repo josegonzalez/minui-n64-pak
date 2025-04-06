@@ -407,12 +407,13 @@ cleanup() {
 		sync
 	fi
 
-	rm -f "/tmp/minui-list"
+	rm -f "/tmp/minui-list" "/tmp/minui-list-state"
 	rm -f "/tmp/mupen64plus.pid"
 	rm -f "/tmp/stay_awake"
-	rm -f "/tmp/force-power-off" "/tmp/force-power-off-tracker"
+	rm -f "/tmp/force-power-off" "/tmp/force-power-off-tracker" "/tmp/force-exit"
 	killall emit-key >/dev/null 2>&1 || true
 	killall evtest >/dev/null 2>&1 || true
+	killall minui-list >/dev/null 2>&1 || true
 	killall minui-presenter >/dev/null 2>&1 || true
 
 	if [ -f "$HOME/cpu_governor.txt" ] && [ -f "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor" ]; then
@@ -554,6 +555,10 @@ main() {
 	if [ -f "$PAK_DIR/bin/$PLATFORM/handle-power-button" ]; then
 		chmod +x "$PAK_DIR/bin/$PLATFORM/handle-power-button"
 		PAUSE_EMIT_KEY_PID="$PAUSE_EMIT_KEY_PID" handle-power-button "$PROCESS_PID" "$ROM_PATH" &
+	fi
+	if [ -f "$PAK_DIR/bin/$PLATFORM/handle-menu-button" ]; then
+		chmod +x "$PAK_DIR/bin/$PLATFORM/handle-menu-button"
+		PAUSE_EMIT_KEY_PID="$PAUSE_EMIT_KEY_PID" handle-menu-button "$PROCESS_PID" "$ROM_PATH" &
 	fi
 
 	set +x
