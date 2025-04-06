@@ -348,6 +348,10 @@ restore_save_states_for_game() {
 	if [ -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st0" ]; then
 		cp -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st0" "$XDG_DATA_HOME/mupen64plus/save/"
 	fi
+	# auto-resume slot
+	if [ -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st9" ]; then
+		cp -f "$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st9" "$XDG_DATA_HOME/mupen64plus/save/"
+	fi
 
 	touch /tmp/n64-saves-restored
 }
@@ -392,6 +396,9 @@ cleanup() {
 	elif [ -f "$GAMESETTINGS_DIR/goodname" ]; then
 		GOODNAME="$(cat "$GAMESETTINGS_DIR/goodname")"
 	fi
+	if [ -n "$GOODNAME" ]; then
+		echo "$GOODNAME" >"$GAMESETTINGS_DIR/goodname"
+	fi
 
 	rm -f "/tmp/minui-list"
 	rm -f "/tmp/mupen64plus.pid"
@@ -425,17 +432,11 @@ cleanup() {
 	# remove resume slot
 	rm -f /tmp/resume_slot.txt
 
-	if [ -n "$GOODNAME" ]; then
-		echo "$GOODNAME" >"$GAMESETTINGS_DIR/goodname"
-	fi
-
-	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
-
 	# do not touch the resume slot if the saves were not restored
 	if [ -f "/tmp/n64-saves-restored" ]; then
 		mkdir -p "$SHARED_USERDATA_PATH/.minui/N64"
 		# create the resume slot if st0 exists
-		if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
+		if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st0" ]; then
 			echo "0" >"$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
 		else
 			rm -f "$SHARED_USERDATA_PATH/.minui/N64/$ROM_NAME.txt"
@@ -446,18 +447,18 @@ cleanup() {
 	mkdir -p "$SHARED_USERDATA_PATH/N64-mupen64plus"
 
 	# restore saves to the normal MinUI paths
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.eep" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.eep" "$SDCARD_PATH/Saves/N64/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.eep" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.eep" "$SDCARD_PATH/Saves/N64/"
 	fi
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.mpk" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.mpk" "$SDCARD_PATH/Saves/N64/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.mpk" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.mpk" "$SDCARD_PATH/Saves/N64/"
 	fi
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st0" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
 	fi
 	# auto-resume slot
-	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st9" ]; then
-		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st9" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st9" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$GOODNAME.st9" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
 	fi
 
 	if [ -f "$TEMP_ROM" ]; then
@@ -468,6 +469,7 @@ cleanup() {
 		kill -9 "$(cat "/tmp/gptokeyb2.pid")"
 		rm -f "/tmp/gptokeyb2.pid"
 	fi
+	sync
 }
 
 launch_mupen64plus() {
