@@ -388,10 +388,6 @@ cleanup() {
 	rm -f "/tmp/mupen64plus.pid"
 	rm -f "/tmp/stay_awake"
 	killall minui-presenter >/dev/null 2>&1 || true
-	if [ -s "/tmp/handle-power-button.pid" ] && [ "$(cat "/tmp/handle-power-button.pid")" != "0" ]; then
-		kill -9 "$(cat "/tmp/handle-power-button.pid")"
-	fi
-	rm -f "/tmp/handle-power-button.pid"
 
 	if [ -f "$HOME/cpu_governor.txt" ]; then
 		cat "$HOME/cpu_governor.txt" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
@@ -523,7 +519,6 @@ main() {
 	if [ -f "$PAK_DIR/bin/$PLATFORM/handle-power-button" ]; then
 		chmod +x "$PAK_DIR/bin/$PLATFORM/handle-power-button"
 		handle-power-button "$PROCESS_PID" "$ROM_PATH" &
-		echo "$?" >"/tmp/handle-power-button.pid"
 	fi
 
 	while kill -0 "$PROCESS_PID" 2>/dev/null; do
