@@ -515,11 +515,14 @@ main() {
 	launch_mupen64plus "$ROM_PATH" "$SAVESTATE_PATH" &
 	sleep 0.5
 
+	emit-key -k p -s &
+	PAUSE_EMIT_KEY_PID="$!"
+
 	pgrep -f "$mupen64plus_bin" | tail -n 1 >"/tmp/mupen64plus.pid"
 	PROCESS_PID="$(cat "/tmp/mupen64plus.pid")"
 	if [ -f "$PAK_DIR/bin/$PLATFORM/handle-power-button" ]; then
 		chmod +x "$PAK_DIR/bin/$PLATFORM/handle-power-button"
-		handle-power-button "$PROCESS_PID" "$ROM_PATH" &
+		PAUSE_EMIT_KEY_PID="$PAUSE_EMIT_KEY_PID" handle-power-button "$PROCESS_PID" "$ROM_PATH" &
 	fi
 
 	while kill -0 "$PROCESS_PID" 2>/dev/null; do
