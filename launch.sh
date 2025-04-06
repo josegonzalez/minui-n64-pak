@@ -538,7 +538,7 @@ main() {
 		echo "$ROM_PATH" >"$AUTO_RESUME_FILE"
 		sync
 		rm /tmp/minui_exec
-		shutdown
+		poweroff
 		while :; do
 			sleep 1
 		done
