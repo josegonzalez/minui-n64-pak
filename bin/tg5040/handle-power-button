@@ -49,20 +49,22 @@ execute_power_off() {
 	fi
 
 	touch "/tmp/force-power-off"
-
 	sync
-	show_message "Creating quicksave" forever
-
-	if [ "$IS_STOPPED" = "true" ]; then
-		# unpause the game
-		kill -USR1 "$PAUSE_EMIT_KEY_PID"
-	fi
 
 	killall emit-key >/dev/null 2>&1 || true
 
 	# switch to the autoresume state slot and save
-	emit-key -k 9
-	emit-key -k f5
+	ROM_NAME="$(basename -- "$ROM_PATH")"
+	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
+	rm -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st9"
+
+	# games must be unpaused to save
+	if [ "$IS_STOPPED" = "true" ]; then
+		emit-key -k p,9,f5:500000,p
+	else
+		emit-key -k 9,f5:500000,p
+	fi
+	sync
 
 	if [ ! -f "$SDCARD_PATH/.userdata/$PLATFORM/auto.sh" ]; then
 		echo '#!/bin/sh' >"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
