@@ -114,10 +114,10 @@ main() {
                     kill -USR1 "$PAUSE_EMIT_KEY_PID"
                 elif [ "$selection" = "Save" ]; then
                     echo "Saving the save state"
-                    emit-key -k p,0,f5:500000
+                    emit-key -k p,0,f5
                 elif [ "$selection" = "Load" ]; then
                     echo "Loading the save state"
-                    emit-key -k p,0,f7:500000
+                    emit-key -k p,0,f7
                 elif [ "$selection" = "Exit" ]; then
                     echo "Exiting the game"
                     touch "/tmp/force-exit"
