@@ -3,10 +3,9 @@ BIN_DIR="$(dirname "$0")"
 PAK_DIR="$(dirname "$(dirname "$BIN_DIR")")"
 PAK_NAME="$(basename "$PAK_DIR")"
 PAK_NAME="${PAK_NAME%.*}"
-set -x
 
-rm -f "$LOGS_PATH/$PAK_NAME.service.txt"
-exec >>"$LOGS_PATH/$PAK_NAME.service.txt"
+rm -f "$LOGS_PATH/$PAK_NAME.power-button.txt"
+exec >>"$LOGS_PATH/$PAK_NAME.power-button.txt"
 exec 2>&1
 
 echo "$0" "$@"
@@ -80,20 +79,26 @@ main() {
 		now="${now%??????}"
 		force_power_off=false
 
+		echo "Checking if the power button is pressed: time=$now"
 		if coreutils timeout 0.04s evtest "$POWER_DEVICE" 2>/dev/null | grep "$BUTTON_CODE" | grep -q "$BUTTON_VALUE"; then
+			echo "The power button is pressed: time=$now"
 			if [ "$is_pressed" = "false" ]; then
+				echo "The power button was just pressed: time=$now"
 				just_pressed=true
 				pressed_at="$now"
 			else
+				echo "The power button was already pressed: time=$now"
 				just_pressed=false
 			fi
 			is_pressed=true
 			just_released=false
 		else
 			if [ "$is_pressed" = "true" ]; then
+				echo "The power button was just released: time=$now"
 				just_released=true
 				time_since_power_pressed=$((now - pressed_at))
 				if [ "$time_since_power_pressed" -ge 1000 ]; then
+					echo "Will force a power off"
 					force_power_off=true
 				fi
 			else
@@ -105,28 +110,35 @@ main() {
 		fi
 
 		if [ "$force_power_off" = "true" ]; then
+			sleep 1
+			echo "Forcing a power off"
 			execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
 			break
 		elif [ "$just_pressed" = "true" ]; then
 			# go to sleep
 			if [ "$is_stopped" = "false" ]; then
-				# only pause the game and power off the screen
+				echo "Pausing the game with a signal"
 				kill -STOP "$PROCESS_PID"
 				is_stopped=true
 				sleep_at="$now"
 			else
-				# resume the game
+				echo "Resuming the game with a signal"
 				kill -CONT "$PROCESS_PID"
 				is_stopped=false
 				sleep_at=""
 			fi
 		elif [ "$sleep_at" != "" ]; then
+			echo "Checking if we should force a power off"
 			time_since_sleep=$((now - sleep_at))
 			if [ "$time_since_sleep" -ge 30000 ]; then
+				sleep 1
+				echo "Forcing a power off"
 				execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
 				break
 			fi
 		fi
+
+		sleep 0.02
 	done
 }
 
