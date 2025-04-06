@@ -401,17 +401,17 @@ cleanup() {
 	killall evtest >/dev/null 2>&1 || true
 	killall minui-presenter >/dev/null 2>&1 || true
 
-	if [ -f "$HOME/cpu_governor.txt" ]; then
+	if [ -f "$HOME/cpu_governor.txt" ] && [ -f "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor" ]; then
 		governor="$(cat "$HOME/cpu_governor.txt")"
 		echo "$governor" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
 		rm -f "$HOME/cpu_governor.txt"
 	fi
-	if [ -f "$HOME/cpu_min_freq.txt" ]; then
+	if [ -f "$HOME/cpu_min_freq.txt" ] && [ -f "/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq" ]; then
 		min_freq="$(cat "$HOME/cpu_min_freq.txt")"
 		echo "$min_freq" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
 		rm -f "$HOME/cpu_min_freq.txt"
 	fi
-	if [ -f "$HOME/cpu_max_freq.txt" ]; then
+	if [ -f "$HOME/cpu_max_freq.txt" ] && [ -f "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq" ]; then
 		max_freq="$(cat "$HOME/cpu_max_freq.txt")"
 		echo "$max_freq" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
 		rm -f "$HOME/cpu_max_freq.txt"
