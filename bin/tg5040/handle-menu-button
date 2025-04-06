@@ -121,7 +121,7 @@ main() {
                 elif [ "$selection" = "Exit" ]; then
                     echo "Exiting the game"
                     touch "/tmp/force-exit"
-                    emit-key -k p,esc
+                    emit-key -k esc
                 fi
             fi
         fi
