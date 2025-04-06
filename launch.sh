@@ -398,6 +398,7 @@ cleanup() {
 	fi
 	if [ -n "$GOODNAME" ]; then
 		echo "$GOODNAME" >"$GAMESETTINGS_DIR/goodname"
+		sync
 	fi
 
 	rm -f "/tmp/minui-list"
