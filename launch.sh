@@ -467,11 +467,9 @@ main() {
 		PAUSE_EMIT_KEY_PID="$PAUSE_EMIT_KEY_PID" handle-menu-button "$PROCESS_PID" "$ROM_PATH" &
 	fi
 
-	set +x
 	while kill -0 "$PROCESS_PID" 2>/dev/null; do
 		sleep 1
 	done
-	set -x
 
 	if [ -f "/tmp/force-power-off" ]; then
 		AUTO_RESUME_FILE="$SHARED_USERDATA_PATH/.minui/auto_resume.txt"
