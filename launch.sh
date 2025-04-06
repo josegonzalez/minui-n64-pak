@@ -331,6 +331,10 @@ restore_save_states_for_game() {
 	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
 		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
 	fi
+	# auto-resume slot
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st9" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st9" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	fi
 
 	# eep and mpk files are the in-game saves and should be restored from SDCARD_PATH/Saves/N64/
 	if [ -f "$SDCARD_PATH/Saves/N64/$sanitized_rom_name.eep" ]; then
@@ -445,6 +449,10 @@ cleanup() {
 	fi
 	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" ]; then
 		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st0" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
+	fi
+	# auto-resume slot
+	if [ -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st9" ]; then
+		mv -f "$XDG_DATA_HOME/mupen64plus/save/$sanitized_rom_name.st9" "$SHARED_USERDATA_PATH/N64-mupen64plus/"
 	fi
 
 	if [ -f "$TEMP_ROM" ]; then
