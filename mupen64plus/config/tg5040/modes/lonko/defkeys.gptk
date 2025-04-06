@@ -6,7 +6,7 @@ a = a # B -> A button
 x = b # Y -> B button
 
 r2 = hold_state hotkey1
-guide = hold_state hotkey2
+select = hold_state hotkey2
 
 r3 = f5 # Save State
 l3 = f7 # Load State

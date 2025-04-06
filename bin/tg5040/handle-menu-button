@@ -1,0 +1,125 @@
+#!/bin/sh
+BIN_DIR="$(dirname "$0")"
+PAK_DIR="$(dirname "$(dirname "$BIN_DIR")")"
+PAK_NAME="$(basename "$PAK_DIR")"
+PAK_NAME="${PAK_NAME%.*}"
+
+rm -f "$LOGS_PATH/$PAK_NAME.menu-button.txt"
+exec >>"$LOGS_PATH/$PAK_NAME.menu-button.txt"
+exec 2>&1
+
+echo "$0" "$@"
+cd "$PAK_DIR" || exit 1
+
+architecture=arm
+if uname -m | grep -q '64'; then
+    architecture=arm64
+fi
+
+export PATH="$PAK_DIR/bin/$architecture:$PAK_DIR/bin/$PLATFORM:$PAK_DIR/bin:$PATH"
+
+MENU_DEVICE="/dev/input/event3"
+BUTTON_CODE="code 316 (BTN_MODE)"
+
+get_rom_name() {
+    ROM_PATH="$1"
+    ROM_NAME="$(basename "$ROM_PATH")"
+    ROM_NAME="${ROM_NAME%.*}"
+
+    GOODNAME=""
+    if [ -f "$LOGS_PATH/N64-mupen64plus.txt" ]; then
+        GOODNAME="$(grep 'Core: Goodname:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+        OVERRIDE_GOODNAME="$(grep 'Core: Name:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+        if [ -n "$OVERRIDE_GOODNAME" ]; then
+            GOODNAME="$OVERRIDE_GOODNAME"
+        fi
+    elif [ -f "$GAMESETTINGS_DIR/goodname" ]; then
+        GOODNAME="$(cat "$GAMESETTINGS_DIR/goodname")"
+    fi
+    if [ -z "$GOODNAME" ]; then
+        GOODNAME="$ROM_NAME"
+    fi
+    echo "$GOODNAME"
+}
+
+main() {
+    PROCESS_PID="$1" ROM_PATH="$2"
+
+    just_pressed=false
+    is_pressed=false
+    just_released=false
+
+    value_unpressed="value 0"
+    value_pressed="value 1"
+    value_held="value 2"
+
+    GOODNAME="$(get_rom_name "$ROM_PATH")"
+
+    evtest "$MENU_DEVICE" 2>/dev/null | while read -r line; do
+        now="$(coreutils date +%s%N)"
+        now="${now%??????}"
+
+        if echo "$line" | grep "$BUTTON_CODE" | grep -q "$value_pressed"; then
+            echo "The menu button is pressed: time=$now"
+            if [ "$is_pressed" = "false" ]; then
+                echo "The menu button was just pressed: time=$now"
+                just_pressed=true
+            else
+                echo "The menu button was already pressed: time=$now"
+                just_pressed=false
+            fi
+            is_pressed=true
+            just_released=false
+        elif echo "$line" | grep "$BUTTON_CODE" | grep -q "$value_unpressed"; then
+            if [ "$is_pressed" = "true" ]; then
+                echo "The menu button was just released: time=$now"
+                just_released=true
+            else
+                just_released=false
+            fi
+            just_pressed=false
+            is_pressed=false
+        elif echo "$line" | grep "$BUTTON_CODE" | grep -q "$value_held"; then
+            is_pressed=true
+            just_pressed=false
+        elif echo "$line" | grep -q -v "$BUTTON_CODE"; then
+            continue
+        fi
+
+        if [ "$just_pressed" = "true" ]; then
+            screenshot_path="/tmp/n64-screenshot.png"
+            echo "Pausing the game with a signal"
+            kill -USR1 "$PAUSE_EMIT_KEY_PID"
+            echo "Taking a screenshot"
+            pngwrite "$screenshot_path"
+            minui-list --file "$PAK_DIR/res/menu.json" --background-image "$screenshot_path" --title "$GOODNAME" --confirm-text "OKAY" --cancel-text "BACK" --write-value state --write-location /tmp/minui-list-state --item-key menu
+            exit_code=$?
+            # exit codes: 2 = back button, 3 = menu button
+            if [ "$exit_code" -ne 0 ]; then
+                # unpause
+                kill -USR1 "$PAUSE_EMIT_KEY_PID"
+            else
+                output="$(cat /tmp/minui-list-state)"
+                selected_index="$(echo "$output" | jq -r '.selected')"
+                selection="$(echo "$output" | jq -r ".menu[$selected_index].name")"
+                if [ "$selection" = "Continue" ]; then
+                    kill -USR1 "$PAUSE_EMIT_KEY_PID"
+                elif [ "$selection" = "Save" ]; then
+                    echo "Saving the save state"
+                    emit-key -k p,0,f5:500000
+                elif [ "$selection" = "Load" ]; then
+                    echo "Loading the save state"
+                    emit-key -k p,0,f7:500000
+                elif [ "$selection" = "Exit" ]; then
+                    echo "Exiting the game"
+                    touch "/tmp/force-exit"
+                    kill -9 "$PROCESS_PID"
+                fi
+            fi
+        fi
+
+        sleep 0.02
+    done
+}
+
+main "$@"
