@@ -62,7 +62,7 @@ execute_power_off() {
 
 	# switch to the autoresume state slot and save
 	emit-key -k 9
-	emit-key -k F7
+	emit-key -k f5
 
 	AUTO_RESUME_FILE="$SHARED_USERDATA_PATH/.minui/auto_resume.txt"
 	echo "$ROM_PATH" >"$AUTO_RESUME_FILE"
