@@ -387,6 +387,7 @@ cleanup() {
 	rm -f "/tmp/minui-list"
 	rm -f "/tmp/mupen64plus.pid"
 	rm -f "/tmp/stay_awake"
+	killall emit-key >/dev/null 2>&1 || true
 	killall minui-presenter >/dev/null 2>&1 || true
 
 	if [ -f "$HOME/cpu_governor.txt" ]; then

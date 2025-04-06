@@ -44,13 +44,19 @@ execute_power_off() {
 	ROM_PATH="$2"
 	IS_STOPPED="$3"
 
-	# save the current state of the game with a save state
-	# TODO: implement me (via a faux keypress?)
-	# TODO: wait until the save state is created
-	if [ "$IS_STOPPED" = "true" ]; then
-		kill -CONT "$PROCESS_PID"
-	fi
 	sync
+	show_message "Quicksave created, powering off" forever
+
+	if [ "$IS_STOPPED" = "false" ]; then
+		# pause the game
+		kill -USR1 "$PAUSE_EMIT_KEY_PID"
+	fi
+
+	killall emit-key >/dev/null 2>&1 || true
+
+	# switch to the autoresume state slot and save
+	emit-key -k 9
+	emit-key -k F7
 
 	RELATIVE_ROM_PATH="${ROM_PATH#$SDCARD_PATH/}"
 	echo "$RELATIVE_ROM_PATH" >"$SHARED_USERDATA_PATH/.minui/auto_resume.txt"
@@ -58,8 +64,6 @@ execute_power_off() {
 
 	kill -9 "$PROCESS_PID"
 	sleep 0.5
-
-	show_message "Quicksave created, powering off" 1
 
 	poweroff
 }
@@ -73,6 +77,9 @@ main() {
 	pressed_at=""
 	sleep_at=""
 	is_stopped=false
+
+	emit-key -k p -s &
+	PAUSE_EMIT_KEY_PID="$!"
 
 	while kill -0 "$PROCESS_PID" 2>/dev/null; do
 		now="$(coreutils date +%s%N)"
@@ -112,18 +119,18 @@ main() {
 		if [ "$force_power_off" = "true" ]; then
 			sleep 1
 			echo "Forcing a power off"
-			execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
+			PAUSE_EMIT_KEY_PID="$PAUSE_EMIT_KEY_PID" execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
 			break
 		elif [ "$just_pressed" = "true" ]; then
 			# go to sleep
 			if [ "$is_stopped" = "false" ]; then
 				echo "Pausing the game with a signal"
-				kill -STOP "$PROCESS_PID"
+				kill -USR1 "$PAUSE_EMIT_KEY_PID"
 				is_stopped=true
 				sleep_at="$now"
 			else
 				echo "Resuming the game with a signal"
-				kill -CONT "$PROCESS_PID"
+				kill -USR1 "$PAUSE_EMIT_KEY_PID"
 				is_stopped=false
 				sleep_at=""
 			fi
@@ -133,7 +140,7 @@ main() {
 			if [ "$time_since_sleep" -ge 30000 ]; then
 				sleep 1
 				echo "Forcing a power off"
-				execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
+				PAUSE_EMIT_KEY_PID="$PAUSE_EMIT_KEY_PID" execute_power_off "$PROCESS_PID" "$ROM_PATH" "$is_stopped"
 				break
 			fi
 		fi
