@@ -102,7 +102,7 @@ execute_power_off() {
 	fi
 
 	RELATIVE_ROM_PATH="${ROM_PATH#$SDCARD_PATH}"
-	echo "test -f \"\$SDCARD_PATH/Emus/\$PLATFORM/$PAK_NAME.pak/bin/$PLATFORM/auto-resume\" && \"\$SDCARD_PATH/Emus/\$PLATFORM/$PAK_NAME.pak/bin/$PLATFORM/auto-resume\" \"$ROM_PATH\" # ${PAK_NAME}.pak-auto-resume" >>"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
+	echo "test -f \"\$SDCARD_PATH/Emus/\$PLATFORM/$PAK_NAME.pak/bin/$architecture/auto-resume\" && \"\$SDCARD_PATH/Emus/\$PLATFORM/$PAK_NAME.pak/bin/$architecture/auto-resume\" \"$ROM_PATH\" # ${PAK_NAME}.pak-auto-resume" >>"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
 
 	sync
 	show_message "Quicksave created, powering off" forever
