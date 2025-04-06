@@ -1,0 +1,43 @@
+#!/bin/sh
+BIN_DIR="$(dirname "$0")"
+PAK_DIR="$(dirname "$(dirname "$BIN_DIR")")"
+PAK_NAME="$(basename "$PAK_DIR")"
+PAK_NAME="${PAK_NAME%.*}"
+
+rm -f "$LOGS_PATH/N64-mupen64plus.txt"
+exec >>"$LOGS_PATH/N64-mupen64plus.txt"
+exec 2>&1
+
+echo "$0" "$@"
+cd "$PAK_DIR" || exit 1
+
+architecture=arm
+if uname -m | grep -q '64'; then
+    architecture=arm64
+fi
+
+export PATH="$PAK_DIR/bin/$architecture:$PAK_DIR/bin/$PLATFORM:$PAK_DIR/bin:$PATH"
+
+get_resolution() {
+    if [ "$PLATFORM" = "tg5040" ]; then
+        if [ "$DEVICE" = "brick" ]; then
+            echo "1024x768"
+        else
+            echo "1280x720"
+        fi
+    fi
+}
+
+main() {
+    ROM_PATH="$1"
+    SAVESTATE_PATH="$2"
+
+    resolution="$(get_resolution)"
+    if [ -f "$SAVESTATE_PATH" ]; then
+        "$MUPEN64PLUS_BIN" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --verbose --savestate "$SAVESTATE_PATH" "$ROM_PATH"
+    else
+        "$MUPEN64PLUS_BIN" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --verbose "$ROM_PATH"
+    fi
+}
+
+main "$@"

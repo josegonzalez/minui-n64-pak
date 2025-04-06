@@ -10,3 +10,4 @@ res/fonts/*
 !bin/arm64/pngwrite.LICENSE
 !bin/tg5040/handle-power-button
 !bin/tg5040/handle-menu-button
+!bin/arm64/launch-mupen64plus
