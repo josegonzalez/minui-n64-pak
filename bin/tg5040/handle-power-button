@@ -53,8 +53,8 @@ execute_power_off() {
 	sync
 	show_message "Creating quicksave" forever
 
-	if [ "$IS_STOPPED" = "false" ]; then
-		# pause the game
+	if [ "$IS_STOPPED" = "true" ]; then
+		# unpause the game
 		kill -USR1 "$PAUSE_EMIT_KEY_PID"
 	fi
 
