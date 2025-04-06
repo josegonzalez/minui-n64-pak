@@ -121,7 +121,7 @@ main() {
                 elif [ "$selection" = "Exit" ]; then
                     echo "Exiting the game"
                     touch "/tmp/force-exit"
-                    kill -9 "$PROCESS_PID"
+                    emit-key -k p,esc
                 fi
             fi
         fi
