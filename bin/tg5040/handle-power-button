@@ -64,8 +64,14 @@ execute_power_off() {
 	emit-key -k 9
 	emit-key -k f5
 
-	AUTO_RESUME_FILE="$SHARED_USERDATA_PATH/.minui/auto_resume.txt"
-	echo "$ROM_PATH" >"$AUTO_RESUME_FILE"
+	if [ ! -f "$SDCARD_PATH/.userdata/$PLATFORM/auto.sh" ]; then
+		echo '#!/bin/sh' >"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
+		echo '' >>"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
+	fi
+
+	RELATIVE_ROM_PATH="${ROM_PATH#$SDCARD_PATH}"
+	echo "test -f \"\$SDCARD_PATH/Emus/\$PLATFORM/$PAK_NAME.pak/bin/$PLATFORM/auto-resume\" && \"\$SDCARD_PATH/Emus/\$PLATFORM/$PAK_NAME.pak/bin/$PLATFORM/auto-resume\" \"$ROM_PATH\" # ${PAK_NAME}.pak-auto-resume" >>"$SDCARD_PATH/.userdata/$PLATFORM/auto.sh"
+
 	sync
 	show_message "Quicksave created, powering off" forever
 
