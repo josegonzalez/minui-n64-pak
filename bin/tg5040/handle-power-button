@@ -40,6 +40,7 @@ show_message() {
 }
 
 execute_power_off() {
+	set -x
 	PROCESS_PID="$1"
 	ROM_PATH="$2"
 	IS_STOPPED="$3"
