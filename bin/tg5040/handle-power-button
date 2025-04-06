@@ -63,7 +63,7 @@ execute_power_off() {
 }
 
 main() {
-	PROCESS_NAME="$1" ROM_PATH="$2"
+	PROCESS_PID="$1" ROM_PATH="$2"
 
 	just_pressed=false
 	is_pressed=false
@@ -72,7 +72,6 @@ main() {
 	sleep_at=""
 	is_stopped=false
 
-	PROCESS_PID="$(pgrep -f "$PROCESS_NAME")"
 	while kill -0 "$PROCESS_PID" 2>/dev/null; do
 		now="$(coreutils date +%s%N)"
 		now="${now%??????}"

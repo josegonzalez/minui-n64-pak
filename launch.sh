@@ -385,9 +385,13 @@ cleanup() {
 	fi
 
 	rm -f "/tmp/minui-list"
-
-	rm -f /tmp/stay_awake
+	rm -f "/tmp/mupen64plus.pid"
+	rm -f "/tmp/stay_awake"
 	killall minui-presenter >/dev/null 2>&1 || true
+	if [ -s "/tmp/handle-power-button.pid" ]; then
+		kill -9 "$(cat "/tmp/handle-power-button.pid")"
+		rm -f "/tmp/handle-power-button.pid"
+	fi
 
 	if [ -f "$HOME/cpu_governor.txt" ]; then
 		cat "$HOME/cpu_governor.txt" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
@@ -451,6 +455,17 @@ cleanup() {
 	fi
 }
 
+launch_mupen64plus() {
+	ROM_PATH="$1"
+	SAVESTATE_PATH="$2"
+
+	if [ -f "$SAVESTATE_PATH" ]; then
+		"$mupen64plus_bin" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt"
+	else
+		"$mupen64plus_bin" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt"
+	fi
+}
+
 main() {
 	echo "1" >/tmp/stay_awake
 	trap "cleanup" EXIT INT TERM HUP QUIT
@@ -499,16 +514,21 @@ main() {
 	mkdir -p "$SDCARD_PATH/Screenshots"
 	rm -f "$LOGS_PATH/N64-mupen64plus.txt"
 
+	date >"$LOGS_PATH/$PAK_NAME.start.txt"
+	launch_mupen64plus "$ROM_PATH" "$SAVESTATE_PATH" &
+	sleep 0.5
+
+	pgrep -f "$mupen64plus_bin" | tail -n 1 >"/tmp/mupen64plus.pid"
+	PROCESS_PID="$(cat "/tmp/mupen64plus.pid")"
 	if [ -f "$PAK_DIR/bin/$PLATFORM/handle-power-button" ]; then
 		chmod +x "$PAK_DIR/bin/$PLATFORM/handle-power-button"
-		handle-power-button "$mupen64plus_bin" "$ROM_PATH" &
+		handle-power-button "$PROCESS_PID" "$ROM_PATH" &
+		echo "$?" >"/tmp/handle-power-button.pid"
 	fi
 
-	if [ -f "$SAVESTATE_PATH" ]; then
-		"$mupen64plus_bin" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" --savestate "$SAVESTATE_PATH" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
-	else
-		"$mupen64plus_bin" --datadir "$XDG_DATA_HOME" --configdir "$XDG_CONFIG_HOME" --nosaveoptions --plugindir "$PLUGIN_DIR" --resolution "$resolution" --sshotdir "$SCREENSHOT_DIR" "$ROM_PATH" | coreutils tee "$LOGS_PATH/N64-mupen64plus.txt" || true
-	fi
+	while kill -0 "$PROCESS_PID" 2>/dev/null; do
+		sleep 1
+	done
 }
 
 main "$@"
