@@ -397,8 +397,6 @@ cleanup() {
 			# remove the st0 from the override goodname
 			GOODNAME="${SAVESTATE_GOODNAME%.st0}"
 		fi
-
-		rm -f "$LOGS_PATH/N64-mupen64plus.txt"
 	elif [ -f "$GAMESETTINGS_DIR/goodname" ]; then
 		GOODNAME="$(cat "$GAMESETTINGS_DIR/goodname")"
 	fi
