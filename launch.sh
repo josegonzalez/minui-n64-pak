@@ -482,6 +482,11 @@ main() {
 		exit 1
 	fi
 
+	if [ ! -f "$1" ]; then
+		show_message "ROM not found" 2
+		exit 1
+	fi
+
 	TEMP_ROM=$(mktemp)
 	ROM_PATH="$(TEMP_ROM="$TEMP_ROM" get_rom_path "$*")"
 	if [ -z "$ROM_PATH" ]; then
