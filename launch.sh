@@ -387,10 +387,15 @@ cleanup() {
 	GOODNAME=""
 	if [ -f "$LOGS_PATH/N64-mupen64plus.txt" ]; then
 		GOODNAME="$(grep 'Core: Goodname:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
-		OVERRIDE_GOODNAME="$(grep 'Core Status: Saved state to:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		OVERRIDE_GOODNAME="$(grep 'Core: Name:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
 		if [ -n "$OVERRIDE_GOODNAME" ]; then
+			GOODNAME="$OVERRIDE_GOODNAME"
+		fi
+
+		SAVESTATE_GOODNAME="$(grep 'Core Status: Saved state to:' "$LOGS_PATH/N64-mupen64plus.txt" | cut -d: -f3- | xargs || true)"
+		if [ -n "$SAVESTATE_GOODNAME" ]; then
 			# remove the st0 from the override goodname
-			GOODNAME="${OVERRIDE_GOODNAME%.st0}"
+			GOODNAME="${SAVESTATE_GOODNAME%.st0}"
 		fi
 
 		rm -f "$LOGS_PATH/N64-mupen64plus.txt"
