@@ -433,7 +433,6 @@ main() {
 	configure_game_settings
 	configure_controls
 	configure_cpu
-	restore_save_states_for_game
 
 	# handle loading the save state if it exists
 	sanitized_rom_name="$(get_rom_name "$ROM_NAME")"
