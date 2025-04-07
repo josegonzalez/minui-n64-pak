@@ -2,6 +2,7 @@
     "label": "N64",
     "launch": "launch.sh",
     "description": "Runs mupen64plus in standalone mode for the specified rom",
+    "pak_type": "emu",
     "platforms": [
         "tg5040"
     ],
