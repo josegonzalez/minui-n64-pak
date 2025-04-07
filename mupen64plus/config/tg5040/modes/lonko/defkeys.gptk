@@ -23,6 +23,7 @@ b = l # A -> C right
 overlay = parent
 
 select = y # Screenshot
+l2 = F  # fast forward
 
 r1 = f5 # Save State
 l1 = f7 # Load State

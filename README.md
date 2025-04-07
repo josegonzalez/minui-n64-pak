@@ -89,7 +89,7 @@ Hotkeys
 | Toggle Pause            | `SELECT + X`                       |
 | Toggle Mute             | `SELECT + B`                       |
 | Reset Game              | `SELECT + A`                       |
-| Fast Forward            | `SELECT + SELECT`                  |
+| Fast Forward            | `SELECT + L2`                      |
 
 ### Emulator settings
 
