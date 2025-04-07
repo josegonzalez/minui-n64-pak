@@ -17,6 +17,7 @@ if uname -m | grep -q '64'; then
 fi
 
 export PATH="$PAK_DIR/bin/$architecture:$PAK_DIR/bin/$PLATFORM:$PAK_DIR/bin:$PATH"
+export LD_LIBRARY_PATH="$PAK_DIR/lib/$PLATFORM:$LD_LIBRARY_PATH"
 
 MENU_DEVICE="/dev/input/event3"
 BUTTON_CODE="code 316 (BTN_MODE)"
@@ -93,11 +94,13 @@ main() {
 
         if [ "$just_pressed" = "true" ]; then
             screenshot_path="/tmp/n64-screenshot.png"
+            screenshot_dark_path="/tmp/n64-screenshot-dark.png"
             echo "Pausing the game with a signal"
             kill -USR1 "$PAUSE_EMIT_KEY_PID"
             echo "Taking a screenshot"
             pngwrite "$screenshot_path"
-            minui-list --file "$PAK_DIR/res/menu.json" --background-image "$screenshot_path" --title "$game_name" --confirm-text "OKAY" --cancel-text "BACK" --write-value state --write-location /tmp/minui-list-state --item-key menu
+            gm convert "$screenshot_path" -fill black -colorize 40% "$screenshot_dark_path"
+            minui-list --file "$PAK_DIR/res/menu.json" --background-image "$screenshot_dark_path" --title "$game_name" --confirm-text "OKAY" --cancel-text "BACK" --write-value state --write-location /tmp/minui-list-state --item-key menu
             exit_code=$?
             # exit codes: 2 = back button, 3 = menu button
             if [ "$exit_code" -ne 0 ]; then

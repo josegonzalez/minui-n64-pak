@@ -20,7 +20,7 @@ fi
 export EMU_DIR="$SDCARD_PATH/Emus/$PLATFORM/N64.pak/mupen64plus"
 export PAK_DIR="$SDCARD_PATH/Emus/$PLATFORM/N64.pak"
 export HOME="$USERDATA_PATH/N64-mupen64plus"
-export LD_LIBRARY_PATH="$EMU_DIR/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$PAK_DIR/lib/$PLATFORM:$EMU_DIR/lib:$LD_LIBRARY_PATH"
 export PATH="$EMU_DIR:$PAK_DIR/bin/$architecture:$PAK_DIR/bin/$PLATFORM:$PAK_DIR/bin:$PATH"
 export XDG_CONFIG_HOME="$USERDATA_PATH/N64-mupen64plus/config"
 export XDG_DATA_HOME="$USERDATA_PATH/N64-mupen64plus/data"
