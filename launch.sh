@@ -444,7 +444,7 @@ main() {
 	if [ -f "/tmp/resume_slot.txt" ]; then
 		save_state="$(xargs <"/tmp/resume_slot.txt")"
 	fi
-	SAVESTATE_PATH="$SDCARD_PATH/Saves/N64/$sanitized_rom_name.st${save_state}"
+	SAVESTATE_PATH="$SHARED_USERDATA_PATH/N64-mupen64plus/$sanitized_rom_name.st${save_state}"
 
 	mupen64plus_version="$(get_mupen64plus_version)"
 	export MUPEN64PLUS_BIN="mupen64plus-${mupen64plus_version}"
