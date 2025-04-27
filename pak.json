@@ -1,0 +1,13 @@
+{
+    "name": "N64",
+    "type": "EMU",
+    "description": "Runs mupen64plus in standalone mode for the specified rom",
+    "author": "josegonzalez",
+    "repo_url": "https://github.com/josegonzalez/minui-n64-pak",
+    "release_filename": "N64.pak.zip",
+    "platforms": [
+        "tg5040"
+    ],
+    "launch": "launch.sh",
+    "version": "latest"
+}
