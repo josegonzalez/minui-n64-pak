@@ -152,7 +152,7 @@ If the device is shut down through either pressing and holding `POWER` _or_ wait
 
 ### Debug Logging
 
-To enable debug logging, create a file named debug in `$SDCARD_PATH/.userdata/$PLATFORM/N64-mupen64plus` folder. Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
+Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
 
 ## Screenshots
 
