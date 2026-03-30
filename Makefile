@@ -1,0 +1,263 @@
+SHELL := /bin/bash
+
+# ── Upstream repos and pinned versions ────────────────────────────────────────
+CORE_REPO    := https://github.com/mupen64plus/mupen64plus-core
+CORE_TAG     := 2.6.0
+
+UI_REPO      := https://github.com/mupen64plus/mupen64plus-ui-console
+UI_TAG       := 2.6.0
+
+AUDIO_REPO   := https://github.com/mupen64plus/mupen64plus-audio-sdl
+AUDIO_TAG    := 2.6.0
+
+INPUT_REPO   := https://github.com/mupen64plus/mupen64plus-input-sdl
+INPUT_TAG    := 2.6.0
+
+RSP_REPO     := https://github.com/mupen64plus/mupen64plus-rsp-hle
+RSP_TAG      := 2.6.0
+
+GLIDEN64_REPO := https://github.com/gonetz/GLideN64
+GLIDEN64_REV  := c8ef81c7d9aede9f67f6ed3d3426c90541f9f13e
+
+NX_REDUX_REPO := https://github.com/mohammadsyuhada/nx-redux
+NX_REDUX_TAG  := v1.1.1
+
+ZLIB_REPO     := https://github.com/madler/zlib
+ZLIB_TAG      := v1.3.2
+
+# ── Docker toolchain images ───────────────────────────────────────────────────
+TG5040_IMAGE := ghcr.io/loveretro/tg5040-toolchain:latest
+TG5050_IMAGE := ghcr.io/loveretro/tg5050-toolchain:latest
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+ROOT     := $(shell pwd)
+SRC      := $(ROOT)/src
+DIST     := $(ROOT)/dist/N64.pak
+PATCHES  := $(ROOT)/patches/shared
+CONFIG   := $(ROOT)/config
+
+# ── Cross-compile variables ───────────────────────────────────────────────────
+CROSS    := aarch64-nextui-linux-gnu-
+HOST_CPU := aarch64
+
+# Common make flags for core (no SDL needed)
+CORE_FLAGS := CROSS_COMPILE=$(CROSS) HOST_CPU=$(HOST_CPU) \
+	USE_GLES=1 NEON=1 PIE=1 VULKAN=0 \
+	PKG_CONFIG=pkg-config OPTFLAGS="-O3"
+
+# Docker run helper script — sets up env, then runs the given command.
+# Written to src/.docker-env.sh during clone phase.
+DOCKER_SCRIPT := /build/src/.docker-env.sh
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Top-level targets
+# ══════════════════════════════════════════════════════════════════════════════
+
+.PHONY: all build tg5040 tg5050 gliden64 dist clone patch clean
+
+build: all
+
+# Build both platforms sequentially, staging outputs between builds since they
+# share source directories.
+all: clone patch
+	$(MAKE) tg5040
+	$(MAKE) gliden64
+	$(MAKE) dist-tg5040
+	$(MAKE) tg5050
+	$(MAKE) dist-tg5050
+	@echo "=== Build complete. dist/N64.pak/ assembled ==="
+	@find $(DIST) -type f | sort
+
+# ── Clone ─────────────────────────────────────────────────────────────────────
+
+clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
+       $(SRC)/mupen64plus-audio-sdl $(SRC)/mupen64plus-input-sdl \
+       $(SRC)/mupen64plus-rsp-hle $(SRC)/GLideN64 $(SRC)/nx-redux \
+       $(SRC)/zlib
+	@# Write Docker env helper script (sets up cross-compile env, then exec's args)
+	@printf '#!/bin/bash\nsource ~/.bashrc\nexport PKG_CONFIG_PATH=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/pkgconfig\nexport PKG_CONFIG_SYSROOT_DIR=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc\nexport SDL_CFLAGS="$$(pkg-config --cflags sdl2)"\nexport SDL_LDLIBS="$$(pkg-config --libs sdl2)"\nexec "$$@"\n' > $(SRC)/.docker-env.sh
+	@chmod +x $(SRC)/.docker-env.sh
+	@# Populate overlay sources, GLES headers, and unmodified patches from nx-redux
+	@mkdir -p $(ROOT)/overlay/cjson $(ROOT)/include
+	@cp $(SRC)/nx-redux/workspace/all/common/emu_overlay*.c $(ROOT)/overlay/
+	@cp $(SRC)/nx-redux/workspace/all/common/emu_overlay*.h $(ROOT)/overlay/
+	@cp $(SRC)/nx-redux/workspace/all/common/emu_overlay_render.h $(ROOT)/overlay/
+	@cp $(SRC)/nx-redux/workspace/all/common/cjson/cJSON.c $(SRC)/nx-redux/workspace/all/common/cjson/cJSON.h $(ROOT)/overlay/cjson/
+	@cp -r $(SRC)/nx-redux/workspace/all/include/EGL $(ROOT)/include/
+	@cp -r $(SRC)/nx-redux/workspace/all/include/GLES2 $(ROOT)/include/
+	@cp -r $(SRC)/nx-redux/workspace/all/include/GLES3 $(ROOT)/include/
+	@cp -r $(SRC)/nx-redux/workspace/all/include/KHR $(ROOT)/include/
+	@cp $(SRC)/nx-redux/workspace/tg5040/other/mupen64plus/mupen64plus-ui-console.patch $(PATCHES)/
+	@cp $(SRC)/nx-redux/workspace/tg5040/other/mupen64plus/mupen64plus-audio-sdl.patch $(PATCHES)/
+
+$(SRC)/mupen64plus-core:
+	git clone --depth 1 --branch $(CORE_TAG) $(CORE_REPO) $@
+
+$(SRC)/mupen64plus-ui-console:
+	git clone --depth 1 --branch $(UI_TAG) $(UI_REPO) $@
+
+$(SRC)/mupen64plus-audio-sdl:
+	git clone --depth 1 --branch $(AUDIO_TAG) $(AUDIO_REPO) $@
+
+$(SRC)/mupen64plus-input-sdl:
+	git clone --depth 1 --branch $(INPUT_TAG) $(INPUT_REPO) $@
+
+$(SRC)/mupen64plus-rsp-hle:
+	git clone --depth 1 --branch $(RSP_TAG) $(RSP_REPO) $@
+
+$(SRC)/GLideN64:
+	git clone $(GLIDEN64_REPO) $@
+	cd $@ && git checkout $(GLIDEN64_REV)
+
+$(SRC)/nx-redux:
+	git clone --depth 1 --branch $(NX_REDUX_TAG) $(NX_REDUX_REPO) $@
+
+$(SRC)/zlib:
+	git clone --depth 1 --branch $(ZLIB_TAG) $(ZLIB_REPO) $@
+
+# ── Patch ─────────────────────────────────────────────────────────────────────
+
+PATCH_STAMP := $(SRC)/.patched
+
+patch: $(PATCH_STAMP)
+
+$(PATCH_STAMP): | clone
+	@if [ ! -f $(PATCH_STAMP) ]; then \
+		echo "Applying patches..."; \
+		cd $(SRC)/mupen64plus-ui-console && git apply $(PATCHES)/mupen64plus-ui-console.patch; \
+		if [ -s $(PATCHES)/mupen64plus-audio-sdl.patch ]; then \
+			cd $(SRC)/mupen64plus-audio-sdl && git apply $(PATCHES)/mupen64plus-audio-sdl.patch; \
+		fi; \
+		cd $(SRC)/GLideN64 && git apply --exclude='src/GLideNHQ/lib/*.a' $(PATCHES)/GLideN64-standalone.patch; \
+		touch $(PATCH_STAMP); \
+	fi
+
+# ── Docker helpers ────────────────────────────────────────────────────────────
+# DOCKER_RUN_5040 / DOCKER_RUN_5050: run a command inside the toolchain container
+# The .docker-env.sh script sets up the cross-compile environment then exec's the arg.
+
+DOCKER_RUN_5040 := docker run --rm -v $(ROOT):/build $(TG5040_IMAGE) $(DOCKER_SCRIPT)
+DOCKER_RUN_5050 := docker run --rm -v $(ROOT):/build $(TG5050_IMAGE) $(DOCKER_SCRIPT)
+
+# Common plugin make flags (SDL_CFLAGS/SDL_LDLIBS exported by docker-env.sh)
+PLUGIN_MAKE := CROSS_COMPILE=$(CROSS) HOST_CPU=$(HOST_CPU) PIE=1 \
+	PKG_CONFIG=pkg-config \
+	APIDIR=/build/src/mupen64plus-core/src/api \
+	OPTFLAGS="-O3"
+
+# ── TG5040 build ──────────────────────────────────────────────────────────────
+
+.PHONY: tg5040 tg5040-core tg5040-ui tg5040-audio tg5040-input tg5040-rsp
+
+tg5040: tg5040-core tg5040-ui tg5040-audio tg5040-input tg5040-rsp
+
+tg5040-core: $(PATCH_STAMP)
+	$(DOCKER_RUN_5040) bash -c 'cd /build/src/mupen64plus-core/projects/unix && make -j$$(nproc) all $(CORE_FLAGS)'
+
+tg5040-ui: $(PATCH_STAMP)
+	$(DOCKER_RUN_5040) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE) COREDIR="./" PLUGINDIR="./"'
+
+tg5040-audio: $(PATCH_STAMP)
+	$(DOCKER_RUN_5040) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE)'
+
+tg5040-input: $(PATCH_STAMP)
+	$(DOCKER_RUN_5040) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE)'
+
+tg5040-rsp: $(PATCH_STAMP)
+	$(DOCKER_RUN_5040) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE)'
+
+# ── TG5050 build ──────────────────────────────────────────────────────────────
+
+.PHONY: tg5050 tg5050-core tg5050-ui tg5050-audio tg5050-input tg5050-rsp tg5050-libpng-headers
+
+# libpng headers workaround for broken TG5050 toolchain symlinks
+LIBPNG_DIR := $(SRC)/libpng-headers/libpng-1.6.37
+
+tg5050-libpng-headers: $(LIBPNG_DIR)/pnglibconf.h
+
+$(LIBPNG_DIR)/pnglibconf.h:
+	mkdir -p $(SRC)/libpng-headers
+	cd $(SRC)/libpng-headers && \
+		curl -sL https://github.com/glennrp/libpng/archive/refs/tags/v1.6.37.tar.gz -o libpng.tar.gz && \
+		tar xf libpng.tar.gz && \
+		cp libpng-1.6.37/scripts/pnglibconf.h.prebuilt libpng-1.6.37/pnglibconf.h
+
+tg5050: tg5050-core tg5050-ui tg5050-audio tg5050-input tg5050-rsp
+
+tg5050-core: $(PATCH_STAMP) tg5050-libpng-headers
+	$(DOCKER_RUN_5050) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) LIBPNG_CFLAGS="-I/build/src/libpng-headers/libpng-1.6.37" LIBPNG_LDLIBS="-lpng16 -lz"'
+
+tg5050-ui: $(PATCH_STAMP)
+	$(DOCKER_RUN_5050) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) COREDIR="./" PLUGINDIR="./"'
+
+tg5050-audio: $(PATCH_STAMP)
+	$(DOCKER_RUN_5050) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE)'
+
+tg5050-input: $(PATCH_STAMP)
+	$(DOCKER_RUN_5050) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE)'
+
+tg5050-rsp: $(PATCH_STAMP)
+	$(DOCKER_RUN_5050) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE)'
+
+# ── GLideN64 (shared — built with tg5040 toolchain) ──────────────────────────
+
+.PHONY: gliden64
+
+gliden64: $(PATCH_STAMP)
+	@# Cross-compile zlib from source (tg5040 toolchain has 1.2.8, too old for GLideN64)
+	$(DOCKER_RUN_5040) bash -c 'cd /build/src/zlib && [ -f libz.a ] || (CC=aarch64-nextui-linux-gnu-gcc AR=aarch64-nextui-linux-gnu-ar RANLIB=aarch64-nextui-linux-gnu-ranlib ./configure --static && make -j$$(nproc))'
+	@# Replace bundled static libs with ARM64 versions:
+	@#   libpng16.a from tg5050 sysroot (tg5040 only has libpng12)
+	@#   libz.a from zlib source build above
+	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.a /build/src/GLideN64/src/GLideNHQ/lib/libpng.a
+	cp $(SRC)/zlib/libz.a $(SRC)/GLideN64/src/GLideNHQ/lib/libz.a
+	$(DOCKER_RUN_5040) bash -c 'cd /build/src/GLideN64/src && mkdir -p build && cd build && cmake -DCMAKE_TOOLCHAIN_FILE=../../toolchain-aarch64.cmake -DMUPENPLUSAPI=ON -DEGL=ON -DMESA=ON -DNEON_OPT=ON -DCRC_ARMV8=ON .. && make -j$$(nproc) mupen64plus-video-GLideN64'
+
+# ── Dist assembly ─────────────────────────────────────────────────────────────
+
+.PHONY: dist dist-tg5040 dist-tg5050
+
+# Shared data/config files copied into each platform dir
+define DIST_COMMON
+	cp $(CONFIG)/shared/default.cfg $(1)/
+	cp $(CONFIG)/shared/overlay_settings.json $(1)/
+	cp $(SRC)/GLideN64/src/build/plugin/Release/mupen64plus-video-GLideN64.so $(1)/
+	cp $(SRC)/mupen64plus-core/data/mupen64plus.ini    $(1)/
+	cp $(SRC)/mupen64plus-input-sdl/data/InputAutoCfg.ini $(1)/
+	cp $(SRC)/mupen64plus-core/data/mupencheat.txt     $(1)/
+	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_a.png $(1)/
+	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_b.png $(1)/
+	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_dpad_horizontal.png $(1)/
+endef
+
+dist: dist-tg5050
+	@echo "=== dist/N64.pak/ assembled ==="
+	@find $(DIST) -type f | sort
+
+dist-tg5040:
+	mkdir -p $(DIST)/tg5040
+	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
+	cp $(SRC)/mupen64plus-core/projects/unix/libmupen64plus.so.2.0.0 $(DIST)/tg5040/libmupen64plus.so.2
+	cp $(SRC)/mupen64plus-ui-console/projects/unix/mupen64plus       $(DIST)/tg5040/
+	cp $(SRC)/mupen64plus-audio-sdl/projects/unix/mupen64plus-audio-sdl.so $(DIST)/tg5040/
+	cp $(SRC)/mupen64plus-input-sdl/projects/unix/mupen64plus-input-sdl.so $(DIST)/tg5040/
+	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5040/
+	$(call DIST_COMMON,$(DIST)/tg5040)
+	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5040/libpng16.so.16
+
+dist-tg5050:
+	mkdir -p $(DIST)/tg5050
+	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
+	cp $(SRC)/mupen64plus-core/projects/unix/libmupen64plus.so.2.0.0 $(DIST)/tg5050/libmupen64plus.so.2
+	cp $(SRC)/mupen64plus-ui-console/projects/unix/mupen64plus       $(DIST)/tg5050/
+	cp $(SRC)/mupen64plus-audio-sdl/projects/unix/mupen64plus-audio-sdl.so $(DIST)/tg5050/
+	cp $(SRC)/mupen64plus-input-sdl/projects/unix/mupen64plus-input-sdl.so $(DIST)/tg5050/
+	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5050/
+	$(call DIST_COMMON,$(DIST)/tg5050)
+	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
+
+# ── Clean ─────────────────────────────────────────────────────────────────────
+
+clean:
+	rm -rf $(SRC) $(ROOT)/dist $(ROOT)/overlay $(ROOT)/include
+	rm -f $(PATCHES)/mupen64plus-ui-console.patch $(PATCHES)/mupen64plus-audio-sdl.patch

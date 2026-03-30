@@ -1,0 +1,20 @@
+# Cloned upstream sources
+src/
+
+# Build output
+dist/
+
+# Populated from nx-redux at build time
+overlay/
+include/
+patches/shared/mupen64plus-ui-console.patch
+patches/shared/mupen64plus-audio-sdl.patch
+
+# Object files and shared libraries (build artifacts)
+*.o
+*.d
+
+# Editor/OS junk
+.DS_Store
+*.swp
+*~
