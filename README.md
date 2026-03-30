@@ -107,12 +107,19 @@ dist/N64.pak/
 | Z Trigger | L2 (analog) | L2 (analog) |
 | L | L1 | L1 |
 | R | R1 | R1 |
-| Analog Stick | Left analog stick | D-pad |
-| C-Up | Right analog up | — (no mapping) |
-| C-Down | Right analog down / Y | Y |
-| C-Left | Right analog left / X | X |
-| C-Right | Right analog right | — (no mapping) |
-| D-Pad | D-pad (hat) | D-pad (hat) |
+| Analog Stick | Left analog stick | D-pad (toggle with F2) |
+| C-Up | Right analog up | R2 + X (top) |
+| C-Down | Right analog down / Y | R2 + B (bottom) |
+| C-Left | Right analog left / X | R2 + Y (left) |
+| C-Right | Right analog right | R2 + A (right) |
+| D-Pad | D-pad (hat) | D-pad (toggle with F2) |
+
+### Brick-specific controls
+
+The Brick has no analog sticks, so two extra input modes are available:
+
+- **F2 (D-pad toggle)**: Press F2 to switch the D-pad between N64 D-pad mode (default) and N64 analog stick mode. Press F2 again to switch back. Useful for games that primarily use the analog stick.
+- **R2 + ABXY (C-buttons)**: Hold R2 and press A/B/X/Y to send C-button inputs based on the physical button position (A=right, B=bottom, X=top, Y=left). Without R2 held, X and Y still map to C-Left and C-Down as normal.
 
 ### Overlay menu
 

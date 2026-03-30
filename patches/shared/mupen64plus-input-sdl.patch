@@ -1,0 +1,59 @@
+diff --git a/src/plugin.c b/src/plugin.c
+index 974b1db..d7d43f3 100644
+--- a/src/plugin.c
++++ b/src/plugin.c
+@@ -614,6 +614,54 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
+         controller[Control].buttons.Y_AXIS = iY;
+     }
+ 
++    /* Brick-specific remapping (no analog sticks):
++     * - F2 (button 9) toggles D-pad between D-pad mode and analog stick mode
++     * - R2 (axis 5) + ABXY = C-buttons by physical position:
++     *     A (right) → C-Right, B (bottom) → C-Down,
++     *     X (top) → C-Up, Y (left) → C-Left */
++    {
++        static int dpad_as_joystick = 0;
++        static int f2_prev = 0;
++
++        SDL_Joystick *joy = controller[Control].joystick;
++        if (joy && Control == 0) {
++            /* F2 toggle: button 9 switches D-pad between hat and analog stick */
++            int f2 = SDL_JoystickGetButton(joy, 9);
++            if (f2 && !f2_prev)
++                dpad_as_joystick = !dpad_as_joystick;
++            f2_prev = f2;
++
++            if (dpad_as_joystick) {
++                Uint8 hat = SDL_JoystickGetHat(joy, 0);
++                controller[Control].buttons.Value &= ~0x000F; /* clear D-pad bits */
++                if (hat & SDL_HAT_RIGHT) controller[Control].buttons.X_AXIS =  80;
++                if (hat & SDL_HAT_LEFT)  controller[Control].buttons.X_AXIS = -80;
++                if (hat & SDL_HAT_UP)    controller[Control].buttons.Y_AXIS =  80;
++                if (hat & SDL_HAT_DOWN)  controller[Control].buttons.Y_AXIS = -80;
++            }
++
++            /* R2 modifier (axis 5 > 0): remap ABXY to C-buttons by position */
++            if (SDL_JoystickGetAxis(joy, 5) > 0) {
++                if (SDL_JoystickGetButton(joy, 1)) { /* A (right) → C-Right */
++                    controller[Control].buttons.Value &= ~0x0080; /* clear A_BUTTON */
++                    controller[Control].buttons.Value |=  0x0100; /* set R_CBUTTON */
++                }
++                if (SDL_JoystickGetButton(joy, 0)) { /* B (bottom) → C-Down */
++                    controller[Control].buttons.Value &= ~0x0040; /* clear B_BUTTON */
++                    controller[Control].buttons.Value |=  0x0400; /* set D_CBUTTON */
++                }
++                if (SDL_JoystickGetButton(joy, 3)) { /* X (top) → C-Up */
++                    controller[Control].buttons.Value &= ~0x0200; /* clear C-Left from config */
++                    controller[Control].buttons.Value |=  0x0800; /* set U_CBUTTON */
++                }
++                if (SDL_JoystickGetButton(joy, 2)) { /* Y (left) → C-Left */
++                    controller[Control].buttons.Value &= ~0x0400; /* clear C-Down from config */
++                    controller[Control].buttons.Value |=  0x0200; /* set L_CBUTTON */
++                }
++            }
++        }
++    }
++
+     // process mouse events
+     mstate = SDL_GetMouseState( NULL, NULL );
+     for( b = 0; b < 16; b++ )
