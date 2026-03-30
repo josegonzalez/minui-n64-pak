@@ -60,7 +60,7 @@ echo 3 >/proc/sys/vm/drop_caches 2>/dev/null
 
 # ── User data and device-specific config ──────────────────────────────────────
 USERDATA_DIR="$SHARED_USERDATA_PATH/N64-mupen64plus"
-mkdir -p "$USERDATA_DIR/save"
+mkdir -p "$USERDATA_DIR"
 
 # Device-specific config directory and display resolution
 case "$PLATFORM" in
@@ -100,10 +100,28 @@ sed -i "s/^ScreenWidth = .*/ScreenWidth = $SCREEN_W/" "$DEVICE_CFG"
 sed -i "s/^ScreenHeight = .*/ScreenHeight = $SCREEN_H/" "$DEVICE_CFG"
 sed -i "s/^anisotropy = .*/anisotropy = $DEVICE_ANISOTROPY/" "$DEVICE_CFG"
 
+# Align save paths with NextUI conventions
+BATTERY_SAVE_DIR="$SAVES_PATH/$EMU_TAG"
+STATE_SAVE_DIR="$SHARED_USERDATA_PATH/$EMU_TAG-mupen64plus"
+mkdir -p "$BATTERY_SAVE_DIR" "$STATE_SAVE_DIR"
+sed -i "s|^SaveSRAMPath = .*|SaveSRAMPath = \"$BATTERY_SAVE_DIR/\"|" "$DEVICE_CFG"
+sed -i "s|^SaveStatePath = .*|SaveStatePath = \"$STATE_SAVE_DIR/\"|" "$DEVICE_CFG"
+
+# ── Auto-resume: check if NextUI game switcher requested a state load ─────────
+RESUME_SLOT=""
+if [ -f /tmp/resume_slot.txt ]; then
+    RESUME_SLOT=$(cat /tmp/resume_slot.txt)
+    rm /tmp/resume_slot.txt
+fi
+
 # ── Environment ───────────────────────────────────────────────────────────────
 export HOME="$USERDATA_PATH"
 export LD_LIBRARY_PATH="$BIN_DIR:$SDCARD_PATH/.system/$PLATFORM/lib:/usr/trimui/lib:$LD_LIBRARY_PATH"
 export LD_PRELOAD="libEGL.so"
+# Relative ROM path for auto_resume.txt (strip /mnt/SDCARD prefix)
+export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
+# Pass resume slot to emulator if game switcher requested it
+[ -n "$RESUME_SLOT" ] && export EMU_RESUME_SLOT="$RESUME_SLOT"
 
 # ── Overlay menu config ──────────────────────────────────────────────────────
 export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"

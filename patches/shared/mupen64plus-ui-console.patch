@@ -1,0 +1,39 @@
+diff --git a/src/main.c b/src/main.c
+index 829fcc9..b83e4fa 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -1037,6 +1037,21 @@ int main(int argc, char *argv[])
+     }
+     free(ROM_buffer); /* the core copies the ROM image, so we can release this buffer immediately */
+ 
++    /* Set ROM filename (without path/extension) for SaveFilenameFormat=2.
++     * ROM_PARAMS is exported from the core library; access it via dlsym. */
++    {
++        typedef struct { char *cheats; int systemtype; char headername[21]; char romfilename[256]; } rom_params_t;
++        rom_params_t *rp = (rom_params_t *)osal_dynlib_getproc(CoreHandle, "ROM_PARAMS");
++        if (rp) {
++            const char *base = strrchr(l_ROMFilepath, '/');
++            base = base ? base + 1 : l_ROMFilepath;
++            strncpy(rp->romfilename, base, sizeof(rp->romfilename) - 1);
++            rp->romfilename[sizeof(rp->romfilename) - 1] = '\0';
++            char *dot = strrchr(rp->romfilename, '.');
++            if (dot != NULL) *dot = '\0';
++        }
++    }
++
+     /* handle the cheat codes */
+     CheatStart(l_CheatMode, l_CheatNumList);
+     if (l_CheatMode == CHEAT_SHOW_LIST)
+diff --git a/src/osal_dynamiclib_unix.c b/src/osal_dynamiclib_unix.c
+index f8ffcdd..da40185 100644
+--- a/src/osal_dynamiclib_unix.c
++++ b/src/osal_dynamiclib_unix.c
+@@ -33,7 +33,7 @@ m64p_error osal_dynlib_open(m64p_dynlib_handle *pLibHandle, const char *pccLibra
+     if (pLibHandle == NULL || pccLibraryPath == NULL)
+         return M64ERR_INPUT_ASSERT;
+ 
+-    *pLibHandle = dlopen(pccLibraryPath, RTLD_NOW);
++    *pLibHandle = dlopen(pccLibraryPath, RTLD_NOW | RTLD_GLOBAL);
+ 
+     if (*pLibHandle == NULL)
+     {

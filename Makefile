@@ -87,7 +87,7 @@ clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
 	@cp -r $(SRC)/nx-redux/workspace/all/include/GLES2 $(ROOT)/include/
 	@cp -r $(SRC)/nx-redux/workspace/all/include/GLES3 $(ROOT)/include/
 	@cp -r $(SRC)/nx-redux/workspace/all/include/KHR $(ROOT)/include/
-	@cp $(SRC)/nx-redux/workspace/tg5040/other/mupen64plus/mupen64plus-ui-console.patch $(PATCHES)/
+	@# mupen64plus-ui-console.patch is committed (customized with romfilename support)
 	@cp $(SRC)/nx-redux/workspace/tg5040/other/mupen64plus/mupen64plus-audio-sdl.patch $(PATCHES)/
 
 $(SRC)/mupen64plus-core:
@@ -128,6 +128,7 @@ $(PATCH_STAMP): | clone
 		if [ -s $(PATCHES)/mupen64plus-audio-sdl.patch ]; then \
 			cd $(SRC)/mupen64plus-audio-sdl && git apply $(PATCHES)/mupen64plus-audio-sdl.patch; \
 		fi; \
+		cd $(SRC)/mupen64plus-core && git apply $(PATCHES)/mupen64plus-core.patch; \
 		cd $(SRC)/GLideN64 && git apply --exclude='src/GLideNHQ/lib/*.a' $(PATCHES)/GLideN64-standalone.patch; \
 		cd $(SRC)/mupen64plus-input-sdl && git apply $(PATCHES)/mupen64plus-input-sdl.patch; \
 		touch $(PATCH_STAMP); \
@@ -261,4 +262,4 @@ dist-tg5050:
 
 clean:
 	rm -rf $(SRC) $(ROOT)/dist $(ROOT)/overlay $(ROOT)/include
-	rm -f $(PATCHES)/mupen64plus-ui-console.patch $(PATCHES)/mupen64plus-audio-sdl.patch
+	rm -f $(PATCHES)/mupen64plus-audio-sdl.patch

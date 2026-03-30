@@ -1,0 +1,69 @@
+diff --git a/src/api/api_export.ver b/src/api/api_export.ver
+index 289adf2..3c13fe8 100644
+--- a/src/api/api_export.ver
++++ b/src/api/api_export.ver
+@@ -1,4 +1,5 @@
+ { global:
++ROM_PARAMS;
+ ConfigExternalGetParameter;
+ ConfigExternalOpen;
+ ConfigExternalClose;
+diff --git a/src/main/main.c b/src/main/main.c
+index e317570..1b67f7c 100644
+--- a/src/main/main.c
++++ b/src/main/main.c
+@@ -168,6 +168,12 @@ static char *get_save_filename(void)
+ 
+     if (format == 0) {
+         snprintf(filename, 256, "%s", ROM_PARAMS.headername);
++    } else if (format == 2) {
++        /* Use ROM filename set by frontend (without path or extension) */
++        if (ROM_PARAMS.romfilename[0] != '\0')
++            snprintf(filename, 256, "%s", ROM_PARAMS.romfilename);
++        else
++            snprintf(filename, 256, "%s", ROM_PARAMS.headername); /* fallback */
+     } else /* if (format == 1) */ {
+         if (strstr(ROM_SETTINGS.goodname, "(unknown rom)") == NULL) {
+             snprintf(filename, 256, "%.32s-%.8s", ROM_SETTINGS.goodname, ROM_SETTINGS.MD5);
+@@ -438,7 +444,7 @@ int main_set_core_defaults(void)
+     ConfigSetDefaultInt(g_CoreConfig, "SiDmaDuration", -1, "Duration of SI DMA (-1: use per game settings)");
+     ConfigSetDefaultString(g_CoreConfig, "GbCameraVideoCaptureBackend1", DEFAULT_VIDEO_CAPTURE_BACKEND, "Gameboy Camera Video Capture backend");
+     ConfigSetDefaultInt(g_CoreConfig, "SaveDiskFormat", 1, "Disk Save Format (0: Full Disk Copy (*.ndr/*.d6r), 1: RAM Area Only (*.ram))");
+-    ConfigSetDefaultInt(g_CoreConfig, "SaveFilenameFormat", 1, "Save (SRAM/State) Filename Format (0: ROM Header Name, 1: Automatic (including partial MD5 hash))");
++    ConfigSetDefaultInt(g_CoreConfig, "SaveFilenameFormat", 1, "Save (SRAM/State) Filename Format (0: ROM Header Name, 1: Automatic (including partial MD5 hash), 2: ROM filename from frontend)");
+ 
+     /* handle upgrades */
+     if (bUpgrade)
+diff --git a/src/main/rom.c b/src/main/rom.c
+index 325c5b6..ca23d6e 100644
+--- a/src/main/rom.c
++++ b/src/main/rom.c
+@@ -65,7 +65,7 @@ static _romdatabase g_romdatabase;
+ int g_rom_size = 0;
+ 
+ m64p_rom_header   ROM_HEADER;
+-rom_params        ROM_PARAMS;
++__attribute__((visibility("default"))) rom_params ROM_PARAMS;
+ m64p_rom_settings ROM_SETTINGS;
+ 
+ static m64p_system_type rom_country_code_to_system_type(uint16_t country_code);
+@@ -177,6 +177,7 @@ m64p_error open_rom(const unsigned char* romimage, unsigned int size)
+     memcpy(ROM_PARAMS.headername, ROM_HEADER.Name, 20);
+     ROM_PARAMS.headername[20] = '\0';
+     trim(ROM_PARAMS.headername); /* Remove trailing whitespace from ROM name. */
++    memset(ROM_PARAMS.romfilename, 0, sizeof(ROM_PARAMS.romfilename));
+ 
+     /* Look up this ROM in the .ini file and fill in goodname, etc */
+     if ((entry=ini_search_by_md5(digest)) != NULL ||
+diff --git a/src/main/rom.h b/src/main/rom.h
+index 853fd3b..4484e0d 100644
+--- a/src/main/rom.h
++++ b/src/main/rom.h
+@@ -51,6 +51,7 @@ typedef struct _rom_params
+    char *cheats;
+    m64p_system_type systemtype;
+    char headername[21];  /* ROM Name as in the header, removing trailing whitespace */
++   char romfilename[256]; /* ROM filename without path or extension, set by frontend */
+ } rom_params;
+ 
+ extern m64p_rom_header   ROM_HEADER;
