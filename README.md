@@ -80,6 +80,60 @@ dist/N64.pak/
     └── (same files, built with tg5050 toolchain)
 ```
 
+## Button mapping
+
+### Physical controls by device
+
+| Control | Brick | Smart Pro | Smart Pro S |
+|---------|:-----:|:---------:|:-----------:|
+| D-pad | Yes | Yes | Yes |
+| A, B, X, Y | Yes | Yes | Yes |
+| L1, R1 | Yes | Yes | Yes |
+| L2, R2 | Yes | Yes | Yes |
+| Start, Select, Menu | Yes | Yes | Yes |
+| Left analog stick | — | Yes | Yes |
+| Right analog stick | — | Yes | Yes |
+| L3 (left stick click) | — | — | Yes |
+| R3 (right stick click) | — | — | Yes |
+| Power | Yes | Yes | Yes |
+
+### N64 controller mapping
+
+| N64 Button | Smart Pro / Smart Pro S | Brick (no analog sticks) |
+|------------|----------------------|--------------------------|
+| A | A | A |
+| B | B | B |
+| Start | Start | Start |
+| Z Trigger | L2 (analog) | L2 (analog) |
+| L | L1 | L1 |
+| R | R1 | R1 |
+| Analog Stick | Left analog stick | D-pad |
+| C-Up | Right analog up | — (no mapping) |
+| C-Down | Right analog down / Y | Y |
+| C-Left | Right analog left / X | X |
+| C-Right | Right analog right | — (no mapping) |
+| D-Pad | D-pad (hat) | D-pad (hat) |
+
+### Overlay menu
+
+| Action | Button |
+|--------|--------|
+| Open / close | Menu |
+| Navigate | D-pad |
+| Confirm | A |
+| Back | B |
+| Page left | L1 |
+| Page right | R1 |
+
+### Power button
+
+| Action | Input |
+|--------|-------|
+| Sleep (screen off, audio mute) | Short press (< 1s) |
+| Power off (exit + shutdown) | Long press (≥ 1s) |
+
+After 2 minutes in sleep, the device suspends to RAM. Press power again to wake.
+
 ## Build flags
 
 | Flag | Purpose |
