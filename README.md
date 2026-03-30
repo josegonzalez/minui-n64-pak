@@ -141,6 +141,17 @@ The Brick has no analog sticks, so two extra input modes are available:
 
 After 2 minutes in sleep, the device suspends to RAM. Press power again to wake.
 
+### CPU mode (overlay menu)
+
+The overlay menu has a **Performance** section with a **CPU Mode** toggle:
+
+| Mode | Governor | Min Freq | Max Freq |
+|------|----------|----------|----------|
+| Ondemand (default) | `ondemand` | 1.2 GHz | 1.8 GHz |
+| Performance | `performance` | Platform max | Platform max |
+
+The setting is applied immediately when changed and persists in the config file across overlay opens. On each game launch, the saved preference is applied automatically.
+
 ## Build flags
 
 | Flag | Purpose |

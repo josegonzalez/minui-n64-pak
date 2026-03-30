@@ -479,7 +479,7 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..4cd301c1 100644
+index 59725f62..acef60d2 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
 @@ -1,5 +1,10 @@
@@ -493,7 +493,7 @@ index 59725f62..4cd301c1 100644
  #include "Config.h"
  #include "RSP.h"
  #include "VI.h"
-@@ -8,6 +13,371 @@
+@@ -8,6 +13,435 @@
  #include "PluginAPI.h"
  #include "FrameBuffer.h"
  
@@ -545,6 +545,63 @@ index 59725f62..4cd301c1 100644
 +static SDL_Joystick* s_joy = nullptr;
 +static Uint8 s_prevHat = 0;
 +static Uint32 s_prevButtons = 0;
++
++// ---------------------------------------------------------------------------
++// CPU mode (switchable via overlay menu)
++// ---------------------------------------------------------------------------
++
++static void apply_cpu_mode(int mode) {
++	// Detect platform: try tg5050 cpu4 path first, fall back to tg5040 cpu0
++	const char* cpu_path = "/sys/devices/system/cpu/cpu4/cpufreq";
++	FILE* f = fopen("/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor", "r");
++	int is_tg5050 = (f != NULL);
++	if (f) fclose(f);
++	if (!is_tg5050) cpu_path = "/sys/devices/system/cpu/cpu0/cpufreq";
++
++	char path[256];
++	if (mode == 0) { // Ondemand
++		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
++		f = fopen(path, "w"); if (f) { fprintf(f, "ondemand"); fclose(f); }
++		snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
++		f = fopen(path, "w"); if (f) { fprintf(f, "1200000"); fclose(f); }
++		snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
++		f = fopen(path, "w"); if (f) { fprintf(f, "1800000"); fclose(f); }
++	} else { // Performance
++		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
++		f = fopen(path, "w"); if (f) { fprintf(f, "performance"); fclose(f); }
++		if (is_tg5050) {
++			snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
++			f = fopen(path, "w"); if (f) { fprintf(f, "1992000"); fclose(f); }
++			snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
++			f = fopen(path, "w"); if (f) { fprintf(f, "2160000"); fclose(f); }
++		} else {
++			snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
++			f = fopen(path, "w"); if (f) { fprintf(f, "1608000"); fclose(f); }
++			snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
++			f = fopen(path, "w"); if (f) { fprintf(f, "2000000"); fclose(f); }
++		}
++	}
++}
++
++// Find cpu_mode item in overlay config and return its current value (-1 if not found)
++static int find_cpu_mode_value(EmuOvlConfig* cfg) {
++	for (int s = 0; s < cfg->section_count; s++)
++		for (int i = 0; i < cfg->sections[s].item_count; i++)
++			if (strcmp(cfg->sections[s].items[i].key, "cpu_mode") == 0)
++				return cfg->sections[s].items[i].current_value;
++	return -1;
++}
++
++// Apply cpu_mode if it was changed in the overlay menu
++static void apply_cpu_mode_if_dirty(EmuOvlConfig* cfg) {
++	for (int s = 0; s < cfg->section_count; s++)
++		for (int i = 0; i < cfg->sections[s].item_count; i++)
++			if (strcmp(cfg->sections[s].items[i].key, "cpu_mode") == 0 &&
++			    cfg->sections[s].items[i].dirty) {
++				apply_cpu_mode(cfg->sections[s].items[i].staged_value);
++				return;
++			}
++}
 +
 +// ---------------------------------------------------------------------------
 +// Power button / sleep handling
@@ -692,6 +749,11 @@ index 59725f62..4cd301c1 100644
 +		}
 +
 +		s_overlayConfigLoaded = true;
++
++		// Apply saved CPU mode from config on first load
++		int cpu_mode = find_cpu_mode_value(&s_overlayConfig);
++		if (cpu_mode >= 0)
++			apply_cpu_mode(cpu_mode);
 +	}
 +
 +	// Try GL init on the video thread (retries each frame until GL context is available)
@@ -853,6 +915,8 @@ index 59725f62..4cd301c1 100644
 +
 +	// Handle config changes: write to INI first (while dirty flags are set), then apply
 +	if (emu_ovl_cfg_has_changes(&s_overlayConfig)) {
++		// Apply CPU mode to sysfs before clearing dirty flags
++		apply_cpu_mode_if_dirty(&s_overlayConfig);
 +		if (s_overlayIniPath[0] != '\0') {
 +			emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
 +		}
@@ -865,7 +929,7 @@ index 59725f62..4cd301c1 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +418,47 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +482,47 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();

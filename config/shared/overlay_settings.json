@@ -321,6 +321,20 @@
           "default": 20
         }
       ]
+    },
+    {
+      "name": "Performance",
+      "items": [
+        {
+          "key": "cpu_mode",
+          "label": "CPU Mode",
+          "description": "Ondemand saves battery, Performance maximizes speed",
+          "type": "cycle",
+          "values": [0, 1],
+          "labels": ["Ondemand", "Performance"],
+          "default": 0
+        }
+      ]
     }
   ]
 }

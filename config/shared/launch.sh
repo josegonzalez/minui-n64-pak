@@ -22,36 +22,26 @@ case "$PLATFORM" in
         ORIG_CPU1=$(cat /sys/devices/system/cpu/cpu1/online 2>/dev/null)
         ORIG_CPU2=$(cat /sys/devices/system/cpu/cpu2/online 2>/dev/null)
         ORIG_CPU3=$(cat /sys/devices/system/cpu/cpu3/online 2>/dev/null)
-        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)
-        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null)
-        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null)
         ;;
     tg5050)
         ORIG_CPU5=$(cat /sys/devices/system/cpu/cpu5/online 2>/dev/null)
-        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_governor 2>/dev/null)
-        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null)
-        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null)
         ORIG_GPU_GOV=$(cat /sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null)
         ;;
 esac
 
 # ── CPU / GPU setup (platform-specific) ──────────────────────────────────────
+# CPU governor and frequency are managed by the emulator (overlay menu CPU Mode).
+# launch.sh only brings CPUs online and sets the GPU governor.
 case "$PLATFORM" in
     tg5040)
-        # Single cluster: cpu0-3 (Cortex-A53, max 2000 MHz)
+        # Bring all cores online (single cluster: cpu0-3 Cortex-A53)
         echo 1 >/sys/devices/system/cpu/cpu1/online 2>/dev/null
         echo 1 >/sys/devices/system/cpu/cpu2/online 2>/dev/null
         echo 1 >/sys/devices/system/cpu/cpu3/online 2>/dev/null
-        echo performance >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-        echo 2000000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-        echo 1608000 >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
         ;;
     tg5050)
-        # BIG cluster: cpu4-5 (Cortex-A55, 2160 MHz)
+        # Bring BIG core online (cpu4-5 Cortex-A55)
         echo 1 >/sys/devices/system/cpu/cpu5/online 2>/dev/null
-        echo performance >/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor
-        echo 2160000 >/sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq
-        echo 1992000 >/sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq
         # GPU: lock to performance for GLideN64 rendering
         echo performance >/sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null
         ;;
@@ -202,20 +192,14 @@ wait $EMU_PID
 killall sleepmon.elf 2>/dev/null || true
 kill $SYNC_PID 2>/dev/null || true
 
-# Restore CPU/GPU settings
+# Restore CPU online state and GPU governor (CPU governor/freq managed by emulator)
 case "$PLATFORM" in
     tg5040)
-        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
         [ -n "$ORIG_CPU3" ] && echo "$ORIG_CPU3" >/sys/devices/system/cpu/cpu3/online 2>/dev/null
         [ -n "$ORIG_CPU2" ] && echo "$ORIG_CPU2" >/sys/devices/system/cpu/cpu2/online 2>/dev/null
         [ -n "$ORIG_CPU1" ] && echo "$ORIG_CPU1" >/sys/devices/system/cpu/cpu1/online 2>/dev/null
         ;;
     tg5050)
-        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor
-        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq
-        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq
         [ -n "$ORIG_GPU_GOV" ] && echo "$ORIG_GPU_GOV" >/sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null
         [ -n "$ORIG_CPU5" ] && echo "$ORIG_CPU5" >/sys/devices/system/cpu/cpu5/online 2>/dev/null
         ;;
