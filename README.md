@@ -52,11 +52,13 @@ All components are built from upstream via Docker cross-compilation toolchains.
 
 ## Patches
 
-All patches live in `patches/shared/` (identical for both platforms):
+All patches live in `patches/shared/`:
 
-- **mupen64plus-ui-console.patch** — Changes `dlopen()` to use `RTLD_GLOBAL` so GLES/EGL symbols from the core library are visible to plugins loaded later.
-- **mupen64plus-audio-sdl.patch** — Empty placeholder (audio plugin is built from unmodified source to enable `src-sinc-fastest` resampler via libsamplerate).
-- **GLideN64-standalone.patch** — Adds overlay menu integration (in-game settings menu), cross-compilation toolchain file, and OpenGL ES render backend. References overlay sources from the bundled `overlay/` directory.
+- **mupen64plus-core.patch** — Adds `romfilename` field to `ROM_PARAMS` and `SaveFilenameFormat=2` option for ROM-filename-based save naming (matching NextUI conventions). Exports `ROM_PARAMS` in the linker version script so the frontend can set the filename via dlsym.
+- **mupen64plus-ui-console.patch** — Changes `dlopen()` to use `RTLD_GLOBAL` so GLES/EGL symbols from the core library are visible to plugins. Sets `ROM_PARAMS.romfilename` from the command-line ROM path (basename without extension) for save file naming.
+- **mupen64plus-audio-sdl.patch** — Empty placeholder (pulled from nx-redux at build time). Audio plugin is built from unmodified source to enable `src-sinc-fastest` resampler via libsamplerate.
+- **mupen64plus-input-sdl.patch** — Brick-specific input remapping: F2 toggles D-pad between D-pad and analog stick mode, R2+ABXY sends C-button inputs by physical position.
+- **GLideN64-standalone.patch** — Overlay menu integration (in-game settings menu with save/load state, video settings, CPU mode toggle), power button sleep/wake/poweroff handling, auto-resume support (saves state to slot 9 on sleep for NextUI game switcher), cross-compilation toolchain file, and OpenGL ES render backend.
 
 ## Dist layout
 
