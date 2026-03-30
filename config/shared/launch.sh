@@ -14,6 +14,27 @@ ROM="$1"
 
 mkdir -p "$SAVES_PATH/$EMU_TAG"
 
+# ── Save original system settings (restored on exit) ─────────────────────────
+ORIG_SPEAKER_MUTE=$(cat /sys/class/speaker/mute 2>/dev/null)
+ORIG_VFS_CACHE=$(cat /proc/sys/vm/vfs_cache_pressure 2>/dev/null)
+case "$PLATFORM" in
+    tg5040)
+        ORIG_CPU1=$(cat /sys/devices/system/cpu/cpu1/online 2>/dev/null)
+        ORIG_CPU2=$(cat /sys/devices/system/cpu/cpu2/online 2>/dev/null)
+        ORIG_CPU3=$(cat /sys/devices/system/cpu/cpu3/online 2>/dev/null)
+        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)
+        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null)
+        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null)
+        ;;
+    tg5050)
+        ORIG_CPU5=$(cat /sys/devices/system/cpu/cpu5/online 2>/dev/null)
+        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_governor 2>/dev/null)
+        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null)
+        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null)
+        ORIG_GPU_GOV=$(cat /sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null)
+        ;;
+esac
+
 # ── CPU / GPU setup (platform-specific) ──────────────────────────────────────
 case "$PLATFORM" in
     tg5040)
@@ -176,12 +197,31 @@ for TID in $(ls /proc/$EMU_PID/task/ 2>/dev/null); do
 done
 [ -n "$BEST_TID" ] && taskset -p $VIDEO_MASK "$BEST_TID" 2>/dev/null
 
-# ── Cleanup ───────────────────────────────────────────────────────────────────
+# ── Cleanup: restore all saved system settings ───────────────────────────────
 wait $EMU_PID
 killall sleepmon.elf 2>/dev/null || true
 kill $SYNC_PID 2>/dev/null || true
-echo 0 > /sys/class/speaker/mute 2>/dev/null || true
 
-# Disable swap, restore VM defaults
+# Restore CPU/GPU settings
+case "$PLATFORM" in
+    tg5040)
+        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+        [ -n "$ORIG_CPU3" ] && echo "$ORIG_CPU3" >/sys/devices/system/cpu/cpu3/online 2>/dev/null
+        [ -n "$ORIG_CPU2" ] && echo "$ORIG_CPU2" >/sys/devices/system/cpu/cpu2/online 2>/dev/null
+        [ -n "$ORIG_CPU1" ] && echo "$ORIG_CPU1" >/sys/devices/system/cpu/cpu1/online 2>/dev/null
+        ;;
+    tg5050)
+        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor
+        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq
+        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq
+        [ -n "$ORIG_GPU_GOV" ] && echo "$ORIG_GPU_GOV" >/sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null
+        [ -n "$ORIG_CPU5" ] && echo "$ORIG_CPU5" >/sys/devices/system/cpu/cpu5/online 2>/dev/null
+        ;;
+esac
+
+# Restore speaker, swap, VM settings
+[ -n "$ORIG_SPEAKER_MUTE" ] && echo "$ORIG_SPEAKER_MUTE" >/sys/class/speaker/mute 2>/dev/null
 swapoff "$SWAPFILE" 2>/dev/null
-echo 100 >/proc/sys/vm/vfs_cache_pressure 2>/dev/null
+[ -n "$ORIG_VFS_CACHE" ] && echo "$ORIG_VFS_CACHE" >/proc/sys/vm/vfs_cache_pressure 2>/dev/null
