@@ -106,6 +106,9 @@ STATE_SAVE_DIR="$SHARED_USERDATA_PATH/$EMU_TAG-mupen64plus"
 mkdir -p "$BATTERY_SAVE_DIR" "$STATE_SAVE_DIR"
 sed -i "s|^SaveSRAMPath = .*|SaveSRAMPath = \"$BATTERY_SAVE_DIR/\"|" "$DEVICE_CFG"
 sed -i "s|^SaveStatePath = .*|SaveStatePath = \"$STATE_SAVE_DIR/\"|" "$DEVICE_CFG"
+SCREENSHOT_DIR="/mnt/SDCARD/Screenshots/$EMU_TAG"
+mkdir -p "$SCREENSHOT_DIR"
+sed -i "s|^ScreenshotPath = .*|ScreenshotPath = \"$SCREENSHOT_DIR/\"|" "$DEVICE_CFG"
 
 # ── Auto-resume: check if NextUI game switcher requested a state load ─────────
 RESUME_SLOT=""

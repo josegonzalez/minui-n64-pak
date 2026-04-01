@@ -479,7 +479,7 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..51d07f01 100644
+index 59725f62..aa5a851f 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
 @@ -1,5 +1,10 @@
@@ -1014,7 +1014,7 @@ index 59725f62..51d07f01 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +567,98 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +567,105 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
@@ -1080,6 +1080,13 @@ index 59725f62..51d07f01 100644
 +				CoreDoCommand(M64CMD_STATE_SET_SLOT, s_currentSlot, nullptr);
 +				CoreDoCommand(M64CMD_STATE_LOAD, 0, nullptr);
 +			}
++		}
++
++		// Screenshot
++		int screenshotBtn = get_shortcut_button(&s_overlayConfig, "shortcut_screenshot");
++		if (btn_just_pressed(screenshotBtn)) {
++			if (CoreDoCommand)
++				CoreDoCommand(M64CMD_TAKE_NEXT_SCREENSHOT, 0, nullptr);
 +		}
 +	}
 +
