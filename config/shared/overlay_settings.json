@@ -297,6 +297,24 @@
           "values": [0, 1, 2],
           "labels": ["One piece", "Stripped", "Best performance"],
           "default": 0
+        },
+        {
+          "key": "cpu_mode",
+          "label": "CPU Mode",
+          "description": "Powersave saves battery, Performance maximizes speed",
+          "type": "cycle",
+          "values": [0, 1, 2, 3],
+          "labels": ["Powersave", "Ondemand", "Performance", "Auto"],
+          "default": 1
+        },
+        {
+          "key": "rewind_buffer",
+          "label": "Rewind Buffer",
+          "description": "Off saves RAM, Large gives more rewind time",
+          "type": "cycle",
+          "values": [0, 1, 2, 3],
+          "labels": ["Off", "Small (5s)", "Medium (15s)", "Large (30s)"],
+          "default": 0
         }
       ]
     },
@@ -319,29 +337,6 @@
           "labels": ["1.0", "1.5", "2.0", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0"],
           "float_scale": 10,
           "default": 20
-        }
-      ]
-    },
-    {
-      "name": "Performance",
-      "items": [
-        {
-          "key": "cpu_mode",
-          "label": "CPU Mode",
-          "description": "Powersave saves battery, Performance maximizes speed",
-          "type": "cycle",
-          "values": [0, 1, 2, 3],
-          "labels": ["Powersave", "Ondemand", "Performance", "Auto"],
-          "default": 1
-        },
-        {
-          "key": "rewind_buffer",
-          "label": "Rewind Buffer",
-          "description": "Off saves RAM, Large gives more rewind time",
-          "type": "cycle",
-          "values": [0, 1, 2, 3],
-          "labels": ["Off", "Small (5s)", "Medium (15s)", "Large (30s)"],
-          "default": 0
         }
       ]
     },
