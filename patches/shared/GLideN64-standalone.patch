@@ -479,7 +479,7 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..930a6ee1 100644
+index 59725f62..4865e5d0 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
 @@ -1,5 +1,11 @@
@@ -494,7 +494,7 @@ index 59725f62..930a6ee1 100644
  #include "Config.h"
  #include "RSP.h"
  #include "VI.h"
-@@ -8,6 +14,866 @@
+@@ -8,6 +14,954 @@
  #include "PluginAPI.h"
  #include "FrameBuffer.h"
  
@@ -546,6 +546,9 @@ index 59725f62..930a6ee1 100644
 +static SDL_Joystick* s_joy = nullptr;
 +static Uint8 s_prevHat = 0;
 +static Uint32 s_prevButtons = 0;
++
++// Frame skip: shared with RSP.cpp (extern declared there)
++int g_frameSkip = 0;
 +
 +// ---------------------------------------------------------------------------
 +// CPU mode (switchable via overlay menu)
@@ -610,6 +613,83 @@ index 59725f62..930a6ee1 100644
 +			if (strcmp(cfg->sections[s].items[i].key, "cpu_mode") == 0 &&
 +			    cfg->sections[s].items[i].dirty) {
 +				apply_cpu_mode(cfg->sections[s].items[i].staged_value);
++				return;
++			}
++}
++
++// ---------------------------------------------------------------------------
++// Frame skip (configurable via overlay menu)
++// ---------------------------------------------------------------------------
++
++static int find_frame_skip_value(EmuOvlConfig* cfg) {
++	for (int s = 0; s < cfg->section_count; s++)
++		for (int i = 0; i < cfg->sections[s].item_count; i++)
++			if (strcmp(cfg->sections[s].items[i].key, "frame_skip") == 0)
++				return cfg->sections[s].items[i].current_value;
++	return -1;
++}
++
++static void apply_frame_skip_if_dirty(EmuOvlConfig* cfg) {
++	for (int s = 0; s < cfg->section_count; s++)
++		for (int i = 0; i < cfg->sections[s].item_count; i++)
++			if (strcmp(cfg->sections[s].items[i].key, "frame_skip") == 0 &&
++			    cfg->sections[s].items[i].dirty) {
++				g_frameSkip = cfg->sections[s].items[i].staged_value;
++				return;
++			}
++}
++
++// ---------------------------------------------------------------------------
++// Audio quality (maps numeric overlay value to RESAMPLE string in INI)
++// ---------------------------------------------------------------------------
++
++static void apply_audio_quality_if_dirty(EmuOvlConfig* cfg) {
++	for (int s = 0; s < cfg->section_count; s++)
++		for (int i = 0; i < cfg->sections[s].item_count; i++)
++			if (strcmp(cfg->sections[s].items[i].key, "audio_quality") == 0 &&
++			    cfg->sections[s].items[i].dirty) {
++				const char* resample;
++				switch (cfg->sections[s].items[i].staged_value) {
++					case 0:  resample = "trivial"; break;
++					case 1:  resample = "src-linear"; break;
++					default: resample = "src-sinc-fastest"; break;
++				}
++				if (s_overlayIniPath[0] != '\0') {
++					FILE* f = fopen(s_overlayIniPath, "r");
++					if (!f) return;
++					fseek(f, 0, SEEK_END);
++					long sz = ftell(f);
++					fseek(f, 0, SEEK_SET);
++					char* buf = (char*)malloc(sz + 1);
++					if (!buf) { fclose(f); return; }
++					fread(buf, 1, sz, f);
++					buf[sz] = '\0';
++					fclose(f);
++					char* p = strstr(buf, "RESAMPLE = ");
++					if (p) {
++						char* eol = strchr(p, '\n');
++						if (!eol) eol = buf + sz;
++						char newline[128];
++						snprintf(newline, sizeof(newline), "RESAMPLE = \"%s\"", resample);
++						long before = p - buf;
++						long after_len = sz - (eol - buf);
++						long new_sz = before + (long)strlen(newline) + after_len;
++						char* out = (char*)malloc(new_sz + 1);
++						if (out) {
++							memcpy(out, buf, before);
++							memcpy(out + before, newline, strlen(newline));
++							memcpy(out + before + strlen(newline), eol, after_len);
++							out[new_sz] = '\0';
++							f = fopen(s_overlayIniPath, "w");
++							if (f) {
++								fwrite(out, 1, new_sz, f);
++								fclose(f);
++							}
++							free(out);
++						}
++					}
++					free(buf);
++				}
 +				return;
 +			}
 +}
@@ -1165,6 +1245,11 @@ index 59725f62..930a6ee1 100644
 +		if (cpu_mode >= 0)
 +			apply_cpu_mode(cpu_mode);
 +
++		// Apply saved frame skip from config on first load
++		int fs = find_frame_skip_value(&s_overlayConfig);
++		if (fs >= 0)
++			g_frameSkip = fs;
++
 +		// Auto-resume: if launched from NextUI game switcher, load the requested state slot
 +		const char* resume = getenv("EMU_RESUME_SLOT");
 +		if (resume && resume[0] != '\0' && CoreDoCommand) {
@@ -1347,11 +1432,14 @@ index 59725f62..930a6ee1 100644
 +
 +	// Handle config changes: write to INI first (while dirty flags are set), then apply
 +	if (emu_ovl_cfg_has_changes(&s_overlayConfig)) {
-+		// Apply CPU mode to sysfs before clearing dirty flags
++		// Apply runtime settings before clearing dirty flags
 +		apply_cpu_mode_if_dirty(&s_overlayConfig);
++		apply_frame_skip_if_dirty(&s_overlayConfig);
 +		if (s_overlayIniPath[0] != '\0') {
 +			emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
 +		}
++		// Map audio_quality to RESAMPLE string after INI is written
++		apply_audio_quality_if_dirty(&s_overlayConfig);
 +		emu_ovl_cfg_apply_staged(&s_overlayConfig);
 +	}
 +
@@ -1361,7 +1449,7 @@ index 59725f62..930a6ee1 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +914,187 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +1002,187 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
@@ -2472,12 +2560,6 @@ index 9e45f731..a81a642e 100644
  #define PNG_Z_DEFAULT_COMPRESSION (-1)
  #define PNG_Z_DEFAULT_NOFILTER_STRATEGY 0
  #define PNG_Z_DEFAULT_STRATEGY 1
-diff --git a/src/GLideNHQ/lib/libpng.a b/src/GLideNHQ/lib/libpng.a
-index bb5dec03..5948560e 100644
-Binary files a/src/GLideNHQ/lib/libpng.a and b/src/GLideNHQ/lib/libpng.a differ
-diff --git a/src/GLideNHQ/lib/libz.a b/src/GLideNHQ/lib/libz.a
-index 98a63cca..362e4064 100644
-Binary files a/src/GLideNHQ/lib/libz.a and b/src/GLideNHQ/lib/libz.a differ
 diff --git a/src/Graphics/OpenGLContext/GLFunctions.cpp b/src/Graphics/OpenGLContext/GLFunctions.cpp
 index 1a6b8f68..80b1e869 100644
 --- a/src/Graphics/OpenGLContext/GLFunctions.cpp
@@ -2589,6 +2671,36 @@ index 3f9bc3e0..e9b0c042 100644
  	}
  
  #ifdef OS_ANDROID
+diff --git a/src/RSP.cpp b/src/RSP.cpp
+index 932cb4e5..b11d568b 100644
+--- a/src/RSP.cpp
++++ b/src/RSP.cpp
+@@ -1,5 +1,7 @@
+ #include <algorithm>
+ #include <cstring>
++
++extern int g_frameSkip;
+ #include "DebugDump.h"
+ #include "RSP.h"
+ #include "RDP.h"
+@@ -111,6 +113,17 @@ void RSP_ProcessDList()
+ {
+ 	RSP.LLE = false;
+ 
++	// Frame skip: skip display list processing on non-render frames.
++	// Fires DP interrupt so the CPU doesn't stall (same pattern as ConfigOpen guard below).
++	if (g_frameSkip > 0) {
++		static int skipCount = 0;
++		if (++skipCount % (g_frameSkip + 1) != 0) {
++			*REG.MI_INTR |= MI_INTR_DP;
++			CheckInterrupts();
++			return;
++		}
++	}
++
+ 	if (ConfigOpen || dwnd().isResizeWindow()) {
+ 		*REG.MI_INTR |= MI_INTR_DP;
+ 		CheckInterrupts();
 diff --git a/src/TextureFilterHandler.cpp b/src/TextureFilterHandler.cpp
 index aa864df6..86784c17 100644
 --- a/src/TextureFilterHandler.cpp

@@ -53,7 +53,7 @@ DOCKER_SCRIPT := /build/src/.docker-env.sh
 # Top-level targets
 # ══════════════════════════════════════════════════════════════════════════════
 
-.PHONY: all build tg5040 tg5050 gliden64 dist clone patch clean
+.PHONY: all build tg5040 tg5050 gliden64 dist clone patch patches clean
 
 build: all
 
@@ -254,6 +254,14 @@ dist-tg5050:
 	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5050/
 	$(call DIST_COMMON,$(DIST)/tg5050)
 	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
+
+# ── Regenerate patches from current source trees ─────────────────────────────
+
+patches:
+	cd $(SRC)/GLideN64 && git diff -- . ':!src/GLideNHQ/lib/*.a' > $(PATCHES)/GLideN64-standalone.patch
+	cd $(SRC)/mupen64plus-core && git diff > $(PATCHES)/mupen64plus-core.patch
+	cd $(SRC)/mupen64plus-ui-console && git diff > $(PATCHES)/mupen64plus-ui-console.patch
+	cd $(SRC)/mupen64plus-input-sdl && git diff > $(PATCHES)/mupen64plus-input-sdl.patch
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 

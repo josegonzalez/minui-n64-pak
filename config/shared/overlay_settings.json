@@ -315,6 +315,45 @@
           "values": [0, 1, 2, 3],
           "labels": ["Off", "Small (5s)", "Medium (15s)", "Large (30s)"],
           "default": 0
+        },
+        {
+          "key": "frame_skip",
+          "label": "Frame Skip",
+          "description": "Skip frames to reduce GPU load (may cause judder)",
+          "type": "cycle",
+          "values": [0, 1, 2, 3],
+          "labels": ["Off", "1/2", "1/3", "1/4"],
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "Core",
+      "ini_section": "Core",
+      "items": [
+        {
+          "key": "CountPerOpDenomPot",
+          "label": "CPU Overclock",
+          "description": "Overclock emulated N64 CPU (restart required)",
+          "type": "cycle",
+          "values": [0, 1, 2, 3],
+          "labels": ["Off", "2x", "4x", "8x"],
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "Audio",
+      "ini_section": "Audio-SDL",
+      "items": [
+        {
+          "key": "audio_quality",
+          "label": "Audio Quality",
+          "description": "Resampling quality (restart required)",
+          "type": "cycle",
+          "values": [0, 1, 2],
+          "labels": ["Low", "Medium", "High"],
+          "default": 1
         }
       ]
     },
