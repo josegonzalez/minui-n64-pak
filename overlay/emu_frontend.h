@@ -51,6 +51,20 @@ void emu_frontend_cleanup(void);
 // Shared joystick handle (managed by emu_frontend)
 SDL_Joystick* emu_frontend_get_joystick(void);
 
+// Set overlay config pointer (called by plugin after loading config)
+void emu_frontend_set_config(EmuOvlConfig* cfg);
+
+// Shortcut system (button state tracking + config lookup)
+void emu_frontend_update_buttons(void);
+int emu_frontend_get_shortcut(const char* key);
+bool emu_frontend_btn_just_pressed(int b);
+bool emu_frontend_btn_is_held(int b);
+
+// Fast forward state (for rewind mutual exclusion)
+bool emu_frontend_is_fast_forward(void);
+bool emu_frontend_is_ff_toggled(void);
+void emu_frontend_set_fast_forward(bool enable);
+
 // Frame skip value (owned by emu_frontend, read by GLideN64 RSP.cpp via extern)
 extern int g_frameSkip;
 

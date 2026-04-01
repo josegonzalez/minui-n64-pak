@@ -146,6 +146,79 @@ static void handle_sleep(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Shortcut system (button state tracking + config lookup)
+// ---------------------------------------------------------------------------
+
+static EmuOvlConfig* s_config = NULL;
+static uint32_t s_btnState = 0;
+static uint32_t s_btnPrev = 0;
+
+void emu_frontend_update_buttons(void) {
+	s_btnPrev = s_btnState;
+	s_btnState = 0;
+	if (!s_joy) return;
+	for (int b = 0; b <= 10; b++)
+		if (SDL_JoystickGetButton(s_joy, b))
+			s_btnState |= (1u << b);
+}
+
+int emu_frontend_get_shortcut(const char* key) {
+	if (!s_config) return -1;
+	for (int s = 0; s < s_config->section_count; s++)
+		for (int i = 0; i < s_config->sections[s].item_count; i++)
+			if (strcmp(s_config->sections[s].items[i].key, key) == 0)
+				return s_config->sections[s].items[i].current_value;
+	return -1;
+}
+
+bool emu_frontend_btn_just_pressed(int b) {
+	if (b < 0) return false;
+	uint32_t m = 1u << b;
+	return (s_btnState & m) && !(s_btnPrev & m);
+}
+
+bool emu_frontend_btn_is_held(int b) {
+	if (b < 0) return false;
+	return (s_btnState & (1u << b)) != 0;
+}
+
+// ---------------------------------------------------------------------------
+// Fast forward
+// ---------------------------------------------------------------------------
+
+static bool s_fastForward = false;
+static bool s_ffToggledOn = false;
+static bool s_ffHoldActive = false;
+
+static void set_fast_forward(bool enable) {
+	if (s_fastForward == enable) return;
+	s_fastForward = enable;
+	if (s_coreAPI.core_cmd) {
+		int speed = enable ? 400 : 100;
+		s_coreAPI.core_cmd(EMU_FE_CMD_CORE_STATE_SET, EMU_FE_CORE_SPEED_FACTOR, &speed);
+	}
+}
+
+static void process_fast_forward(void) {
+	int toggleBtn = emu_frontend_get_shortcut("shortcut_toggle_ff");
+	int holdBtn = emu_frontend_get_shortcut("shortcut_hold_ff");
+
+	if (emu_frontend_btn_just_pressed(toggleBtn)) {
+		s_ffToggledOn = !s_ffToggledOn;
+		set_fast_forward(s_ffToggledOn);
+	}
+	if (holdBtn >= 0) {
+		if (emu_frontend_btn_is_held(holdBtn) && !s_ffHoldActive) {
+			s_ffHoldActive = true;
+			set_fast_forward(true);
+		} else if (!emu_frontend_btn_is_held(holdBtn) && s_ffHoldActive) {
+			s_ffHoldActive = false;
+			set_fast_forward(s_ffToggledOn);
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -153,6 +226,10 @@ void emu_frontend_init(EmuFrontendCoreAPI* api, EmuFrontendPluginOps* ops) {
 	if (api) s_coreAPI = *api;
 	if (ops) s_pluginOps = *ops;
 	s_initialized = true;
+}
+
+void emu_frontend_set_config(EmuOvlConfig* cfg) {
+	s_config = cfg;
 }
 
 void emu_frontend_frame(void) {
@@ -170,6 +247,12 @@ void emu_frontend_frame(void) {
 		if (s_coreAPI.core_cmd)
 			s_coreAPI.core_cmd(EMU_FE_CMD_STOP, 0, NULL);
 	}
+
+	// Shortcut button processing
+	emu_frontend_update_buttons();
+	if (s_config) {
+		process_fast_forward();
+	}
 }
 
 void emu_frontend_cleanup(void) {
@@ -178,4 +261,16 @@ void emu_frontend_cleanup(void) {
 
 SDL_Joystick* emu_frontend_get_joystick(void) {
 	return s_joy;
+}
+
+bool emu_frontend_is_fast_forward(void) {
+	return s_fastForward;
+}
+
+bool emu_frontend_is_ff_toggled(void) {
+	return s_ffToggledOn;
+}
+
+void emu_frontend_set_fast_forward(bool enable) {
+	set_fast_forward(enable);
 }
