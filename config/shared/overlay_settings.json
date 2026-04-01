@@ -392,6 +392,15 @@
           "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
           "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
           "default": -1
+        },
+        {
+          "key": "shortcut_game_switcher",
+          "label": "Game Switcher",
+          "description": "Button to save and switch to another game",
+          "type": "cycle",
+          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
+          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "default": -1
         }
       ]
     }
