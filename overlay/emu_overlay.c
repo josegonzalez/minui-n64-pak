@@ -628,7 +628,7 @@ static void render_slot_select(EmuOvl* ovl) {
 
 	// Slot text below center
 	char slot_text[32];
-	snprintf(slot_text, sizeof(slot_text), "<  Slot %d  >", ovl->save_slot);
+	snprintf(slot_text, sizeof(slot_text), "<  Slot %d  >", ovl->save_slot + 1);
 	draw_centered_text(r, slot_text, ovl->screen_w / 2, center_y + S(PILL_SIZE) / 2,
 					   EMU_OVL_COLOR_WHITE, EMU_OVL_FONT_LARGE);
 
