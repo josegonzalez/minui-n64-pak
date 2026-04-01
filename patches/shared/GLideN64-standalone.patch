@@ -479,7 +479,7 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..56b2ff96 100644
+index 59725f62..d0fbf302 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
 @@ -1,5 +1,10 @@
@@ -1007,7 +1007,7 @@ index 59725f62..56b2ff96 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +560,69 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +560,76 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
@@ -1046,6 +1046,13 @@ index 59725f62..56b2ff96 100644
 +				s_ffHoldActive = false;
 +				set_fast_forward(s_ffToggledOn); // restore toggle state
 +			}
++		}
++
++		// Reset game
++		int resetBtn = get_shortcut_button(&s_overlayConfig, "shortcut_reset");
++		if (btn_just_pressed(resetBtn)) {
++			if (CoreDoCommand)
++				CoreDoCommand(M64CMD_RESET, 0, nullptr);
 +		}
 +	}
 +
