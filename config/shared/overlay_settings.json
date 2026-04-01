@@ -333,6 +333,15 @@
           "values": [0, 1, 2, 3],
           "labels": ["Powersave", "Ondemand", "Performance", "Auto"],
           "default": 1
+        },
+        {
+          "key": "rewind_buffer",
+          "label": "Rewind Buffer",
+          "description": "Off saves RAM, Large gives more rewind time",
+          "type": "cycle",
+          "values": [0, 1, 2, 3],
+          "labels": ["Off", "Small (5s)", "Medium (15s)", "Large (30s)"],
+          "default": 0
         }
       ]
     },
@@ -478,6 +487,24 @@
           "key": "shortcut_cycle_aspect",
           "label": "Cycle Aspect Ratio",
           "description": "Button to cycle through aspect ratio modes",
+          "type": "cycle",
+          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
+          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "default": -1
+        },
+        {
+          "key": "shortcut_toggle_rewind",
+          "label": "Toggle Rewind",
+          "description": "Button to toggle rewind on/off",
+          "type": "cycle",
+          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
+          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "default": -1
+        },
+        {
+          "key": "shortcut_hold_rewind",
+          "label": "Hold Rewind",
+          "description": "Button to rewind while held",
           "type": "cycle",
           "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
           "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],

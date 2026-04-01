@@ -479,7 +479,7 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..78385290 100644
+index 59725f62..930a6ee1 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
 @@ -1,5 +1,11 @@
@@ -494,7 +494,7 @@ index 59725f62..78385290 100644
  #include "Config.h"
  #include "RSP.h"
  #include "VI.h"
-@@ -8,6 +14,791 @@
+@@ -8,6 +14,866 @@
  #include "PluginAPI.h"
  #include "FrameBuffer.h"
  
@@ -670,6 +670,80 @@ index 59725f62..78385290 100644
 +}
 +
 +// ---------------------------------------------------------------------------
++// Rewind (tmpfs ring buffer of save states)
++// ---------------------------------------------------------------------------
++
++#define REWIND_INTERVAL 30 // capture every 30 frames (~2/sec at 60fps)
++// Slot counts per buffer size setting: Off=0, Small=10, Medium=30, Large=60
++static const int REWIND_SLOT_COUNTS[] = {0, 10, 30, 60};
++
++static int s_rewindSlots = 0;      // max slots (0 = disabled)
++static int s_rewindHead = 0;       // next slot to write
++static int s_rewindCount = 0;      // number of valid slots in ring
++static int s_rewindFrame = 0;      // frame counter
++static bool s_rewinding = false;
++static bool s_rewindToggledOn = false;
++static bool s_rewindHoldActive = false;
++static bool s_rewindInitialized = false;
++
++static void rewind_init() {
++	if (s_rewindInitialized) return;
++	system("mkdir -p /tmp/m64p_rewind");
++	s_rewindInitialized = true;
++}
++
++static void rewind_cleanup() {
++	system("rm -rf /tmp/m64p_rewind");
++	s_rewindSlots = 0;
++	s_rewindHead = 0;
++	s_rewindCount = 0;
++	s_rewindFrame = 0;
++	s_rewinding = false;
++	s_rewindToggledOn = false;
++	s_rewindHoldActive = false;
++	s_rewindInitialized = false;
++}
++
++static void rewind_update_config(EmuOvlConfig* cfg) {
++	int bufSetting = 0;
++	for (int s = 0; s < cfg->section_count; s++)
++		for (int i = 0; i < cfg->sections[s].item_count; i++)
++			if (strcmp(cfg->sections[s].items[i].key, "rewind_buffer") == 0)
++				bufSetting = cfg->sections[s].items[i].current_value;
++	if (bufSetting < 0 || bufSetting > 3) bufSetting = 0;
++	int newSlots = REWIND_SLOT_COUNTS[bufSetting];
++	if (newSlots != s_rewindSlots) {
++		// Buffer size changed — reset ring
++		s_rewindSlots = newSlots;
++		s_rewindHead = 0;
++		s_rewindCount = 0;
++		if (newSlots > 0) rewind_init();
++	}
++}
++
++static void rewind_capture() {
++	if (s_rewindSlots <= 0 || s_rewinding || !CoreDoCommand) return;
++	if (++s_rewindFrame < REWIND_INTERVAL) return;
++	s_rewindFrame = 0;
++
++	char path[64];
++	snprintf(path, sizeof(path), "/tmp/m64p_rewind/%03d.st", s_rewindHead);
++	CoreDoCommand(M64CMD_STATE_SAVE, 1, (void*)path);
++	s_rewindHead = (s_rewindHead + 1) % s_rewindSlots;
++	if (s_rewindCount < s_rewindSlots) s_rewindCount++;
++}
++
++static void rewind_step_back() {
++	if (s_rewindSlots <= 0 || s_rewindCount <= 0 || !CoreDoCommand) return;
++	s_rewindHead = (s_rewindHead - 1 + s_rewindSlots) % s_rewindSlots;
++	s_rewindCount--;
++
++	char path[64];
++	snprintf(path, sizeof(path), "/tmp/m64p_rewind/%03d.st", s_rewindHead);
++	CoreDoCommand(M64CMD_STATE_LOAD, 0, (void*)path);
++}
++
++// ---------------------------------------------------------------------------
 +// Turbo buttons (via platform trimui_inputd daemon)
 +// ---------------------------------------------------------------------------
 +
@@ -715,6 +789,7 @@ index 59725f62..78385290 100644
 +	}
 +	// Quit emulator
 +	clear_turbo_files();
++	rewind_cleanup();
 +	if (CoreDoCommand)
 +		CoreDoCommand(M64CMD_STOP, 0, nullptr);
 +}
@@ -1286,7 +1361,7 @@ index 59725f62..78385290 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +839,148 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +914,187 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
@@ -1302,6 +1377,7 @@ index 59725f62..78385290 100644
 +		} else if (pwr == 2) {
 +			system("touch /tmp/poweroff");
 +			clear_turbo_files();
++			rewind_cleanup();
 +			if (CoreDoCommand)
 +				CoreDoCommand(M64CMD_STOP, 0, nullptr);
 +		}
@@ -1402,6 +1478,43 @@ index 59725f62..78385290 100644
 +						s_overlayConfig.sections[s].items[i].staged_value = cur;
 +					}
 +		}
++		// Rewind
++		rewind_update_config(&s_overlayConfig);
++		int rewindToggleBtn = get_shortcut_button(&s_overlayConfig, "shortcut_toggle_rewind");
++		int rewindHoldBtn = get_shortcut_button(&s_overlayConfig, "shortcut_hold_rewind");
++
++		// Toggle: press to start/stop rewinding
++		if (btn_just_pressed(rewindToggleBtn)) {
++			s_rewindToggledOn = !s_rewindToggledOn;
++			s_rewinding = s_rewindToggledOn;
++			// Rewind takes priority over FF
++			if (s_rewinding && s_fastForward) set_fast_forward(false);
++		}
++
++		// Hold: rewind while pressed, respects toggle state on release
++		if (rewindHoldBtn >= 0) {
++			if (btn_is_held(rewindHoldBtn) && !s_rewindHoldActive) {
++				s_rewindHoldActive = true;
++				s_rewinding = true;
++				if (s_fastForward) set_fast_forward(false);
++			} else if (!btn_is_held(rewindHoldBtn) && s_rewindHoldActive) {
++				s_rewindHoldActive = false;
++				s_rewinding = s_rewindToggledOn;
++				// Restore FF state if toggle was on
++				if (!s_rewinding && s_ffToggledOn) set_fast_forward(true);
++			}
++		}
++
++		// When not toggled and not held, restore FF
++		if (!s_rewinding && !s_rewindHoldActive && s_ffToggledOn && !s_fastForward)
++			set_fast_forward(true);
++
++		// Perform rewind step or capture
++		if (s_rewinding) {
++			rewind_step_back();
++		} else {
++			rewind_capture();
++		}
 +	}
 +
 +	// Skip overlay during texture loading (prevents GL state corruption and
@@ -1412,6 +1525,7 @@ index 59725f62..78385290 100644
 +			EmuOvlAction action = run_overlay_loop(*this);
 +			if (action == EMU_OVL_ACTION_QUIT) {
 +				clear_turbo_files();
++				rewind_cleanup();
 +				if (CoreDoCommand)
 +					CoreDoCommand(M64CMD_STOP, 0, nullptr);
 +			} else if (action == EMU_OVL_ACTION_SAVE_STATE) {
