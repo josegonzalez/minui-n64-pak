@@ -365,6 +365,24 @@
           "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
           "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
           "default": -1
+        },
+        {
+          "key": "shortcut_save_state",
+          "label": "Quick Save",
+          "description": "Button to save state to current slot",
+          "type": "cycle",
+          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
+          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "default": -1
+        },
+        {
+          "key": "shortcut_load_state",
+          "label": "Quick Load",
+          "description": "Button to load state from current slot",
+          "type": "cycle",
+          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
+          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "default": -1
         }
       ]
     }
