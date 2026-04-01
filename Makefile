@@ -77,12 +77,9 @@ clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
 	@# Write Docker env helper script (sets up cross-compile env, then exec's args)
 	@printf '#!/bin/bash\nsource ~/.bashrc\nexport PKG_CONFIG_PATH=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/pkgconfig\nexport PKG_CONFIG_SYSROOT_DIR=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc\nexport SDL_CFLAGS="$$(pkg-config --cflags sdl2)"\nexport SDL_LDLIBS="$$(pkg-config --libs sdl2)"\nexec "$$@"\n' > $(SRC)/.docker-env.sh
 	@chmod +x $(SRC)/.docker-env.sh
-	@# Populate overlay sources, GLES headers, and unmodified patches from nx-redux
-	@mkdir -p $(ROOT)/overlay/cjson $(ROOT)/include
-	@cp $(SRC)/nx-redux/workspace/all/common/emu_overlay*.c $(ROOT)/overlay/
-	@cp $(SRC)/nx-redux/workspace/all/common/emu_overlay*.h $(ROOT)/overlay/
-	@cp $(SRC)/nx-redux/workspace/all/common/emu_overlay_render.h $(ROOT)/overlay/
-	@cp $(SRC)/nx-redux/workspace/all/common/cjson/cJSON.c $(SRC)/nx-redux/workspace/all/common/cjson/cJSON.h $(ROOT)/overlay/cjson/
+	@# Populate GLES headers and unmodified patches from nx-redux
+	@# (overlay/ sources are vendored in the repo — not pulled from nx-redux)
+	@mkdir -p $(ROOT)/include
 	@cp -r $(SRC)/nx-redux/workspace/all/include/EGL $(ROOT)/include/
 	@cp -r $(SRC)/nx-redux/workspace/all/include/GLES2 $(ROOT)/include/
 	@cp -r $(SRC)/nx-redux/workspace/all/include/GLES3 $(ROOT)/include/
@@ -261,5 +258,5 @@ dist-tg5050:
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
 clean:
-	rm -rf $(SRC) $(ROOT)/dist $(ROOT)/overlay $(ROOT)/include
+	rm -rf $(SRC) $(ROOT)/dist $(ROOT)/include
 	rm -f $(PATCHES)/mupen64plus-audio-sdl.patch

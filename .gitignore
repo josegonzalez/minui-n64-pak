@@ -5,7 +5,6 @@ src/
 dist/
 
 # Populated from nx-redux at build time
-overlay/
 include/
 patches/shared/mupen64plus-audio-sdl.patch
 
