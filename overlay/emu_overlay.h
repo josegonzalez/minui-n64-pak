@@ -13,7 +13,9 @@ typedef enum {
 	EMU_OVL_STATE_SECTION_LIST,
 	EMU_OVL_STATE_SECTION_ITEMS,
 	EMU_OVL_STATE_SAVE_SELECT,
-	EMU_OVL_STATE_LOAD_SELECT
+	EMU_OVL_STATE_LOAD_SELECT,
+	EMU_OVL_STATE_CHEATS,
+	EMU_OVL_STATE_CHEAT_DESC
 } EmuOvlState;
 
 typedef enum {
@@ -41,6 +43,7 @@ typedef enum {
 	EMU_OVL_MAIN_SAVE,
 	EMU_OVL_MAIN_LOAD,
 	EMU_OVL_MAIN_OPTIONS,
+	EMU_OVL_MAIN_CHEATS,
 	EMU_OVL_MAIN_QUIT
 } EmuOvlMainItemType;
 
@@ -48,6 +51,17 @@ typedef struct {
 	char label[64];
 	EmuOvlMainItemType type;
 } EmuOvlMainItem;
+
+// Callbacks for the dynamic cheats menu (set by the host after emu_ovl_init)
+typedef struct {
+	const char* (*get_name)(int index);
+	const char* (*get_description)(int index);
+	const char* (*get_value_label)(int index); // "OFF", "ON", or variant label
+	int (*get_count)(void);
+	bool (*is_enabled)(int index);
+	void (*toggle)(int index);
+	void (*cycle_variant)(int index, int dir); // +1/-1; for simple cheats, acts as toggle
+} EmuOvlCheatCallbacks;
 
 typedef struct {
 	EmuOvlConfig* config;
@@ -80,6 +94,11 @@ typedef struct {
 	char screenshot_dir[512];		   // e.g. /mnt/SDCARD/.userdata/shared/.minui/N64
 	char rom_file[256];				   // e.g. "Super Mario 64.z64"
 	int slot_icons[EMU_OVL_MAX_SLOTS]; // icon_id per slot, -1 = none
+
+	// Cheats menu
+	EmuOvlCheatCallbacks cheat_cb;
+	int cheat_cursor;
+	int cheat_scroll;
 } EmuOvl;
 
 int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,

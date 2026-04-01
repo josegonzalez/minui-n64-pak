@@ -479,10 +479,10 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..4305b28d 100644
+index 59725f62..78385290 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
-@@ -1,5 +1,10 @@
+@@ -1,5 +1,11 @@
  #include <assert.h>
  #include <cstdlib>
 +#include <cstring>
@@ -490,10 +490,11 @@ index 59725f62..4305b28d 100644
 +#include <fcntl.h>
 +#include <unistd.h>
 +#include <sys/ioctl.h>
++#include <sys/stat.h>
  #include "Config.h"
  #include "RSP.h"
  #include "VI.h"
-@@ -8,6 +13,580 @@
+@@ -8,6 +14,791 @@
  #include "PluginAPI.h"
  #include "FrameBuffer.h"
  
@@ -719,6 +720,204 @@ index 59725f62..4305b28d 100644
 +}
 +
 +// ---------------------------------------------------------------------------
++// Cheat system
++// ---------------------------------------------------------------------------
++
++#define MAX_CHEATS 64
++#define MAX_CHEAT_CODES_PER 32
++#define MAX_CHEAT_VARIANTS 16
++
++struct CheatCode { uint32_t address; int value; };
++struct CheatVariant { int value; char label[64]; };
++struct CheatEntry {
++	char name[128];
++	char description[256];
++	CheatCode codes[MAX_CHEAT_CODES_PER];
++	int num_codes;
++	bool enabled;
++	int variable_code_index;
++	CheatVariant variants[MAX_CHEAT_VARIANTS];
++	int variant_count;
++	int selected_variant;
++};
++static CheatEntry s_cheats[MAX_CHEATS];
++static int s_cheatCount = 0;
++
++static void load_cheats() {
++	m64p_rom_header header;
++	memset(&header, 0, sizeof(header));
++	if (!CoreDoCommand || CoreDoCommand(M64CMD_ROM_GET_HEADER, sizeof(header), &header) != M64ERR_SUCCESS)
++		return;
++
++	char romCrc[32];
++	uint32_t crc1 = __builtin_bswap32(header.CRC1);
++	uint32_t crc2 = __builtin_bswap32(header.CRC2);
++	snprintf(romCrc, sizeof(romCrc), "%08X-%08X-C:%X", crc1, crc2, header.Country_code & 0xff);
++
++	const char* jsonPath = getenv("EMU_OVERLAY_JSON");
++	if (!jsonPath) return;
++	char cheatPath[512];
++	snprintf(cheatPath, sizeof(cheatPath), "%s", jsonPath);
++	char* lastSlash = strrchr(cheatPath, '/');
++	if (lastSlash) *lastSlash = '\0';
++	strncat(cheatPath, "/mupencheat.txt", sizeof(cheatPath) - strlen(cheatPath) - 1);
++
++	FILE* f = fopen(cheatPath, "r");
++	if (!f) return;
++
++	char line[1024];
++	bool romFound = false;
++	int curCheat = -1;
++	s_cheatCount = 0;
++
++	while (fgets(line, sizeof(line), f) && s_cheatCount < MAX_CHEATS) {
++		int len = strlen(line);
++		while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' '))
++			line[--len] = '\0';
++		char* p = line;
++		while (*p == ' ' || *p == '\t') p++;
++		if (*p == '\0' || *p == '#' || (p[0] == '/' && p[1] == '/'))
++			continue;
++
++		if (strncmp(p, "crc ", 4) == 0) {
++			if (romFound) break;
++			if (strcmp(p + 4, romCrc) == 0) romFound = true;
++			continue;
++		}
++		if (!romFound) continue;
++		if (strncmp(p, "gn ", 3) == 0) continue;
++
++		if (strncmp(p, "cd ", 3) == 0) {
++			if (curCheat >= 0) {
++				strncpy(s_cheats[curCheat].description, p + 3, 255);
++				s_cheats[curCheat].description[255] = '\0';
++			}
++			continue;
++		}
++
++		if (strncmp(p, "cn ", 3) == 0) {
++			curCheat = s_cheatCount++;
++			strncpy(s_cheats[curCheat].name, p + 3, 127);
++			s_cheats[curCheat].name[127] = '\0';
++			s_cheats[curCheat].description[0] = '\0';
++			s_cheats[curCheat].num_codes = 0;
++			s_cheats[curCheat].enabled = false;
++			s_cheats[curCheat].variable_code_index = -1;
++			s_cheats[curCheat].variant_count = 0;
++			s_cheats[curCheat].selected_variant = 0;
++			continue;
++		}
++
++		if (curCheat >= 0 && s_cheats[curCheat].num_codes < MAX_CHEAT_CODES_PER) {
++			uint32_t addr;
++			if (sscanf(p, "%8X", &addr) == 1) {
++				int ci = s_cheats[curCheat].num_codes;
++				s_cheats[curCheat].codes[ci].address = addr;
++				if (strlen(p) > 13 && strncmp(p + 9, "????", 4) == 0) {
++					s_cheats[curCheat].variable_code_index = ci;
++					s_cheats[curCheat].variant_count = 0;
++					s_cheats[curCheat].selected_variant = 0;
++					char* vp = p + 14;
++					while (*vp == ' ') vp++;
++					while (*vp && s_cheats[curCheat].variant_count < MAX_CHEAT_VARIANTS) {
++						unsigned int vval;
++						if (sscanf(vp, "%4X", &vval) != 1) break;
++						vp += 4;
++						int vi = s_cheats[curCheat].variant_count;
++						s_cheats[curCheat].variants[vi].value = (int)vval;
++						s_cheats[curCheat].variants[vi].label[0] = '\0';
++						if (*vp == ':' && *(vp+1) == '"') {
++							vp += 2;
++							char* end = strchr(vp, '"');
++							if (end) {
++								int vlen = end - vp;
++								if (vlen > 63) vlen = 63;
++								strncpy(s_cheats[curCheat].variants[vi].label, vp, vlen);
++								s_cheats[curCheat].variants[vi].label[vlen] = '\0';
++								vp = end + 1;
++							}
++						}
++						s_cheats[curCheat].variant_count++;
++						if (*vp == ',') vp++;
++						while (*vp == ' ') vp++;
++					}
++					s_cheats[curCheat].codes[ci].value =
++						s_cheats[curCheat].variant_count > 0 ? s_cheats[curCheat].variants[0].value : 0;
++				} else {
++					unsigned int val = 0;
++					sscanf(p + 9, "%4X", &val);
++					s_cheats[curCheat].codes[ci].value = (int)val;
++				}
++				s_cheats[curCheat].num_codes++;
++			}
++		}
++	}
++	fclose(f);
++
++	for (int i = 0; i < s_cheatCount; i++) {
++		if (!CoreAddCheat) break;
++		m64p_cheat_code codes[MAX_CHEAT_CODES_PER];
++		for (int j = 0; j < s_cheats[i].num_codes; j++) {
++			codes[j].address = s_cheats[i].codes[j].address;
++			codes[j].value = s_cheats[i].codes[j].value;
++		}
++		CoreAddCheat(s_cheats[i].name, codes, s_cheats[i].num_codes);
++	}
++}
++
++// Cheat overlay callbacks
++static const char* cheat_get_name(int idx) {
++	return (idx >= 0 && idx < s_cheatCount) ? s_cheats[idx].name : "";
++}
++static const char* cheat_get_description(int idx) {
++	return (idx >= 0 && idx < s_cheatCount) ? s_cheats[idx].description : "";
++}
++static const char* cheat_get_value_label(int idx) {
++	if (idx < 0 || idx >= s_cheatCount) return "OFF";
++	CheatEntry* c = &s_cheats[idx];
++	if (!c->enabled) return "OFF";
++	if (c->variant_count > 0 && c->selected_variant >= 0 && c->selected_variant < c->variant_count)
++		return c->variants[c->selected_variant].label;
++	return "ON";
++}
++static int cheat_get_count() { return s_cheatCount; }
++static bool cheat_is_enabled(int idx) {
++	return (idx >= 0 && idx < s_cheatCount) ? s_cheats[idx].enabled : false;
++}
++static void cheat_toggle(int idx) {
++	if (idx < 0 || idx >= s_cheatCount) return;
++	s_cheats[idx].enabled = !s_cheats[idx].enabled;
++	if (CoreCheatEnabled)
++		CoreCheatEnabled(s_cheats[idx].name, s_cheats[idx].enabled ? 1 : 0);
++}
++static void cheat_cycle_variant(int idx, int dir) {
++	if (idx < 0 || idx >= s_cheatCount) return;
++	CheatEntry* c = &s_cheats[idx];
++	if (c->variant_count <= 0) { cheat_toggle(idx); return; }
++	int pos = c->enabled ? c->selected_variant : -1;
++	pos += dir;
++	if (pos >= c->variant_count) pos = -1;
++	if (pos < -1) pos = c->variant_count - 1;
++	if (pos < 0) {
++		c->enabled = false;
++		if (CoreCheatEnabled) CoreCheatEnabled(c->name, 0);
++	} else {
++		c->selected_variant = pos;
++		c->codes[c->variable_code_index].value = c->variants[pos].value;
++		c->enabled = true;
++		if (CoreAddCheat && CoreCheatEnabled) {
++			m64p_cheat_code codes[MAX_CHEAT_CODES_PER];
++			for (int j = 0; j < c->num_codes; j++) {
++				codes[j].address = c->codes[j].address;
++				codes[j].value = c->codes[j].value;
++			}
++			CoreAddCheat(c->name, codes, c->num_codes);
++			CoreCheatEnabled(c->name, 1);
++		}
++	}
++}
++
++// ---------------------------------------------------------------------------
 +// Power button / sleep handling
 +// ---------------------------------------------------------------------------
 +
@@ -899,6 +1098,9 @@ index 59725f62..4305b28d 100644
 +			CoreDoCommand(M64CMD_STATE_LOAD, 0, nullptr);
 +			unsetenv("EMU_RESUME_SLOT");
 +		}
++
++		// Load cheats from mupencheat.txt for the current ROM
++		load_cheats();
 +	}
 +
 +	// Try GL init on the video thread (retries each frame until GL context is available)
@@ -924,6 +1126,16 @@ index 59725f62..4305b28d 100644
 +		return; // GL not ready yet, will retry next frame
 +
 +	s_overlayInitialized = true;
++
++	// Wire cheat callbacks for the overlay's Cheats menu
++	s_overlay.cheat_cb.get_name = cheat_get_name;
++	s_overlay.cheat_cb.get_description = cheat_get_description;
++	s_overlay.cheat_cb.get_value_label = cheat_get_value_label;
++	s_overlay.cheat_cb.get_count = cheat_get_count;
++	s_overlay.cheat_cb.is_enabled = cheat_is_enabled;
++	s_overlay.cheat_cb.toggle = cheat_toggle;
++	s_overlay.cheat_cb.cycle_variant = cheat_cycle_variant;
++
 +	fprintf(stderr, "[Overlay] Initialized successfully (%dx%d)\n", w, h);
 +}
 +
@@ -1074,7 +1286,7 @@ index 59725f62..4305b28d 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +627,148 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +839,148 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
@@ -2277,36 +2489,42 @@ index aa864df6..86784c17 100644
  
  void TextureFilterHandler::shutdown()
 diff --git a/src/mupenplus/GLideN64_mupenplus.h b/src/mupenplus/GLideN64_mupenplus.h
-index ba4bb168..15405432 100644
+index ba4bb168..2f7f602c 100644
 --- a/src/mupenplus/GLideN64_mupenplus.h
 +++ b/src/mupenplus/GLideN64_mupenplus.h
-@@ -52,6 +52,8 @@ extern ptr_VidExt_GL_GetAttribute       CoreVideo_GL_GetAttribute;
+@@ -52,6 +52,10 @@ extern ptr_VidExt_GL_GetAttribute       CoreVideo_GL_GetAttribute;
  extern ptr_VidExt_GL_SwapBuffers        CoreVideo_GL_SwapBuffers;
  extern ptr_VidExt_GL_GetDefaultFramebuffer CoreVideo_GL_GetDefaultFramebuffer;
  
 +extern ptr_CoreDoCommand                CoreDoCommand;
++extern ptr_CoreAddCheat                 CoreAddCheat;
++extern ptr_CoreCheatEnabled             CoreCheatEnabled;
 +
  extern ptr_PluginGetVersion             CoreGetVersion;
  
  extern void*                            CoreDebugCallbackContext;
 diff --git a/src/mupenplus/MupenPlusAPIImpl.cpp b/src/mupenplus/MupenPlusAPIImpl.cpp
-index f0595819..23e6e36b 100644
+index f0595819..2a353ca4 100644
 --- a/src/mupenplus/MupenPlusAPIImpl.cpp
 +++ b/src/mupenplus/MupenPlusAPIImpl.cpp
-@@ -47,6 +47,8 @@ ptr_VidExt_GL_GetAttribute       CoreVideo_GL_GetAttribute = nullptr;
+@@ -47,6 +47,10 @@ ptr_VidExt_GL_GetAttribute       CoreVideo_GL_GetAttribute = nullptr;
  ptr_VidExt_GL_SwapBuffers        CoreVideo_GL_SwapBuffers = nullptr;
  ptr_VidExt_GL_GetDefaultFramebuffer CoreVideo_GL_GetDefaultFramebuffer = nullptr;
  
 +ptr_CoreDoCommand                CoreDoCommand = nullptr;
++ptr_CoreAddCheat                 CoreAddCheat = nullptr;
++ptr_CoreCheatEnabled             CoreCheatEnabled = nullptr;
 +
  ptr_PluginGetVersion             CoreGetVersion = nullptr;
  
  void*                            CoreDebugCallbackContext = nullptr;
-@@ -100,6 +102,8 @@ m64p_error PluginAPI::PluginStartup(m64p_dynlib_handle _CoreLibHandle, void* Con
+@@ -100,6 +104,10 @@ m64p_error PluginAPI::PluginStartup(m64p_dynlib_handle _CoreLibHandle, void* Con
  
  	CoreGetVersion = (ptr_PluginGetVersion) DLSYM(_CoreLibHandle, "PluginGetVersion");
  
 +	CoreDoCommand = (ptr_CoreDoCommand) DLSYM(_CoreLibHandle, "CoreDoCommand");
++	CoreAddCheat = (ptr_CoreAddCheat) DLSYM(_CoreLibHandle, "CoreAddCheat");
++	CoreCheatEnabled = (ptr_CoreCheatEnabled) DLSYM(_CoreLibHandle, "CoreCheatEnabled");
 +
  #ifndef M64P_GLIDENUI
  	if (Config_SetDefault()) {

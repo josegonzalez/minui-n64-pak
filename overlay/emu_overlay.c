@@ -44,6 +44,10 @@ static void build_main_menu(EmuOvl* ovl) {
 		n++;
 	}
 
+	snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Cheats");
+	ovl->main_items[n].type = EMU_OVL_MAIN_CHEATS;
+	n++;
+
 	snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Quit");
 	ovl->main_items[n].type = EMU_OVL_MAIN_QUIT;
 	n++;
@@ -317,6 +321,11 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 				ovl->scroll_offset = 0;
 				ovl->current_section = 0;
 				break;
+			case EMU_OVL_MAIN_CHEATS:
+				ovl->state = EMU_OVL_STATE_CHEATS;
+				ovl->cheat_cursor = 0;
+				ovl->cheat_scroll = 0;
+				break;
 			case EMU_OVL_MAIN_QUIT:
 				ovl->action = EMU_OVL_ACTION_QUIT;
 				ovl->state = EMU_OVL_STATE_CLOSED;
@@ -407,6 +416,36 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 		}
 		break;
 	}
+
+	case EMU_OVL_STATE_CHEATS: {
+		int count = ovl->cheat_cb.get_count ? ovl->cheat_cb.get_count() : 0;
+		if (input->b) {
+			ovl->state = EMU_OVL_STATE_MAIN_MENU;
+		} else if (input->a && count > 0) {
+			// A: if cheat has description, show popup; else toggle
+			const char* desc = ovl->cheat_cb.get_description ? ovl->cheat_cb.get_description(ovl->cheat_cursor) : NULL;
+			if (desc && desc[0] != '\0') {
+				ovl->state = EMU_OVL_STATE_CHEAT_DESC;
+			} else {
+				if (ovl->cheat_cb.toggle)
+					ovl->cheat_cb.toggle(ovl->cheat_cursor);
+			}
+		} else if ((input->left || input->right) && count > 0) {
+			if (ovl->cheat_cb.cycle_variant)
+				ovl->cheat_cb.cycle_variant(ovl->cheat_cursor, input->right ? 1 : -1);
+		} else if (input->up && ovl->cheat_cursor > 0) {
+			ovl->cheat_cursor--;
+		} else if (input->down && count > 0 && ovl->cheat_cursor < count - 1) {
+			ovl->cheat_cursor++;
+		}
+		break;
+	}
+
+	case EMU_OVL_STATE_CHEAT_DESC:
+		if (input->b || input->a) {
+			ovl->state = EMU_OVL_STATE_CHEATS;
+		}
+		break;
 
 	case EMU_OVL_STATE_CLOSED:
 		return false;
@@ -752,6 +791,84 @@ static void render_section_items(EmuOvl* ovl) {
 	draw_hint_bar(ovl, hints, 4);
 }
 
+static void render_cheats(EmuOvl* ovl) {
+	EmuOvlRenderBackend* r = ovl->render;
+	draw_menu_bar(ovl, "Cheats");
+
+	int count = ovl->cheat_cb.get_count ? ovl->cheat_cb.get_count() : 0;
+	int bar_h = S(BUTTON_SIZE) + S(BUTTON_MARGIN) * 2;
+
+	if (count == 0) {
+		draw_centered_text(r, "No cheats available", ovl->screen_w / 2,
+						   ovl->screen_h / 2, EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_SMALL);
+		const char* hints[] = {"B", "BACK"};
+		draw_hint_bar(ovl, hints, 2);
+		return;
+	}
+
+	int item_h = S(PILL_SIZE) + S(BUTTON_MARGIN);
+	int hint_bar_h = bar_h;
+	int desc_area_h = S(PILL_SIZE);
+	int visible = (ovl->screen_h - bar_h - hint_bar_h - desc_area_h) / item_h;
+	if (visible < 1) visible = 1;
+
+	// Scroll to keep cursor visible
+	if (ovl->cheat_cursor < ovl->cheat_scroll) ovl->cheat_scroll = ovl->cheat_cursor;
+	if (ovl->cheat_cursor >= ovl->cheat_scroll + visible) ovl->cheat_scroll = ovl->cheat_cursor - visible + 1;
+
+	for (int i = 0; i < visible && i + ovl->cheat_scroll < count; i++) {
+		int idx = i + ovl->cheat_scroll;
+		bool selected = (idx == ovl->cheat_cursor);
+		bool enabled = ovl->cheat_cb.is_enabled ? ovl->cheat_cb.is_enabled(idx) : false;
+		int y = bar_h + i * item_h;
+
+		if (selected)
+			r->draw_rect(S(PADDING), y, ovl->screen_w - S(PADDING) * 2, S(PILL_SIZE), EMU_OVL_COLOR_SELECTED_BG);
+
+		const char* name = ovl->cheat_cb.get_name ? ovl->cheat_cb.get_name(idx) : "???";
+		r->draw_text(name, S(PADDING) + S(8), y + S(PILL_SIZE) / 4,
+					 selected ? EMU_OVL_COLOR_WHITE : EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_SMALL);
+
+		const char* val_label = ovl->cheat_cb.get_value_label ? ovl->cheat_cb.get_value_label(idx) : (enabled ? "ON" : "OFF");
+		int vw = r->text_width(val_label, EMU_OVL_FONT_SMALL);
+		r->draw_text(val_label, ovl->screen_w - S(PADDING) - S(8) - vw, y + S(PILL_SIZE) / 4,
+					 enabled ? EMU_OVL_COLOR_ACCENT : EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_SMALL);
+	}
+
+	// Description hint for highlighted cheat
+	const char* desc = ovl->cheat_cb.get_description ? ovl->cheat_cb.get_description(ovl->cheat_cursor) : NULL;
+	if (desc && desc[0] != '\0') {
+		int desc_y = ovl->screen_h - hint_bar_h - desc_area_h;
+		draw_centered_text(r, desc, ovl->screen_w / 2, desc_y,
+						   EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_TINY);
+	}
+
+	const char* hints[] = {"LEFT/RIGHT", "CHANGE", "A", "INFO", "B", "BACK"};
+	draw_hint_bar(ovl, hints, 6);
+}
+
+static void render_cheat_desc(EmuOvl* ovl) {
+	EmuOvlRenderBackend* r = ovl->render;
+	const char* desc = ovl->cheat_cb.get_description ? ovl->cheat_cb.get_description(ovl->cheat_cursor) : "";
+
+	// Semi-transparent background
+	int pad = S(20);
+	int box_w = ovl->screen_w - pad * 2;
+	int box_h = ovl->screen_h / 3;
+	int box_x = pad;
+	int box_y = (ovl->screen_h - box_h) / 2;
+
+	r->draw_rect(box_x, box_y, box_w, box_h, EMU_OVL_COLOR_BAR_BG);
+
+	// Description text
+	draw_centered_text(r, desc, ovl->screen_w / 2, box_y + box_h / 2,
+					   EMU_OVL_COLOR_WHITE, EMU_OVL_FONT_SMALL);
+
+	// Dismiss hint
+	draw_centered_text(r, "B  BACK", ovl->screen_w / 2, box_y + box_h - S(12),
+					   EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_TINY);
+}
+
 void emu_ovl_render(EmuOvl* ovl) {
 	if (ovl->state == EMU_OVL_STATE_CLOSED)
 		return;
@@ -776,6 +893,13 @@ void emu_ovl_render(EmuOvl* ovl) {
 		break;
 	case EMU_OVL_STATE_SECTION_ITEMS:
 		render_section_items(ovl);
+		break;
+	case EMU_OVL_STATE_CHEATS:
+		render_cheats(ovl);
+		break;
+	case EMU_OVL_STATE_CHEAT_DESC:
+		render_cheats(ovl); // draw cheats list behind the popup
+		render_cheat_desc(ovl);
 		break;
 	case EMU_OVL_STATE_CLOSED:
 		break;
