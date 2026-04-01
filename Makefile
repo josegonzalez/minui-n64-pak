@@ -258,10 +258,10 @@ dist-tg5050:
 # ── Regenerate patches from current source trees ─────────────────────────────
 
 patches:
-	cd $(SRC)/GLideN64 && git diff -- . ':!src/GLideNHQ/lib/*.a' > $(PATCHES)/GLideN64-standalone.patch
-	cd $(SRC)/mupen64plus-core && git diff > $(PATCHES)/mupen64plus-core.patch
-	cd $(SRC)/mupen64plus-ui-console && git diff > $(PATCHES)/mupen64plus-ui-console.patch
-	cd $(SRC)/mupen64plus-input-sdl && git diff > $(PATCHES)/mupen64plus-input-sdl.patch
+	cd $(SRC)/GLideN64 && git add -N . && git diff -- . ':!src/GLideNHQ/lib/*.a' > $(PATCHES)/GLideN64-standalone.patch && git reset -q
+	cd $(SRC)/mupen64plus-core && git add -N . && git diff > $(PATCHES)/mupen64plus-core.patch && git reset -q
+	cd $(SRC)/mupen64plus-ui-console && git add -N . && git diff > $(PATCHES)/mupen64plus-ui-console.patch && git reset -q
+	cd $(SRC)/mupen64plus-input-sdl && git add -N . && git diff > $(PATCHES)/mupen64plus-input-sdl.patch && git reset -q
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
