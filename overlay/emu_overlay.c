@@ -496,18 +496,19 @@ static int calc_centered_list_y(EmuOvl* ovl, int item_count) {
 	return top + (bottom - top - total_h) / 2;
 }
 
-// Draw a menu bar (semi-transparent black bar with title text)
+// Draw text with a 1px black shadow for readability on game background
+static void draw_shadowed_text(EmuOvlRenderBackend* r, const char* text, int x, int y,
+							   uint32_t color, int font_id) {
+	r->draw_text(text, x + 1, y + 1, EMU_OVL_COLOR_BLACK, font_id);
+	r->draw_text(text, x, y, color, font_id);
+}
+
+// Draw title text at top-left (no bar, floats on game background)
 static void draw_menu_bar(EmuOvl* ovl, const char* title) {
 	EmuOvlRenderBackend* r = ovl->render;
-	int bar_h = S(BUTTON_SIZE) + S(BUTTON_MARGIN) * 2;
-
-	// Semi-transparent black bar
-	r->draw_rect(0, 0, ovl->screen_w, bar_h, EMU_OVL_COLOR_BAR_BG);
-
-	// Title text (left-aligned, matching content padding)
-	int text_y = (bar_h - r->text_height(EMU_OVL_FONT_SMALL)) / 2;
-	r->draw_text(title, S(PADDING), text_y,
-				 EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_SMALL);
+	int text_y = S(BUTTON_MARGIN);
+	draw_shadowed_text(r, title, S(PADDING), text_y,
+					   EMU_OVL_COLOR_WHITE, EMU_OVL_FONT_LARGE);
 }
 
 // Map a button name to its icon handle, or -1 if no icon loaded
@@ -527,8 +528,7 @@ static void draw_hint_bar(EmuOvl* ovl, const char* hints[], int hint_count) {
 	int bar_h = S(BUTTON_SIZE) + S(BUTTON_MARGIN) * 2;
 	int bar_y = ovl->screen_h - bar_h;
 
-	// Semi-transparent black bar
-	r->draw_rect(0, bar_y, ovl->screen_w, bar_h, EMU_OVL_COLOR_BAR_BG);
+	// No background bar — hints float on game background (matching NextUI style)
 
 	// Render hint pairs: "B" "BACK" "A" "OK" → [B icon] BACK   [A icon] OK
 	int x = S(PADDING) + S(BUTTON_MARGIN);
@@ -596,16 +596,16 @@ static void draw_settings_row(EmuOvl* ovl, int x, int y, int w, int h,
 						 EMU_OVL_COLOR_TEXT_SEL, label_font);
 		}
 	} else {
-		// Unselected: no background, gray text
+		// Unselected: no background, white text with shadow for readability
 		int text_y_pos = y + (h - r->text_height(label_font)) / 2;
-		r->draw_text(label, x + row_pad, text_y_pos,
-					 EMU_OVL_COLOR_GRAY, label_font);
+		draw_shadowed_text(r, label, x + row_pad, text_y_pos,
+						   EMU_OVL_COLOR_WHITE, label_font);
 
 		if (value) {
 			int vw = r->text_width(value, EMU_OVL_FONT_TINY);
 			int val_x = x + w - row_pad - vw;
 			int val_y = y + (h - r->text_height(EMU_OVL_FONT_TINY)) / 2;
-			r->draw_text(value, val_x, val_y, EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_TINY);
+			draw_shadowed_text(r, value, val_x, val_y, EMU_OVL_COLOR_WHITE, EMU_OVL_FONT_TINY);
 		}
 	}
 }
@@ -629,14 +629,53 @@ static void render_main_menu(EmuOvl* ovl) {
 	int vis_count = ovl->main_item_count;
 	if (vis_count > ovl->items_per_page)
 		vis_count = ovl->items_per_page;
-	int list_y = calc_centered_list_y(ovl, vis_count);
+	// Start items below the title (top-aligned, not centered)
+	int title_h = r->text_height(EMU_OVL_FONT_LARGE);
+	int list_y = S(BUTTON_MARGIN) + title_h + S(PADDING);
+
+	// Only use left half for menu items (right half reserved for save preview)
+	int menu_w = ovl->screen_w / 2;
 
 	for (int i = 0; i < vis_count; i++) {
 		int iy = list_y + i * row_h;
 		bool sel = (i == ovl->selected);
-		draw_settings_row(ovl, content_x, iy, content_w, row_h,
+		draw_settings_row(ovl, content_x, iy, menu_w - S(PADDING), row_h,
 						  ovl->main_items[i].label, NULL, sel, false,
 						  EMU_OVL_FONT_LARGE);
+	}
+
+	// Show save slot preview on the right when Save or Load is highlighted
+	EmuOvlMainItemType sel_type = ovl->main_items[ovl->selected].type;
+	if (sel_type == EMU_OVL_MAIN_SAVE || sel_type == EMU_OVL_MAIN_LOAD) {
+		int preview_x = ovl->screen_w / 2 + S(PADDING);
+		int preview_w = ovl->screen_w / 2 - S(PADDING) * 2;
+		int preview_cy = ovl->screen_h / 2;
+
+		int icon_id = ovl->slot_icons[ovl->save_slot];
+		if (icon_id >= 0 && r->draw_icon) {
+			int iw = r->icon_width(icon_id);
+			int ih = r->icon_height(icon_id);
+			// Scale to fit the right half, preserve aspect
+			int draw_w = preview_w;
+			int draw_h = ih * draw_w / iw;
+			int ix = preview_x + (preview_w - draw_w) / 2;
+			int iy = preview_cy - draw_h / 2;
+			r->draw_icon(icon_id, ix, iy);
+		} else {
+			draw_shadowed_text(r, "Empty", preview_x + preview_w / 2 - S(20),
+							   preview_cy, EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_SMALL);
+		}
+
+		// Slot pagination dots below preview
+		int dot_size = S(4);
+		int dot_gap = S(6);
+		int dots_w = EMU_OVL_MAX_SLOTS * dot_size + (EMU_OVL_MAX_SLOTS - 1) * dot_gap;
+		int dots_x = preview_x + (preview_w - dots_w) / 2;
+		int dots_y = preview_cy + preview_w * 3 / 8 + S(8);
+		for (int i = 0; i < EMU_OVL_MAX_SLOTS; i++) {
+			uint32_t color = (i == ovl->save_slot) ? EMU_OVL_COLOR_WHITE : EMU_OVL_COLOR_GRAY;
+			r->draw_rect(dots_x + i * (dot_size + dot_gap), dots_y, dot_size, dot_size, color);
+		}
 	}
 
 	const char* hints[] = {"B", "BACK", "A", "OK"};
@@ -886,7 +925,7 @@ void emu_ovl_render(EmuOvl* ovl) {
 		return;
 
 	r->begin_frame();
-	r->draw_captured_frame(0.15f);
+	r->draw_captured_frame(0.55f);
 
 	switch (ovl->state) {
 	case EMU_OVL_STATE_MAIN_MENU:
