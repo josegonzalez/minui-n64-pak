@@ -44,10 +44,6 @@ static void build_main_menu(EmuOvl* ovl) {
 		n++;
 	}
 
-	snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Cheats");
-	ovl->main_items[n].type = EMU_OVL_MAIN_CHEATS;
-	n++;
-
 	snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Quit");
 	ovl->main_items[n].type = EMU_OVL_MAIN_QUIT;
 	n++;
@@ -321,11 +317,6 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 				ovl->scroll_offset = 0;
 				ovl->current_section = 0;
 				break;
-			case EMU_OVL_MAIN_CHEATS:
-				ovl->state = EMU_OVL_STATE_CHEATS;
-				ovl->cheat_cursor = 0;
-				ovl->cheat_scroll = 0;
-				break;
 			case EMU_OVL_MAIN_QUIT:
 				ovl->action = EMU_OVL_ACTION_QUIT;
 				ovl->state = EMU_OVL_STATE_CLOSED;
@@ -371,20 +362,31 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 
 	// ----- SECTION LIST -----
 	case EMU_OVL_STATE_SECTION_LIST:
+		{
+		// Section list includes JSON-defined sections + "Cheats" appended at the end
+		int total_sections = ovl->config->section_count + 1; // +1 for Cheats
 		if (input->up) {
-			ovl->selected = (ovl->selected - 1 + ovl->config->section_count) % ovl->config->section_count;
-			ensure_scroll(ovl, ovl->config->section_count);
+			ovl->selected = (ovl->selected - 1 + total_sections) % total_sections;
+			ensure_scroll(ovl, total_sections);
 		} else if (input->down) {
-			ovl->selected = (ovl->selected + 1) % ovl->config->section_count;
-			ensure_scroll(ovl, ovl->config->section_count);
+			ovl->selected = (ovl->selected + 1) % total_sections;
+			ensure_scroll(ovl, total_sections);
 		} else if (input->a) {
-			ovl->current_section = ovl->selected;
-			ovl->state = EMU_OVL_STATE_SECTION_ITEMS;
-			ovl->selected = 0;
-			ovl->scroll_offset = 0;
+			if (ovl->selected == ovl->config->section_count) {
+				// "Cheats" entry
+				ovl->state = EMU_OVL_STATE_CHEATS;
+				ovl->cheat_cursor = 0;
+				ovl->cheat_scroll = 0;
+			} else {
+				ovl->current_section = ovl->selected;
+				ovl->state = EMU_OVL_STATE_SECTION_ITEMS;
+				ovl->selected = 0;
+				ovl->scroll_offset = 0;
+			}
 		} else if (input->b) {
 			ovl->state = EMU_OVL_STATE_MAIN_MENU;
 			ovl->selected = find_options_index(ovl);
+		}
 		}
 		break;
 
@@ -420,7 +422,9 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 	case EMU_OVL_STATE_CHEATS: {
 		int count = ovl->cheat_cb.get_count ? ovl->cheat_cb.get_count() : 0;
 		if (input->b) {
-			ovl->state = EMU_OVL_STATE_MAIN_MENU;
+			ovl->state = EMU_OVL_STATE_SECTION_LIST;
+			ovl->selected = ovl->config->section_count; // re-select "Cheats"
+			ovl->scroll_offset = 0;
 		} else if (input->a && count > 0) {
 			// A: if cheat has description, show popup; else toggle
 			const char* desc = ovl->cheat_cb.get_description ? ovl->cheat_cb.get_description(ovl->cheat_cursor) : NULL;
@@ -696,24 +700,28 @@ static void render_section_list(EmuOvl* ovl) {
 	int content_x = S(PADDING);
 	int content_w = ovl->screen_w - S(PADDING) * 2;
 
+	// Section list includes JSON-defined sections + "Cheats" appended at the end
+	int total_count = ovl->config->section_count + 1; // +1 for Cheats
+
 	// Scroll
-	ensure_scroll(ovl, ovl->config->section_count);
+	ensure_scroll(ovl, total_count);
 
 	int vis_count = ovl->items_per_page;
-	if (vis_count > ovl->config->section_count)
-		vis_count = ovl->config->section_count;
+	if (vis_count > total_count)
+		vis_count = total_count;
 	int list_y = calc_centered_list_y(ovl, vis_count);
 
 	for (int vi = 0; vi < vis_count; vi++) {
 		int idx = ovl->scroll_offset + vi;
-		if (idx >= ovl->config->section_count)
+		if (idx >= total_count)
 			break;
 
 		int iy = list_y + vi * row_h;
 		bool sel = (idx == ovl->selected);
+		const char* name = (idx < ovl->config->section_count)
+			? ovl->config->sections[idx].name : "Cheats";
 		draw_settings_row(ovl, content_x, iy, content_w, row_h,
-						  ovl->config->sections[idx].name, NULL, sel, false,
-						  EMU_OVL_FONT_LARGE);
+						  name, NULL, sel, false, EMU_OVL_FONT_LARGE);
 	}
 
 	// Optional hint (e.g. "Restart game to apply changes")
