@@ -43,7 +43,7 @@ HOST_CPU := aarch64
 # Common make flags for core (no SDL needed)
 CORE_FLAGS := CROSS_COMPILE=$(CROSS) HOST_CPU=$(HOST_CPU) \
 	USE_GLES=1 NEON=1 PIE=1 VULKAN=0 \
-	PKG_CONFIG=pkg-config OPTFLAGS="-O3"
+	PKG_CONFIG=pkg-config OPTFLAGS="-O3 -mcpu=cortex-a53"
 
 # Docker run helper script — sets up env, then runs the given command.
 # Written to src/.docker-env.sh during clone phase.
@@ -142,7 +142,7 @@ DOCKER_RUN_5050 := docker run --rm -v $(ROOT):/build $(TG5050_IMAGE) $(DOCKER_SC
 PLUGIN_MAKE := CROSS_COMPILE=$(CROSS) HOST_CPU=$(HOST_CPU) PIE=1 \
 	PKG_CONFIG=pkg-config \
 	APIDIR=/build/src/mupen64plus-core/src/api \
-	OPTFLAGS="-O3"
+	OPTFLAGS="-O3 -mcpu=cortex-a53"
 
 # ── TG5040 build ──────────────────────────────────────────────────────────────
 

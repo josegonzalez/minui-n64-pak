@@ -2649,6 +2649,21 @@ index 1573c831..03ab5c70 100644
  
  	FunctionWrapper::CoreVideo_GL_SetAttribute(M64P_GL_DOUBLEBUFFER, 1);
  	FunctionWrapper::CoreVideo_GL_SetAttribute(M64P_GL_SWAP_CONTROL, config.video.verticalSync);
+diff --git a/src/Graphics/OpenGLContext/opengl_BufferedDrawer.cpp b/src/Graphics/OpenGLContext/opengl_BufferedDrawer.cpp
+index bf781a26..d4571f7e 100644
+--- a/src/Graphics/OpenGLContext/opengl_BufferedDrawer.cpp
++++ b/src/Graphics/OpenGLContext/opengl_BufferedDrawer.cpp
+@@ -91,9 +91,7 @@ void BufferedDrawer::_updateBuffer(Buffer & _buffer, u32 _count, u32 _dataSize,
+ 		memcpy(&_buffer.data[_buffer.offset], _data, _dataSize);
+ 	} else {
+ 		m_bindBuffer->bind(Parameter(_buffer.type), ObjectHandle(_buffer.handle));
+-		void* buffer_pointer = glMapBufferRange(_buffer.type, _buffer.offset, _dataSize, GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+-		memcpy(buffer_pointer, _data, _dataSize);
+-		glUnmapBuffer(_buffer.type);
++		glBufferSubData(_buffer.type, _buffer.offset, _dataSize, _data);
+ 	}
+ 
+ 	_buffer.offset += _dataSize;
 diff --git a/src/Graphics/OpenGLContext/opengl_GLInfo.cpp b/src/Graphics/OpenGLContext/opengl_GLInfo.cpp
 index 3f9bc3e0..e9b0c042 100644
 --- a/src/Graphics/OpenGLContext/opengl_GLInfo.cpp
@@ -2673,8 +2688,24 @@ index 3f9bc3e0..e9b0c042 100644
  	}
  
  #ifdef OS_ANDROID
+diff --git a/src/GraphicsDrawer.h b/src/GraphicsDrawer.h
+index 61e636e6..b7625837 100644
+--- a/src/GraphicsDrawer.h
++++ b/src/GraphicsDrawer.h
+@@ -17,9 +17,9 @@ namespace graphics {
+ struct CachedTexture;
+ struct FrameBuffer;
+ 
+-constexpr u32 VERTBUFF_SIZE = 256U;
++constexpr u32 VERTBUFF_SIZE = 512U;
+ constexpr u32 VERTBUFF_MASK = VERTBUFF_SIZE - 1;
+-constexpr u32 ELEMBUFF_SIZE = 1024U;
++constexpr u32 ELEMBUFF_SIZE = 2048U;
+ 
+ constexpr f32 SCREEN_SIZE_DIM = 640.0f;
+ constexpr u32 MIPMAP_TILE_WIDTH = 256u;
 diff --git a/src/RSP.cpp b/src/RSP.cpp
-index 932cb4e5..e24462c9 100644
+index 932cb4e5..c19b42c8 100644
 --- a/src/RSP.cpp
 +++ b/src/RSP.cpp
 @@ -1,5 +1,8 @@
@@ -2686,7 +2717,23 @@ index 932cb4e5..e24462c9 100644
  #include "DebugDump.h"
  #include "RSP.h"
  #include "RDP.h"
-@@ -111,6 +114,50 @@ void RSP_ProcessDList()
+@@ -45,6 +48,7 @@ void _ProcessDList()
+ 		RSP.w0 = *(u32*)&RDRAM[RSP.PC[RSP.PCi]];
+ 		RSP.w1 = *(u32*)&RDRAM[RSP.PC[RSP.PCi] + 4];
+ 		RSP.cmd = _SHIFTR(RSP.w0, 24, 8);
++		__builtin_prefetch(&RDRAM[RSP.PC[RSP.PCi] + 8], 0, 3);
+ 
+ #ifdef DEBUG_DUMP
+ 		DebugMsg(DEBUG_LOW, "0x%08lX: CMD=0x%02lX W0=0x%08lX W1=0x%08lX\n", RSP.PC[RSP.PCi], _SHIFTR(RSP.w0, 24, 8), RSP.w0, RSP.w1);
+@@ -82,6 +86,7 @@ void _ProcessDListFactor5()
+ 		RSP.w0 = *(u32*)&RDRAM[RSP.PC[RSP.PCi]];
+ 		RSP.w1 = *(u32*)&RDRAM[RSP.PC[RSP.PCi] + 4];
+ 		RSP.cmd = _SHIFTR(RSP.w0, 24, 8);
++		__builtin_prefetch(&RDRAM[RSP.PC[RSP.PCi] + 16], 0, 3);
+ 
+ #ifdef DEBUG_DUMP
+ 		DebugMsg(DEBUG_LOW, "0x%08lX: CMD=0x%02lX W0=0x%08lX W1=0x%08lX\n", RSP.PC[RSP.PCi], _SHIFTR(RSP.w0, 24, 8), RSP.w0, RSP.w1);
+@@ -111,6 +116,50 @@ void RSP_ProcessDList()
  {
  	RSP.LLE = false;
  
@@ -3471,10 +3518,10 @@ index 00000000..51cc6da7
 +#endif
 diff --git a/toolchain-aarch64.cmake b/toolchain-aarch64.cmake
 new file mode 100644
-index 00000000..e6f9e59b
+index 00000000..f1402d21
 --- /dev/null
 +++ b/toolchain-aarch64.cmake
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,40 @@
 +set(CMAKE_SYSTEM_NAME Linux)
 +set(CMAKE_SYSTEM_PROCESSOR aarch64)
 +
@@ -3484,6 +3531,9 @@ index 00000000..e6f9e59b
 +
 +set(CMAKE_C_COMPILER ${TOOLCHAIN_ROOT}/bin/aarch64-nextui-linux-gnu-gcc)
 +set(CMAKE_CXX_COMPILER ${TOOLCHAIN_ROOT}/bin/aarch64-nextui-linux-gnu-g++)
++
++set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=cortex-a53")
++set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mcpu=cortex-a53")
 +
 +set(CMAKE_FIND_ROOT_PATH ${SYSROOT} ${LIBC_ROOT}/usr)
 +set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
