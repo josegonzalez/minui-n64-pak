@@ -479,7 +479,7 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..a891b610 100644
+index 59725f62..4305b28d 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
 @@ -1,5 +1,10 @@
@@ -1074,7 +1074,7 @@ index 59725f62..a891b610 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +627,126 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +627,148 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
@@ -1167,6 +1167,28 @@ index 59725f62..a891b610 100644
 +			int btn = get_shortcut_button(&s_overlayConfig, turbo_map[i].key);
 +			if (btn_just_pressed(btn))
 +				toggle_turbo_file(turbo_map[i].file);
++		}
++
++		// Cycle aspect ratio (takes effect immediately — no restart needed)
++		int aspectBtn = get_shortcut_button(&s_overlayConfig, "shortcut_cycle_aspect");
++		if (btn_just_pressed(aspectBtn)) {
++			// GLideN64: aStretch=0, a43=1, a169=2, aAdjust43=3
++			// Cycle: Auto(3) → 4:3(1) → 16:9(2) → Stretch(0) → Auto(3)
++			int cur = config.frameBufferEmulation.aspect;
++			switch (cur) {
++				case 3: cur = 1; break;  // Auto → 4:3
++				case 1: cur = 2; break;  // 4:3 → 16:9
++				case 2: cur = 0; break;  // 16:9 → Stretch
++				default: cur = 3; break; // Stretch (or other) → Auto
++			}
++			config.frameBufferEmulation.aspect = cur;
++			// Sync overlay config so the menu shows the updated value
++			for (int s = 0; s < s_overlayConfig.section_count; s++)
++				for (int i = 0; i < s_overlayConfig.sections[s].item_count; i++)
++					if (strcmp(s_overlayConfig.sections[s].items[i].key, "AspectRatio") == 0) {
++						s_overlayConfig.sections[s].items[i].current_value = cur;
++						s_overlayConfig.sections[s].items[i].staged_value = cur;
++					}
 +		}
 +	}
 +
