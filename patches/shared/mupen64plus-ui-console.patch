@@ -1,24 +1,21 @@
 diff --git a/src/main.c b/src/main.c
-index 829fcc9..b83e4fa 100644
+index 829fcc9..5044e18 100644
 --- a/src/main.c
 +++ b/src/main.c
-@@ -1037,6 +1037,21 @@ int main(int argc, char *argv[])
+@@ -1037,6 +1037,18 @@ int main(int argc, char *argv[])
      }
      free(ROM_buffer); /* the core copies the ROM image, so we can release this buffer immediately */
  
-+    /* Set ROM filename (without path/extension) for SaveFilenameFormat=2.
-+     * ROM_PARAMS is exported from the core library; access it via dlsym. */
++    /* Set ROM filename (without path/extension) for SaveFilenameFormat=2 */
 +    {
-+        typedef struct { char *cheats; int systemtype; char headername[21]; char romfilename[256]; } rom_params_t;
-+        rom_params_t *rp = (rom_params_t *)osal_dynlib_getproc(CoreHandle, "ROM_PARAMS");
-+        if (rp) {
-+            const char *base = strrchr(l_ROMFilepath, '/');
-+            base = base ? base + 1 : l_ROMFilepath;
-+            strncpy(rp->romfilename, base, sizeof(rp->romfilename) - 1);
-+            rp->romfilename[sizeof(rp->romfilename) - 1] = '\0';
-+            char *dot = strrchr(rp->romfilename, '.');
-+            if (dot != NULL) *dot = '\0';
-+        }
++        const char *base = strrchr(l_ROMFilepath, '/');
++        base = base ? base + 1 : l_ROMFilepath;
++        char romname[256];
++        strncpy(romname, base, sizeof(romname) - 1);
++        romname[sizeof(romname) - 1] = '\0';
++        char *dot = strrchr(romname, '.');
++        if (dot != NULL) *dot = '\0';
++        (*CoreDoCommand)(M64CMD_SET_ROM_FILENAME, 0, romname);
 +    }
 +
      /* handle the cheat codes */
