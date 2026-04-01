@@ -479,7 +479,7 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..81a5706a 100644
+index 59725f62..56b2ff96 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
 @@ -1,5 +1,10 @@
@@ -493,7 +493,7 @@ index 59725f62..81a5706a 100644
  #include "Config.h"
  #include "RSP.h"
  #include "VI.h"
-@@ -8,6 +13,459 @@
+@@ -8,6 +13,513 @@
  #include "PluginAPI.h"
  #include "FrameBuffer.h"
  
@@ -601,6 +601,60 @@ index 59725f62..81a5706a 100644
 +				apply_cpu_mode(cfg->sections[s].items[i].staged_value);
 +				return;
 +			}
++}
++
++// ---------------------------------------------------------------------------
++// Shortcut system (configurable button mappings from overlay menu)
++// ---------------------------------------------------------------------------
++
++// Read a shortcut's assigned button from the overlay config (-1 = disabled)
++static int get_shortcut_button(EmuOvlConfig* cfg, const char* key) {
++	for (int s = 0; s < cfg->section_count; s++)
++		for (int i = 0; i < cfg->sections[s].item_count; i++)
++			if (strcmp(cfg->sections[s].items[i].key, key) == 0)
++				return cfg->sections[s].items[i].current_value;
++	return -1;
++}
++
++// Per-frame button state tracking for shortcut detection
++static uint32_t s_btnState = 0;
++static uint32_t s_btnPrev = 0;
++
++static void update_button_state() {
++	s_btnPrev = s_btnState;
++	s_btnState = 0;
++	if (!s_joy) return;
++	for (int b = 0; b <= 10; b++)
++		if (SDL_JoystickGetButton(s_joy, b))
++			s_btnState |= (1u << b);
++}
++
++static bool btn_just_pressed(int b) {
++	if (b < 0) return false;
++	uint32_t m = 1u << b;
++	return (s_btnState & m) && !(s_btnPrev & m);
++}
++
++static bool btn_is_held(int b) {
++	if (b < 0) return false;
++	return (s_btnState & (1u << b)) != 0;
++}
++
++// ---------------------------------------------------------------------------
++// Fast forward (uses shortcut system)
++// ---------------------------------------------------------------------------
++
++static bool s_fastForward = false;
++static bool s_ffToggledOn = false;
++static bool s_ffHoldActive = false;
++
++static void set_fast_forward(bool enable) {
++	if (s_fastForward == enable) return;
++	s_fastForward = enable;
++	if (CoreDoCommand) {
++		int speed = enable ? 400 : 100;
++		CoreDoCommand(M64CMD_CORE_STATE_SET, M64CORE_SPEED_FACTOR, &speed);
++	}
 +}
 +
 +// ---------------------------------------------------------------------------
@@ -953,7 +1007,7 @@ index 59725f62..81a5706a 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +506,47 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +560,69 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
@@ -970,6 +1024,28 @@ index 59725f62..81a5706a 100644
 +			system("touch /tmp/poweroff");
 +			if (CoreDoCommand)
 +				CoreDoCommand(M64CMD_STOP, 0, nullptr);
++		}
++	}
++
++	// Shortcut button processing (configurable via overlay menu Shortcuts section)
++	update_button_state();
++	if (s_overlayConfigLoaded) {
++		// Fast forward
++		int toggleBtn = get_shortcut_button(&s_overlayConfig, "shortcut_toggle_ff");
++		int holdBtn = get_shortcut_button(&s_overlayConfig, "shortcut_hold_ff");
++
++		if (btn_just_pressed(toggleBtn)) {
++			s_ffToggledOn = !s_ffToggledOn;
++			set_fast_forward(s_ffToggledOn);
++		}
++		if (holdBtn >= 0) {
++			if (btn_is_held(holdBtn) && !s_ffHoldActive) {
++				s_ffHoldActive = true;
++				set_fast_forward(true);
++			} else if (!btn_is_held(holdBtn) && s_ffHoldActive) {
++				s_ffHoldActive = false;
++				set_fast_forward(s_ffToggledOn); // restore toggle state
++			}
 +		}
 +	}
 +
