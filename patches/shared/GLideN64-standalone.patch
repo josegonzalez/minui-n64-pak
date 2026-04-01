@@ -479,7 +479,7 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..fae8b3e0 100644
+index 59725f62..e3fb7b37 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
 @@ -1,5 +1,10 @@
@@ -493,7 +493,7 @@ index 59725f62..fae8b3e0 100644
  #include "Config.h"
  #include "RSP.h"
  #include "VI.h"
-@@ -8,6 +13,544 @@
+@@ -8,6 +13,554 @@
  #include "PluginAPI.h"
  #include "FrameBuffer.h"
  
@@ -558,15 +558,25 @@ index 59725f62..fae8b3e0 100644
 +	if (f) fclose(f);
 +	if (!is_tg5050) cpu_path = "/sys/devices/system/cpu/cpu0/cpufreq";
 +
++	// Auto (3) = Performance for N64 (CPU demands are high enough)
++	if (mode == 3) mode = 2;
++
 +	char path[256];
-+	if (mode == 0) { // Ondemand
++	if (mode == 0) { // Powersave
++		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
++		f = fopen(path, "w"); if (f) { fprintf(f, "powersave"); fclose(f); }
++		snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
++		f = fopen(path, "w"); if (f) { fprintf(f, "408000"); fclose(f); }
++		snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
++		f = fopen(path, "w"); if (f) { fprintf(f, "408000"); fclose(f); }
++	} else if (mode == 1) { // Ondemand
 +		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
 +		f = fopen(path, "w"); if (f) { fprintf(f, "ondemand"); fclose(f); }
 +		snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
 +		f = fopen(path, "w"); if (f) { fprintf(f, "1200000"); fclose(f); }
 +		snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
 +		f = fopen(path, "w"); if (f) { fprintf(f, "1800000"); fclose(f); }
-+	} else { // Performance
++	} else { // Performance (2) or Auto (3, remapped above)
 +		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
 +		f = fopen(path, "w"); if (f) { fprintf(f, "performance"); fclose(f); }
 +		if (is_tg5050) {
@@ -1038,7 +1048,7 @@ index 59725f62..fae8b3e0 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +591,111 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +601,111 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
