@@ -22,16 +22,22 @@ case "$PLATFORM" in
         ORIG_CPU1=$(cat /sys/devices/system/cpu/cpu1/online 2>/dev/null)
         ORIG_CPU2=$(cat /sys/devices/system/cpu/cpu2/online 2>/dev/null)
         ORIG_CPU3=$(cat /sys/devices/system/cpu/cpu3/online 2>/dev/null)
+        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)
+        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null)
+        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null)
         ;;
     tg5050)
         ORIG_CPU5=$(cat /sys/devices/system/cpu/cpu5/online 2>/dev/null)
         ORIG_GPU_GOV=$(cat /sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null)
+        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_governor 2>/dev/null)
+        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null)
+        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null)
         ;;
 esac
 
 # ── CPU / GPU setup (platform-specific) ──────────────────────────────────────
-# CPU governor and frequency are managed by the emulator (overlay menu CPU Mode).
-# launch.sh only brings CPUs online and sets the GPU governor.
+# CPU governor and frequency may be changed at runtime by the emulator (overlay
+# menu CPU Mode). Original values are saved above and restored on exit.
 case "$PLATFORM" in
     tg5040)
         # Bring all cores online (single cluster: cpu0-3 Cortex-A53)
@@ -213,16 +219,22 @@ wait $EMU_PID
 killall sleepmon.elf 2>/dev/null || true
 kill $SYNC_PID 2>/dev/null || true
 
-# Restore CPU online state and GPU governor (CPU governor/freq managed by emulator)
+# Restore CPU online state, CPU governor/frequency, and GPU governor
 case "$PLATFORM" in
     tg5040)
         [ -n "$ORIG_CPU3" ] && echo "$ORIG_CPU3" >/sys/devices/system/cpu/cpu3/online 2>/dev/null
         [ -n "$ORIG_CPU2" ] && echo "$ORIG_CPU2" >/sys/devices/system/cpu/cpu2/online 2>/dev/null
         [ -n "$ORIG_CPU1" ] && echo "$ORIG_CPU1" >/sys/devices/system/cpu/cpu1/online 2>/dev/null
+        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
+        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null
+        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null
         ;;
     tg5050)
         [ -n "$ORIG_GPU_GOV" ] && echo "$ORIG_GPU_GOV" >/sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null
         [ -n "$ORIG_CPU5" ] && echo "$ORIG_CPU5" >/sys/devices/system/cpu/cpu5/online 2>/dev/null
+        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor 2>/dev/null
+        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null
+        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null
         ;;
 esac
 
