@@ -5,8 +5,10 @@
 #include <stdint.h>
 
 #define EMU_OVL_FONT_LARGE 0
-#define EMU_OVL_FONT_SMALL 1
-#define EMU_OVL_FONT_TINY 2
+#define EMU_OVL_FONT_MEDIUM 1
+#define EMU_OVL_FONT_SMALL 2
+#define EMU_OVL_FONT_TINY 3
+#define EMU_OVL_FONT_COUNT 4
 
 // Colors (ARGB)
 #define EMU_OVL_COLOR_WHITE 0xFFFFFFFF
@@ -19,16 +21,18 @@
 #define EMU_OVL_COLOR_SELECTED_BG 0x40FFFFFF
 #define EMU_OVL_COLOR_LABEL_BG 0x60FFFFFF
 
-// Settings row colors (matching NextUI theme defaults)
-#define EMU_OVL_COLOR_ROW_BG 0xFF002222	   // THEME_COLOR2 default (dark cyan)
-#define EMU_OVL_COLOR_ROW_SEL 0xFFFFFFFF   // THEME_COLOR1 default (white)
-#define EMU_OVL_COLOR_TEXT_SEL 0xFF000000  // THEME_COLOR5 default (black on white pill)
-#define EMU_OVL_COLOR_TEXT_NORM 0xFFFFFFFF // THEME_COLOR4 default (white)
+// Settings row colors (matching NextUI theme — see minuisettings.txt color1..6)
+#define EMU_OVL_COLOR_ROW_BG 0xFF282828    // THEME_COLOR2 (accent / dark pill bg)
+#define EMU_OVL_COLOR_ROW_SEL 0xFFFFFFFF   // THEME_COLOR1 (main / selected pill bg, white)
+#define EMU_OVL_COLOR_TEXT_SEL 0xFF000000  // THEME_COLOR5 (black text on white pill)
+#define EMU_OVL_COLOR_TEXT_NORM 0xFFFFFFFF // THEME_COLOR4 (white text on dark pill)
 
 typedef struct EmuOvlRenderBackend {
 	int (*init)(int screen_w, int screen_h);
 	void (*destroy)(void);
 	void (*draw_rect)(int x, int y, int w, int h, uint32_t color);
+	// Anti-aliased rounded rectangle. If radius < 0, defaults to h/2 (pill shape).
+	void (*draw_rounded_rect)(int x, int y, int w, int h, int radius, uint32_t color);
 	void (*draw_text)(const char* text, int x, int y, uint32_t color, int font_id);
 	int (*text_width)(const char* text, int font_id);
 	int (*text_height)(int font_id);

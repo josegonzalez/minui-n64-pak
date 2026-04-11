@@ -153,9 +153,18 @@ case "$VIDEO_PLUGIN_VALUE" in
         export EMU_VIDEO_PLUGIN=gliden64
         ;;
 esac
-# Font from NextUI system resources; icon PNGs vendored in platform dir
-FONT_FILE=$(ls "$SDCARD_PATH/.system/res/"*.ttf 2>/dev/null | head -1)
-export EMU_OVERLAY_FONT="${FONT_FILE:-$SDCARD_PATH/.system/res/font.ttf}"
+# Font from NextUI system resources; pick font1.ttf or font2.ttf based on the
+# user's `font=` setting in minuisettings.txt (matching NextUI's CFG_setFontId).
+MINUI_SETTINGS="$SDCARD_PATH/.userdata/shared/minuisettings.txt"
+FONT_ID=$(awk -F= '$1=="font"{print $2; exit}' "$MINUI_SETTINGS" 2>/dev/null)
+case "$FONT_ID" in
+    1) FONT_NAME="font1.ttf" ;;
+    *) FONT_NAME="font2.ttf" ;;
+esac
+FONT_FILE="$SDCARD_PATH/.system/res/$FONT_NAME"
+[ -f "$FONT_FILE" ] || FONT_FILE="$SDCARD_PATH/.system/res/font2.ttf"
+[ -f "$FONT_FILE" ] || FONT_FILE="$SDCARD_PATH/.system/res/font1.ttf"
+export EMU_OVERLAY_FONT="$FONT_FILE"
 export EMU_OVERLAY_RES="$BIN_DIR"
 # Screenshot directory (matches minarch's .minui path for game switcher)
 MINUI_DIR="$SHARED_USERDATA_PATH/.minui/$EMU_TAG"

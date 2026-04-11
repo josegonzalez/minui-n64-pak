@@ -16,6 +16,7 @@
 #include <SDL2/SDL_image.h>
 #include <GLES3/gl3.h>
 
+#include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -50,7 +51,9 @@ static void ovl_load_gl3_procs(void) {
 
 static int s_scale = 2;
 
+// Match NextUI's common/defines.h: FONT_LARGE=16, FONT_MEDIUM=14, FONT_SMALL=12, FONT_TINY=10
 #define FONT_SIZE_LARGE (16 * s_scale)
+#define FONT_SIZE_MEDIUM (14 * s_scale)
 #define FONT_SIZE_SMALL (12 * s_scale)
 #define FONT_SIZE_TINY (10 * s_scale)
 
@@ -61,7 +64,7 @@ static int s_scale = 2;
 static int s_screenW = 0;
 static int s_screenH = 0;
 
-static TTF_Font* s_fonts[3] = {NULL, NULL, NULL}; // LARGE, SMALL, TINY
+static TTF_Font* s_fonts[EMU_OVL_FONT_COUNT] = {NULL, NULL, NULL, NULL}; // LARGE, MEDIUM, SMALL, TINY
 
 static SDL_Surface* s_renderSurface = NULL;	 // ARGB8888 compositing surface
 static SDL_Surface* s_captureSurface = NULL; // Captured game frame (ARGB8888)
@@ -211,8 +214,9 @@ static int ovl_sdl_init(int screen_w, int screen_h) {
 		return -1;
 	}
 
-	int font_sizes[3] = {FONT_SIZE_LARGE, FONT_SIZE_SMALL, FONT_SIZE_TINY};
-	for (int i = 0; i < 3; i++) {
+	int font_sizes[EMU_OVL_FONT_COUNT] = {
+		FONT_SIZE_LARGE, FONT_SIZE_MEDIUM, FONT_SIZE_SMALL, FONT_SIZE_TINY};
+	for (int i = 0; i < EMU_OVL_FONT_COUNT; i++) {
 		s_fonts[i] = TTF_OpenFont(font_path, font_sizes[i]);
 		if (!s_fonts[i]) {
 			fprintf(stderr, "[OverlaySDL] TTF_OpenFont(%s, %d) failed: %s\n",
@@ -323,7 +327,7 @@ static int ovl_sdl_init(int screen_w, int screen_h) {
 }
 
 static void ovl_sdl_destroy(void) {
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < EMU_OVL_FONT_COUNT; i++) {
 		if (s_fonts[i]) {
 			TTF_CloseFont(s_fonts[i]);
 			s_fonts[i] = NULL;
@@ -486,11 +490,142 @@ static void ovl_sdl_draw_rect(int x, int y, int w, int h, uint32_t color) {
 }
 
 // ---------------------------------------------------------------------------
+// draw_rounded_rect — anti-aliased rounded rectangle (pill when radius == h/2)
+// ---------------------------------------------------------------------------
+//
+// Fills the interior as 1-3 SDL_FillRect bands, then walks only the corner
+// bounding boxes (radius × radius each) and blends per-pixel coverage based on
+// the signed distance from each pixel center to the corner arc center. Gives
+// ~4-pixel-wide soft edges at radius >= 20, matching NextUI's pill look.
+
+static inline uint32_t ovl_blend_argb(uint32_t dst, uint8_t sr, uint8_t sg,
+									   uint8_t sb, uint8_t sa) {
+	if (sa == 255)
+		return 0xFF000000u | ((uint32_t)sr << 16) | ((uint32_t)sg << 8) | sb;
+	uint32_t dr = (dst >> 16) & 0xFF;
+	uint32_t dg = (dst >> 8) & 0xFF;
+	uint32_t db = dst & 0xFF;
+	uint32_t da = (dst >> 24) & 0xFF;
+	uint32_t inv = 255 - sa;
+	uint32_t nr = (sr * sa + dr * inv + 127) / 255;
+	uint32_t ng = (sg * sa + dg * inv + 127) / 255;
+	uint32_t nb = (sb * sa + db * inv + 127) / 255;
+	uint32_t na = sa + (da * inv + 127) / 255;
+	if (na > 255) na = 255;
+	return (na << 24) | (nr << 16) | (ng << 8) | nb;
+}
+
+static void ovl_sdl_draw_rounded_rect(int x, int y, int w, int h, int radius,
+									  uint32_t color) {
+	if (!s_renderSurface || w <= 0 || h <= 0)
+		return;
+	if (radius < 0)
+		radius = h / 2;
+	if (radius > h / 2)
+		radius = h / 2;
+	if (radius > w / 2)
+		radius = w / 2;
+	if (radius < 0)
+		radius = 0;
+
+	uint8_t ca = (uint8_t)((color >> 24) & 0xFF);
+	uint8_t cr = (uint8_t)((color >> 16) & 0xFF);
+	uint8_t cg = (uint8_t)((color >> 8) & 0xFF);
+	uint8_t cb = (uint8_t)((color) & 0xFF);
+
+	Uint32 packed = SDL_MapRGBA(s_renderSurface->format, cr, cg, cb, ca);
+
+	// Interior bands (no rounding in these regions):
+	//   middle strip: full-width, y+radius .. y+h-radius
+	//   top strip:    x+radius .. x+w-radius, y .. y+radius
+	//   bottom strip: x+radius .. x+w-radius, y+h-radius .. y+h
+	if (h - 2 * radius > 0) {
+		SDL_Rect mid = {x, y + radius, w, h - 2 * radius};
+		SDL_FillRect(s_renderSurface, &mid, packed);
+	}
+	int mid_w = w - 2 * radius;
+	if (radius > 0 && mid_w > 0) {
+		SDL_Rect top_mid = {x + radius, y, mid_w, radius};
+		SDL_Rect bot_mid = {x + radius, y + h - radius, mid_w, radius};
+		SDL_FillRect(s_renderSurface, &top_mid, packed);
+		SDL_FillRect(s_renderSurface, &bot_mid, packed);
+	}
+
+	if (radius == 0)
+		return;
+
+	// Anti-aliased corners via per-pixel coverage.
+	if (SDL_MUSTLOCK(s_renderSurface))
+		SDL_LockSurface(s_renderSurface);
+
+	uint32_t* pixels = (uint32_t*)s_renderSurface->pixels;
+	int pitch = s_renderSurface->pitch / 4;
+	int sw = s_renderSurface->w;
+	int sh = s_renderSurface->h;
+
+	float r_f = (float)radius;
+	float r_in2 = (r_f - 0.5f) * (r_f - 0.5f);
+	float r_out2 = (r_f + 0.5f) * (r_f + 0.5f);
+
+	for (int cy = 0; cy < radius; cy++) {
+		int py_top = y + cy;
+		int py_bot = y + h - 1 - cy;
+		float fdy = (float)cy + 0.5f - r_f;
+		float fdy2 = fdy * fdy;
+		for (int cx = 0; cx < radius; cx++) {
+			float fdx = (float)cx + 0.5f - r_f;
+			float dist2 = fdx * fdx + fdy2;
+			if (dist2 > r_out2)
+				continue;
+			uint8_t alpha;
+			if (dist2 < r_in2) {
+				alpha = ca;
+			} else {
+				float dist = sqrtf(dist2);
+				float cov = r_f + 0.5f - dist;
+				if (cov < 0.0f) cov = 0.0f;
+				if (cov > 1.0f) cov = 1.0f;
+				alpha = (uint8_t)((float)ca * cov + 0.5f);
+			}
+			if (alpha == 0)
+				continue;
+
+			int px_left = x + cx;
+			int px_right = x + w - 1 - cx;
+
+			if (py_top >= 0 && py_top < sh) {
+				if (px_left >= 0 && px_left < sw) {
+					uint32_t* p = &pixels[py_top * pitch + px_left];
+					*p = ovl_blend_argb(*p, cr, cg, cb, alpha);
+				}
+				if (px_right != px_left && px_right >= 0 && px_right < sw) {
+					uint32_t* p = &pixels[py_top * pitch + px_right];
+					*p = ovl_blend_argb(*p, cr, cg, cb, alpha);
+				}
+			}
+			if (py_bot != py_top && py_bot >= 0 && py_bot < sh) {
+				if (px_left >= 0 && px_left < sw) {
+					uint32_t* p = &pixels[py_bot * pitch + px_left];
+					*p = ovl_blend_argb(*p, cr, cg, cb, alpha);
+				}
+				if (px_right != px_left && px_right >= 0 && px_right < sw) {
+					uint32_t* p = &pixels[py_bot * pitch + px_right];
+					*p = ovl_blend_argb(*p, cr, cg, cb, alpha);
+				}
+			}
+		}
+	}
+
+	if (SDL_MUSTLOCK(s_renderSurface))
+		SDL_UnlockSurface(s_renderSurface);
+}
+
+// ---------------------------------------------------------------------------
 // draw_text — TTF rendered text
 // ---------------------------------------------------------------------------
 
 static TTF_Font* get_font(int font_id) {
-	if (font_id >= 0 && font_id <= 2 && s_fonts[font_id])
+	if (font_id >= 0 && font_id < EMU_OVL_FONT_COUNT && s_fonts[font_id])
 		return s_fonts[font_id];
 	// Fallback to small
 	return s_fonts[EMU_OVL_FONT_SMALL];
@@ -793,6 +928,7 @@ static EmuOvlRenderBackend s_backend = {
 	ovl_sdl_init,
 	ovl_sdl_destroy,
 	ovl_sdl_draw_rect,
+	ovl_sdl_draw_rounded_rect,
 	ovl_sdl_draw_text,
 	ovl_sdl_text_width,
 	ovl_sdl_text_height,
