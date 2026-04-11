@@ -225,16 +225,13 @@ index 00000000..82791025
 +- `UseNativeResolutionFactor = 2` (640x480) works well
 +- Can try `anisotropy = 4` or `UseNativeResolutionFactor = 3` on less demanding games
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index ff7e8a52..2f31d67c 100644
+index ff7e8a52..1052a425 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -145,6 +145,19 @@ set(GLideN64_SOURCES
-   uCodes/Turbo3D.cpp
-   uCodes/ZSort.cpp
+@@ -147,6 +147,18 @@ set(GLideN64_SOURCES
    uCodes/ZSortBOSS.cpp
-+  overlay/OverlayGL.cpp
-+)
-+
+ )
+ 
 +# Emulator overlay menu sources (shared library)
 +set(OVERLAY_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../overlay")
 +# NOTE: include_directories for OVERLAY_COMMON_DIR is added after include_directories(. inc)
@@ -245,10 +242,12 @@ index ff7e8a52..2f31d67c 100644
 +  ${OVERLAY_COMMON_DIR}/emu_overlay_sdl.c
 +  ${OVERLAY_COMMON_DIR}/emu_frontend.c
 +  ${OVERLAY_COMMON_DIR}/cjson/cJSON.c
- )
- 
++)
++
  set(GLideNUI_SOURCES
-@@ -235,7 +248,7 @@ if(EXISTS "${CMAKE_FIND_ROOT_PATH}/opt/vc/include/bcm_host.h" AND NOT MESA)
+   GLideNUI/AboutDialog.cpp
+   GLideNUI/AboutDialog.ui
+@@ -235,7 +247,7 @@ if(EXISTS "${CMAKE_FIND_ROOT_PATH}/opt/vc/include/bcm_host.h" AND NOT MESA)
      "${CMAKE_FIND_ROOT_PATH}/opt/vc/lib/GL"
    )
  else(EXISTS "${CMAKE_FIND_ROOT_PATH}/opt/vc/include/bcm_host.h" AND NOT MESA)
@@ -257,7 +256,7 @@ index ff7e8a52..2f31d67c 100644
  endif(EXISTS "${CMAKE_FIND_ROOT_PATH}/opt/vc/include/bcm_host.h" AND NOT MESA)
  
  if(MUPENPLUSAPI)
-@@ -244,6 +257,9 @@ if(MUPENPLUSAPI)
+@@ -244,6 +256,9 @@ if(MUPENPLUSAPI)
  		-DTXFILTER_LIB
    )
    include_directories( . inc )
@@ -267,7 +266,7 @@ index ff7e8a52..2f31d67c 100644
    set(GLideN64_SOURCES_UNIX
  	MupenPlusPluginAPI.cpp
  	mupenplus/CommonAPIImpl_mupenplus.cpp
-@@ -405,42 +421,45 @@ if(ANDROID)
+@@ -405,42 +420,45 @@ if(ANDROID)
  endif(ANDROID)
  
  if(NOT NO_OSD)
@@ -349,7 +348,7 @@ index ff7e8a52..2f31d67c 100644
  
    include_directories( ${FREETYPE_INCLUDE_DIRS} )
  else()
-@@ -559,6 +578,10 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" MATCH
+@@ -559,6 +577,10 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" MATCH
    set( CMAKE_SHARED_LINKER_FLAGS  "${CMAKE_SHARED_LINKER_FLAGS} ${GCC_STATIC_LINK_FLAGS}" )
  endif()
  
@@ -360,7 +359,7 @@ index ff7e8a52..2f31d67c 100644
  set(CMAKE_CXX_STANDARD 17)
  set(CMAKE_CXX_STANDARD_REQUIRED YES)
  
-@@ -628,6 +651,9 @@ else(GLIDEN64_BUILD_TYPE STREQUAL "Debug")
+@@ -628,6 +650,9 @@ else(GLIDEN64_BUILD_TYPE STREQUAL "Debug")
    endif(SDL)
  endif(GLIDEN64_BUILD_TYPE STREQUAL "Debug")
  
@@ -480,31 +479,23 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..40b83418 100644
+index 59725f62..db07ea79 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
-@@ -1,5 +1,11 @@
+@@ -1,5 +1,6 @@
  #include <assert.h>
  #include <cstdlib>
 +#include <cstring>
-+#include <cstdio>
-+#include <fcntl.h>
-+#include <unistd.h>
-+#include <sys/ioctl.h>
-+#include <sys/stat.h>
  #include "Config.h"
  #include "RSP.h"
  #include "VI.h"
-@@ -8,6 +14,114 @@
+@@ -8,6 +9,111 @@
  #include "PluginAPI.h"
  #include "FrameBuffer.h"
  
-+#include <GLES3/gl3.h>
-+#include <SDL2/SDL.h>
 +#include <functional>
 +extern "C" {
 +#include "emu_overlay.h"
-+#include "emu_overlay_cfg.h"
 +#include "emu_overlay_sdl.h"
 +#include "emu_frontend.h"
 +}
@@ -610,7 +601,7 @@ index 59725f62..40b83418 100644
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +162,14 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +154,14 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
@@ -1824,684 +1815,6 @@ index f0595819..2a353ca4 100644
  #ifndef M64P_GLIDENUI
  	if (Config_SetDefault()) {
  		config.version = ConfigGetParamInt(g_configVideoGliden64, "configVersion");
-diff --git a/src/overlay/OverlayGL.cpp b/src/overlay/OverlayGL.cpp
-new file mode 100644
-index 00000000..8da47721
---- /dev/null
-+++ b/src/overlay/OverlayGL.cpp
-@@ -0,0 +1,650 @@
-+#include "OverlayGL.h"
-+
-+#include <GLES3/gl3.h>
-+#include <string.h>
-+#include <stdio.h>
-+#include <stdint.h>
-+
-+// ---------------------------------------------------------------------------
-+// Embedded 8x8 bitmap font (ASCII 32-126, public domain font8x8_basic)
-+// Each character: 8 rows, 1 byte per row, bit 0 = leftmost pixel
-+// ---------------------------------------------------------------------------
-+
-+static const unsigned char s_font8x8[95][8] = {
-+	{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // 32 (space)
-+	{0x18,0x3C,0x3C,0x18,0x18,0x00,0x18,0x00}, // 33 !
-+	{0x36,0x36,0x00,0x00,0x00,0x00,0x00,0x00}, // 34 "
-+	{0x36,0x36,0x7F,0x36,0x7F,0x36,0x36,0x00}, // 35 #
-+	{0x0C,0x3E,0x03,0x1E,0x30,0x1F,0x0C,0x00}, // 36 $
-+	{0x00,0x63,0x33,0x18,0x0C,0x66,0x63,0x00}, // 37 %
-+	{0x1C,0x36,0x1C,0x6E,0x3B,0x33,0x6E,0x00}, // 38 &
-+	{0x06,0x06,0x03,0x00,0x00,0x00,0x00,0x00}, // 39 '
-+	{0x18,0x0C,0x06,0x06,0x06,0x0C,0x18,0x00}, // 40 (
-+	{0x06,0x0C,0x18,0x18,0x18,0x0C,0x06,0x00}, // 41 )
-+	{0x00,0x66,0x3C,0xFF,0x3C,0x66,0x00,0x00}, // 42 *
-+	{0x00,0x0C,0x0C,0x3F,0x0C,0x0C,0x00,0x00}, // 43 +
-+	{0x00,0x00,0x00,0x00,0x00,0x0C,0x0C,0x06}, // 44 ,
-+	{0x00,0x00,0x00,0x3F,0x00,0x00,0x00,0x00}, // 45 -
-+	{0x00,0x00,0x00,0x00,0x00,0x0C,0x0C,0x00}, // 46 .
-+	{0x60,0x30,0x18,0x0C,0x06,0x03,0x01,0x00}, // 47 /
-+	{0x3E,0x63,0x73,0x7B,0x6F,0x67,0x3E,0x00}, // 48 0
-+	{0x0C,0x0E,0x0C,0x0C,0x0C,0x0C,0x3F,0x00}, // 49 1
-+	{0x1E,0x33,0x30,0x1C,0x06,0x33,0x3F,0x00}, // 50 2
-+	{0x1E,0x33,0x30,0x1C,0x30,0x33,0x1E,0x00}, // 51 3
-+	{0x38,0x3C,0x36,0x33,0x7F,0x30,0x78,0x00}, // 52 4
-+	{0x3F,0x03,0x1F,0x30,0x30,0x33,0x1E,0x00}, // 53 5
-+	{0x1C,0x06,0x03,0x1F,0x33,0x33,0x1E,0x00}, // 54 6
-+	{0x3F,0x33,0x30,0x18,0x0C,0x0C,0x0C,0x00}, // 55 7
-+	{0x1E,0x33,0x33,0x1E,0x33,0x33,0x1E,0x00}, // 56 8
-+	{0x1E,0x33,0x33,0x3E,0x30,0x18,0x0E,0x00}, // 57 9
-+	{0x00,0x0C,0x0C,0x00,0x00,0x0C,0x0C,0x00}, // 58 :
-+	{0x00,0x0C,0x0C,0x00,0x00,0x0C,0x0C,0x06}, // 59 ;
-+	{0x18,0x0C,0x06,0x03,0x06,0x0C,0x18,0x00}, // 60 <
-+	{0x00,0x00,0x3F,0x00,0x00,0x3F,0x00,0x00}, // 61 =
-+	{0x06,0x0C,0x18,0x30,0x18,0x0C,0x06,0x00}, // 62 >
-+	{0x1E,0x33,0x30,0x18,0x0C,0x00,0x0C,0x00}, // 63 ?
-+	{0x3E,0x63,0x7B,0x7B,0x7B,0x03,0x1E,0x00}, // 64 @
-+	{0x0C,0x1E,0x33,0x33,0x3F,0x33,0x33,0x00}, // 65 A
-+	{0x3F,0x66,0x66,0x3E,0x66,0x66,0x3F,0x00}, // 66 B
-+	{0x3C,0x66,0x03,0x03,0x03,0x66,0x3C,0x00}, // 67 C
-+	{0x1F,0x36,0x66,0x66,0x66,0x36,0x1F,0x00}, // 68 D
-+	{0x7F,0x46,0x16,0x1E,0x16,0x46,0x7F,0x00}, // 69 E
-+	{0x7F,0x46,0x16,0x1E,0x16,0x06,0x0F,0x00}, // 70 F
-+	{0x3C,0x66,0x03,0x03,0x73,0x66,0x7C,0x00}, // 71 G
-+	{0x33,0x33,0x33,0x3F,0x33,0x33,0x33,0x00}, // 72 H
-+	{0x1E,0x0C,0x0C,0x0C,0x0C,0x0C,0x1E,0x00}, // 73 I
-+	{0x78,0x30,0x30,0x30,0x33,0x33,0x1E,0x00}, // 74 J
-+	{0x67,0x66,0x36,0x1E,0x36,0x66,0x67,0x00}, // 75 K
-+	{0x0F,0x06,0x06,0x06,0x46,0x66,0x7F,0x00}, // 76 L
-+	{0x63,0x77,0x7F,0x7F,0x6B,0x63,0x63,0x00}, // 77 M
-+	{0x63,0x67,0x6F,0x7B,0x73,0x63,0x63,0x00}, // 78 N
-+	{0x1C,0x36,0x63,0x63,0x63,0x36,0x1C,0x00}, // 79 O
-+	{0x3F,0x66,0x66,0x3E,0x06,0x06,0x0F,0x00}, // 80 P
-+	{0x1E,0x33,0x33,0x33,0x3B,0x1E,0x38,0x00}, // 81 Q
-+	{0x3F,0x66,0x66,0x3E,0x36,0x66,0x67,0x00}, // 82 R
-+	{0x1E,0x33,0x07,0x0E,0x38,0x33,0x1E,0x00}, // 83 S
-+	{0x3F,0x2D,0x0C,0x0C,0x0C,0x0C,0x1E,0x00}, // 84 T
-+	{0x33,0x33,0x33,0x33,0x33,0x33,0x3F,0x00}, // 85 U
-+	{0x33,0x33,0x33,0x33,0x33,0x1E,0x0C,0x00}, // 86 V
-+	{0x63,0x63,0x63,0x6B,0x7F,0x77,0x63,0x00}, // 87 W
-+	{0x63,0x63,0x36,0x1C,0x1C,0x36,0x63,0x00}, // 88 X
-+	{0x33,0x33,0x33,0x1E,0x0C,0x0C,0x1E,0x00}, // 89 Y
-+	{0x7F,0x63,0x31,0x18,0x4C,0x66,0x7F,0x00}, // 90 Z
-+	{0x1E,0x06,0x06,0x06,0x06,0x06,0x1E,0x00}, // 91 [
-+	{0x03,0x06,0x0C,0x18,0x30,0x60,0x40,0x00}, // 92 backslash
-+	{0x1E,0x18,0x18,0x18,0x18,0x18,0x1E,0x00}, // 93 ]
-+	{0x08,0x1C,0x36,0x63,0x00,0x00,0x00,0x00}, // 94 ^
-+	{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF}, // 95 _
-+	{0x0C,0x0C,0x18,0x00,0x00,0x00,0x00,0x00}, // 96 `
-+	{0x00,0x00,0x1E,0x30,0x3E,0x33,0x6E,0x00}, // 97 a
-+	{0x07,0x06,0x06,0x3E,0x66,0x66,0x3B,0x00}, // 98 b
-+	{0x00,0x00,0x1E,0x33,0x03,0x33,0x1E,0x00}, // 99 c
-+	{0x38,0x30,0x30,0x3E,0x33,0x33,0x6E,0x00}, // 100 d
-+	{0x00,0x00,0x1E,0x33,0x3F,0x03,0x1E,0x00}, // 101 e
-+	{0x1C,0x36,0x06,0x0F,0x06,0x06,0x0F,0x00}, // 102 f
-+	{0x00,0x00,0x6E,0x33,0x33,0x3E,0x30,0x1F}, // 103 g
-+	{0x07,0x06,0x36,0x6E,0x66,0x66,0x67,0x00}, // 104 h
-+	{0x0C,0x00,0x0E,0x0C,0x0C,0x0C,0x1E,0x00}, // 105 i
-+	{0x30,0x00,0x30,0x30,0x30,0x33,0x33,0x1E}, // 106 j
-+	{0x07,0x06,0x66,0x36,0x1E,0x36,0x67,0x00}, // 107 k
-+	{0x0E,0x0C,0x0C,0x0C,0x0C,0x0C,0x1E,0x00}, // 108 l
-+	{0x00,0x00,0x33,0x7F,0x7F,0x6B,0x63,0x00}, // 109 m
-+	{0x00,0x00,0x1F,0x33,0x33,0x33,0x33,0x00}, // 110 n
-+	{0x00,0x00,0x1E,0x33,0x33,0x33,0x1E,0x00}, // 111 o
-+	{0x00,0x00,0x3B,0x66,0x66,0x3E,0x06,0x0F}, // 112 p
-+	{0x00,0x00,0x6E,0x33,0x33,0x3E,0x30,0x78}, // 113 q
-+	{0x00,0x00,0x3B,0x6E,0x66,0x06,0x0F,0x00}, // 114 r
-+	{0x00,0x00,0x3E,0x03,0x1E,0x30,0x1F,0x00}, // 115 s
-+	{0x08,0x0C,0x3E,0x0C,0x0C,0x2C,0x18,0x00}, // 116 t
-+	{0x00,0x00,0x33,0x33,0x33,0x33,0x6E,0x00}, // 117 u
-+	{0x00,0x00,0x33,0x33,0x33,0x1E,0x0C,0x00}, // 118 v
-+	{0x00,0x00,0x63,0x6B,0x7F,0x7F,0x36,0x00}, // 119 w
-+	{0x00,0x00,0x63,0x36,0x1C,0x36,0x63,0x00}, // 120 x
-+	{0x00,0x00,0x33,0x33,0x33,0x3E,0x30,0x1F}, // 121 y
-+	{0x00,0x00,0x3F,0x19,0x0C,0x26,0x3F,0x00}, // 122 z
-+	{0x38,0x0C,0x0C,0x07,0x0C,0x0C,0x38,0x00}, // 123 {
-+	{0x18,0x18,0x18,0x00,0x18,0x18,0x18,0x00}, // 124 |
-+	{0x07,0x0C,0x0C,0x38,0x0C,0x0C,0x07,0x00}, // 125 }
-+	{0x6E,0x3B,0x00,0x00,0x00,0x00,0x00,0x00}, // 126 ~
-+};
-+
-+// Font rendering scale per font_id: LARGE=0, SMALL=1, TINY=2
-+static const int s_fontScale[3] = { 3, 2, 1 };
-+
-+// ---------------------------------------------------------------------------
-+// Shader sources
-+// ---------------------------------------------------------------------------
-+
-+static const char* s_solidVS =
-+	"#version 300 es\n"
-+	"in vec2 aPos;\n"
-+	"void main() {\n"
-+	"    gl_Position = vec4(aPos, 0.0, 1.0);\n"
-+	"}\n";
-+
-+static const char* s_solidFS =
-+	"#version 300 es\n"
-+	"precision mediump float;\n"
-+	"uniform vec4 uColor;\n"
-+	"out vec4 fragColor;\n"
-+	"void main() {\n"
-+	"    fragColor = uColor;\n"
-+	"}\n";
-+
-+static const char* s_texVS =
-+	"#version 300 es\n"
-+	"in vec2 aPos;\n"
-+	"in vec2 aTexCoord;\n"
-+	"out vec2 vTexCoord;\n"
-+	"void main() {\n"
-+	"    gl_Position = vec4(aPos, 0.0, 1.0);\n"
-+	"    vTexCoord = aTexCoord;\n"
-+	"}\n";
-+
-+static const char* s_texFS =
-+	"#version 300 es\n"
-+	"precision mediump float;\n"
-+	"in vec2 vTexCoord;\n"
-+	"uniform sampler2D uTexture;\n"
-+	"uniform float uDim;\n"
-+	"out vec4 fragColor;\n"
-+	"void main() {\n"
-+	"    vec4 c = texture(uTexture, vTexCoord);\n"
-+	"    fragColor = vec4(c.rgb * uDim, c.a);\n"
-+	"}\n";
-+
-+// Text shader: samples font atlas alpha, applies uniform color
-+static const char* s_textFS =
-+	"#version 300 es\n"
-+	"precision mediump float;\n"
-+	"in vec2 vTexCoord;\n"
-+	"uniform sampler2D uTexture;\n"
-+	"uniform vec4 uColor;\n"
-+	"out vec4 fragColor;\n"
-+	"void main() {\n"
-+	"    float a = texture(uTexture, vTexCoord).r;\n"
-+	"    fragColor = vec4(uColor.rgb, uColor.a * a);\n"
-+	"}\n";
-+
-+// ---------------------------------------------------------------------------
-+// State
-+// ---------------------------------------------------------------------------
-+
-+static GLuint s_solidProgram = 0;
-+static GLint  s_solidLocColor = -1;
-+
-+static GLuint s_texProgram = 0;
-+static GLint  s_texLocTexture = -1;
-+static GLint  s_texLocDim = -1;
-+
-+static GLuint s_textProgram = 0;
-+static GLint  s_textLocTexture = -1;
-+static GLint  s_textLocColor = -1;
-+
-+static GLuint s_captureTexture = 0;
-+static GLuint s_fontTexture = 0;
-+static GLuint s_solidVAO = 0;
-+static GLuint s_solidVBO = 0;
-+static GLuint s_texVAO = 0;
-+static GLuint s_texVBO = 0;
-+
-+static int s_screenW = 0;
-+static int s_screenH = 0;
-+
-+// Font atlas layout: 16 chars per row, 6 rows (96 cells for 95 chars + 1 blank)
-+#define FONT_ATLAS_COLS  16
-+#define FONT_ATLAS_ROWS  6
-+#define FONT_ATLAS_W     (FONT_ATLAS_COLS * 8)  // 128
-+#define FONT_ATLAS_H     (FONT_ATLAS_ROWS * 8)  // 48
-+
-+// Saved GL state for begin_frame / end_frame
-+static GLint   s_savedViewport[4];
-+static GLint   s_savedScissorBox[4];
-+static GLboolean s_savedBlend;
-+static GLboolean s_savedDepthTest;
-+static GLboolean s_savedCullFace;
-+static GLboolean s_savedScissorTest;
-+static GLint   s_savedBlendSrcRGB;
-+static GLint   s_savedBlendDstRGB;
-+static GLint   s_savedBlendSrcAlpha;
-+static GLint   s_savedBlendDstAlpha;
-+static GLint   s_savedProgram;
-+static GLint   s_savedVAO;
-+static GLint   s_savedVBO;
-+static GLint   s_savedTex0;
-+static GLint   s_savedActiveTexUnit;
-+
-+// ---------------------------------------------------------------------------
-+// Helpers
-+// ---------------------------------------------------------------------------
-+
-+static GLuint compile_shader(GLenum type, const char* src)
-+{
-+	GLuint sh = glCreateShader(type);
-+	if (sh == 0) {
-+		fprintf(stderr, "[OverlayGL] glCreateShader failed, glError=%d\n", glGetError());
-+		return 0;
-+	}
-+	glShaderSource(sh, 1, &src, nullptr);
-+	glCompileShader(sh);
-+
-+	GLint ok = 0;
-+	glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
-+	if (!ok) {
-+		char log[512];
-+		log[0] = '\0';
-+		GLsizei logLen = 0;
-+		glGetShaderInfoLog(sh, sizeof(log) - 1, &logLen, log);
-+		log[logLen] = '\0';
-+		fprintf(stderr, "[OverlayGL] shader compile error (type=%s, len=%d): %s\n",
-+			type == GL_VERTEX_SHADER ? "VS" : "FS", logLen, log);
-+		glDeleteShader(sh);
-+		return 0;
-+	}
-+	return sh;
-+}
-+
-+static GLuint link_program(GLuint vs, GLuint fs)
-+{
-+	GLuint prog = glCreateProgram();
-+	glAttachShader(prog, vs);
-+	glAttachShader(prog, fs);
-+	glLinkProgram(prog);
-+
-+	GLint ok = 0;
-+	glGetProgramiv(prog, GL_LINK_STATUS, &ok);
-+	if (!ok) {
-+		char log[512];
-+		glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
-+		fprintf(stderr, "[OverlayGL] program link error: %s\n", log);
-+		glDeleteProgram(prog);
-+		return 0;
-+	}
-+	return prog;
-+}
-+
-+static inline float ndc_x(float px)
-+{
-+	return 2.0f * px / (float)s_screenW - 1.0f;
-+}
-+
-+static inline float ndc_y(float py)
-+{
-+	return 1.0f - 2.0f * py / (float)s_screenH;
-+}
-+
-+static void build_font_texture(void)
-+{
-+	unsigned char pixels[FONT_ATLAS_W * FONT_ATLAS_H];
-+	memset(pixels, 0, sizeof(pixels));
-+
-+	for (int c = 0; c < 95; c++) {
-+		int col = c % FONT_ATLAS_COLS;
-+		int row = c / FONT_ATLAS_COLS;
-+		for (int y = 0; y < 8; y++) {
-+			unsigned char bits = s_font8x8[c][y];
-+			for (int x = 0; x < 8; x++) {
-+				if (bits & (1 << x))
-+					pixels[(row * 8 + y) * FONT_ATLAS_W + col * 8 + x] = 255;
-+			}
-+		}
-+	}
-+
-+	glGenTextures(1, &s_fontTexture);
-+	glBindTexture(GL_TEXTURE_2D, s_fontTexture);
-+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, FONT_ATLAS_W, FONT_ATLAS_H, 0,
-+	             GL_RED, GL_UNSIGNED_BYTE, pixels);
-+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-+	glBindTexture(GL_TEXTURE_2D, 0);
-+}
-+
-+// ---------------------------------------------------------------------------
-+// Backend functions
-+// ---------------------------------------------------------------------------
-+
-+static int ovl_gl_init(int screen_w, int screen_h)
-+{
-+	s_screenW = screen_w;
-+	s_screenH = screen_h;
-+
-+	// Save GL state — overlay init runs on the video thread in threaded mode,
-+	// and raw gl* calls bypass GLideN64's cached state tracking. We must restore
-+	// all state we modify to prevent stale cache issues (black screen on PowerVR).
-+	GLint savedVAO = 0, savedVBO = 0, savedTex = 0, savedUnpackAlign = 4;
-+	glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &savedVAO);
-+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &savedVBO);
-+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &savedTex);
-+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &savedUnpackAlign);
-+
-+	// Build solid color program
-+	{
-+		GLuint vs = compile_shader(GL_VERTEX_SHADER, s_solidVS);
-+		GLuint fs = compile_shader(GL_FRAGMENT_SHADER, s_solidFS);
-+		if (!vs || !fs) return -1;
-+		s_solidProgram = link_program(vs, fs);
-+		glDeleteShader(vs);
-+		glDeleteShader(fs);
-+		if (!s_solidProgram) return -1;
-+		s_solidLocColor = glGetUniformLocation(s_solidProgram, "uColor");
-+	}
-+
-+	// Build textured (dim) program — for captured frame
-+	{
-+		GLuint vs = compile_shader(GL_VERTEX_SHADER, s_texVS);
-+		GLuint fs = compile_shader(GL_FRAGMENT_SHADER, s_texFS);
-+		if (!vs || !fs) return -1;
-+		s_texProgram = link_program(vs, fs);
-+		glDeleteShader(vs);
-+		glDeleteShader(fs);
-+		if (!s_texProgram) return -1;
-+		s_texLocTexture = glGetUniformLocation(s_texProgram, "uTexture");
-+		s_texLocDim = glGetUniformLocation(s_texProgram, "uDim");
-+	}
-+
-+	// Build text shader program — for bitmap font rendering
-+	{
-+		GLuint vs = compile_shader(GL_VERTEX_SHADER, s_texVS); // reuse tex vertex shader
-+		GLuint fs = compile_shader(GL_FRAGMENT_SHADER, s_textFS);
-+		if (!vs || !fs) return -1;
-+		s_textProgram = link_program(vs, fs);
-+		glDeleteShader(vs);
-+		glDeleteShader(fs);
-+		if (!s_textProgram) return -1;
-+		s_textLocTexture = glGetUniformLocation(s_textProgram, "uTexture");
-+		s_textLocColor = glGetUniformLocation(s_textProgram, "uColor");
-+	}
-+
-+	// VAO/VBO for solid quads (6 verts * 2 floats, dynamic)
-+	glGenVertexArrays(1, &s_solidVAO);
-+	glGenBuffers(1, &s_solidVBO);
-+	glBindVertexArray(s_solidVAO);
-+	glBindBuffer(GL_ARRAY_BUFFER, s_solidVBO);
-+	glBufferData(GL_ARRAY_BUFFER, 6 * 2 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-+	GLint solidPosLoc = glGetAttribLocation(s_solidProgram, "aPos");
-+	glEnableVertexAttribArray(solidPosLoc);
-+	glVertexAttribPointer(solidPosLoc, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-+	glBindVertexArray(0);
-+
-+	// VAO/VBO for textured quads (6 verts * 4 floats: pos.xy + uv.xy)
-+	glGenVertexArrays(1, &s_texVAO);
-+	glGenBuffers(1, &s_texVBO);
-+	glBindVertexArray(s_texVAO);
-+	glBindBuffer(GL_ARRAY_BUFFER, s_texVBO);
-+	// Allocate enough for text batching: max 128 chars * 6 verts * 4 floats
-+	glBufferData(GL_ARRAY_BUFFER, 128 * 6 * 4 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-+	GLint texPosLoc = glGetAttribLocation(s_texProgram, "aPos");
-+	GLint texUVLoc  = glGetAttribLocation(s_texProgram, "aTexCoord");
-+	glEnableVertexAttribArray(texPosLoc);
-+	glVertexAttribPointer(texPosLoc, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-+	glEnableVertexAttribArray(texUVLoc);
-+	glVertexAttribPointer(texUVLoc, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-+	glBindVertexArray(0);
-+
-+	// Capture texture (allocated on first capture)
-+	glGenTextures(1, &s_captureTexture);
-+	glBindTexture(GL_TEXTURE_2D, s_captureTexture);
-+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-+	glBindTexture(GL_TEXTURE_2D, 0);
-+
-+	// Build bitmap font atlas texture
-+	build_font_texture();
-+
-+	// Restore GL state to avoid corrupting GLideN64's cached state
-+	glBindVertexArray(savedVAO);
-+	glBindBuffer(GL_ARRAY_BUFFER, savedVBO);
-+	glBindTexture(GL_TEXTURE_2D, savedTex);
-+	glPixelStorei(GL_UNPACK_ALIGNMENT, savedUnpackAlign);
-+
-+	return 0;
-+}
-+
-+static void ovl_gl_destroy(void)
-+{
-+	if (s_solidProgram) { glDeleteProgram(s_solidProgram); s_solidProgram = 0; }
-+	if (s_texProgram)   { glDeleteProgram(s_texProgram);   s_texProgram = 0; }
-+	if (s_textProgram)  { glDeleteProgram(s_textProgram);  s_textProgram = 0; }
-+	if (s_solidVAO)     { glDeleteVertexArrays(1, &s_solidVAO); s_solidVAO = 0; }
-+	if (s_solidVBO)     { glDeleteBuffers(1, &s_solidVBO);      s_solidVBO = 0; }
-+	if (s_texVAO)       { glDeleteVertexArrays(1, &s_texVAO);   s_texVAO = 0; }
-+	if (s_texVBO)       { glDeleteBuffers(1, &s_texVBO);         s_texVBO = 0; }
-+	if (s_captureTexture) { glDeleteTextures(1, &s_captureTexture); s_captureTexture = 0; }
-+	if (s_fontTexture)    { glDeleteTextures(1, &s_fontTexture);    s_fontTexture = 0; }
-+}
-+
-+static void ovl_gl_begin_frame(void)
-+{
-+	// Save GL state (must restore ALL state overlay touches to avoid
-+	// corrupting GLideN64's CachedFunctions state — especially on PowerVR)
-+	glGetIntegerv(GL_VIEWPORT, s_savedViewport);
-+	glGetIntegerv(GL_SCISSOR_BOX, s_savedScissorBox);
-+	s_savedBlend      = glIsEnabled(GL_BLEND);
-+	s_savedDepthTest  = glIsEnabled(GL_DEPTH_TEST);
-+	s_savedCullFace   = glIsEnabled(GL_CULL_FACE);
-+	s_savedScissorTest = glIsEnabled(GL_SCISSOR_TEST);
-+	glGetIntegerv(GL_BLEND_SRC_RGB,   &s_savedBlendSrcRGB);
-+	glGetIntegerv(GL_BLEND_DST_RGB,   &s_savedBlendDstRGB);
-+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &s_savedBlendSrcAlpha);
-+	glGetIntegerv(GL_BLEND_DST_ALPHA, &s_savedBlendDstAlpha);
-+	glGetIntegerv(GL_CURRENT_PROGRAM, &s_savedProgram);
-+	glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &s_savedVAO);
-+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &s_savedVBO);
-+	glGetIntegerv(GL_ACTIVE_TEXTURE, &s_savedActiveTexUnit);
-+	glActiveTexture(GL_TEXTURE0);
-+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &s_savedTex0);
-+
-+	// Set overlay state
-+	glViewport(0, 0, s_screenW, s_screenH);
-+	glDisable(GL_DEPTH_TEST);
-+	glDisable(GL_CULL_FACE);
-+	glDisable(GL_SCISSOR_TEST);
-+	glEnable(GL_BLEND);
-+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-+}
-+
-+static void ovl_gl_end_frame(void)
-+{
-+	// Restore GL state
-+	glViewport(s_savedViewport[0], s_savedViewport[1],
-+	           s_savedViewport[2], s_savedViewport[3]);
-+	glScissor(s_savedScissorBox[0], s_savedScissorBox[1],
-+	          s_savedScissorBox[2], s_savedScissorBox[3]);
-+
-+	if (s_savedBlend)       glEnable(GL_BLEND);       else glDisable(GL_BLEND);
-+	if (s_savedDepthTest)   glEnable(GL_DEPTH_TEST);   else glDisable(GL_DEPTH_TEST);
-+	if (s_savedCullFace)    glEnable(GL_CULL_FACE);    else glDisable(GL_CULL_FACE);
-+	if (s_savedScissorTest) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
-+
-+	glBlendFuncSeparate(s_savedBlendSrcRGB, s_savedBlendDstRGB,
-+	                    s_savedBlendSrcAlpha, s_savedBlendDstAlpha);
-+
-+	// Restore object bindings (critical for GLideN64's cached state on PowerVR)
-+	glUseProgram(s_savedProgram);
-+	glBindVertexArray(s_savedVAO);
-+	glBindBuffer(GL_ARRAY_BUFFER, s_savedVBO);
-+	glActiveTexture(GL_TEXTURE0);
-+	glBindTexture(GL_TEXTURE_2D, s_savedTex0);
-+	glActiveTexture(s_savedActiveTexUnit);
-+}
-+
-+static void ovl_gl_capture_frame(void)
-+{
-+	glBindTexture(GL_TEXTURE_2D, s_captureTexture);
-+	glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 0, 0, s_screenW, s_screenH, 0);
-+	glBindTexture(GL_TEXTURE_2D, 0);
-+}
-+
-+static void ovl_gl_draw_captured_frame(float dim)
-+{
-+	// Fullscreen textured quad
-+	float verts[] = {
-+		// pos.x, pos.y, u, v  (note: framebuffer is bottom-up so flip V)
-+		-1.0f, -1.0f,  0.0f, 0.0f,
-+		 1.0f, -1.0f,  1.0f, 0.0f,
-+		-1.0f,  1.0f,  0.0f, 1.0f,
-+		 1.0f, -1.0f,  1.0f, 0.0f,
-+		 1.0f,  1.0f,  1.0f, 1.0f,
-+		-1.0f,  1.0f,  0.0f, 1.0f,
-+	};
-+
-+	glUseProgram(s_texProgram);
-+	glActiveTexture(GL_TEXTURE0);
-+	glBindTexture(GL_TEXTURE_2D, s_captureTexture);
-+	glUniform1i(s_texLocTexture, 0);
-+	glUniform1f(s_texLocDim, dim);
-+
-+	glBindVertexArray(s_texVAO);
-+	glBindBuffer(GL_ARRAY_BUFFER, s_texVBO);
-+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
-+	glDrawArrays(GL_TRIANGLES, 0, 6);
-+	glBindVertexArray(0);
-+	glBindTexture(GL_TEXTURE_2D, 0);
-+	glUseProgram(0);
-+}
-+
-+static void ovl_gl_draw_rect(int x, int y, int w, int h, uint32_t color)
-+{
-+	float x0 = ndc_x((float)x);
-+	float y0 = ndc_y((float)y);
-+	float x1 = ndc_x((float)(x + w));
-+	float y1 = ndc_y((float)(y + h));
-+
-+	float verts[] = {
-+		x0, y1,
-+		x1, y1,
-+		x0, y0,
-+		x1, y1,
-+		x1, y0,
-+		x0, y0,
-+	};
-+
-+	// Extract ARGB
-+	float a = (float)((color >> 24) & 0xFF) / 255.0f;
-+	float r = (float)((color >> 16) & 0xFF) / 255.0f;
-+	float g = (float)((color >>  8) & 0xFF) / 255.0f;
-+	float b = (float)((color      ) & 0xFF) / 255.0f;
-+
-+	glUseProgram(s_solidProgram);
-+	glUniform4f(s_solidLocColor, r, g, b, a);
-+
-+	glBindVertexArray(s_solidVAO);
-+	glBindBuffer(GL_ARRAY_BUFFER, s_solidVBO);
-+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
-+	glDrawArrays(GL_TRIANGLES, 0, 6);
-+	glBindVertexArray(0);
-+	glUseProgram(0);
-+}
-+
-+static void ovl_gl_draw_text(const char* text, int x, int y, uint32_t color, int font_id)
-+{
-+	if (!text || !*text) return;
-+
-+	int scale = (font_id >= 0 && font_id <= 2) ? s_fontScale[font_id] : 2;
-+	int charW = 8 * scale;
-+	int charH = 8 * scale;
-+
-+	// UV size per character in atlas
-+	float uChar = 8.0f / (float)FONT_ATLAS_W;
-+	float vChar = 8.0f / (float)FONT_ATLAS_H;
-+
-+	// Extract ARGB
-+	float a = (float)((color >> 24) & 0xFF) / 255.0f;
-+	float r = (float)((color >> 16) & 0xFF) / 255.0f;
-+	float g = (float)((color >>  8) & 0xFF) / 255.0f;
-+	float b = (float)((color      ) & 0xFF) / 255.0f;
-+
-+	// Build vertex data for all characters (batched)
-+	int len = 0;
-+	for (const char* p = text; *p; p++) len++;
-+	if (len > 128) len = 128;
-+
-+	float verts[128 * 6 * 4]; // max 128 chars, 6 verts each, 4 floats per vert
-+	int vi = 0;
-+	int cx = x;
-+
-+	for (int i = 0; i < len; i++) {
-+		unsigned char ch = (unsigned char)text[i];
-+		if (ch < 32 || ch > 126) ch = '?';
-+		int idx = ch - 32;
-+
-+		int col = idx % FONT_ATLAS_COLS;
-+		int row = idx / FONT_ATLAS_COLS;
-+		float u0 = (float)(col * 8) / (float)FONT_ATLAS_W;
-+		float v0 = (float)(row * 8) / (float)FONT_ATLAS_H;
-+		float u1 = u0 + uChar;
-+		float v1 = v0 + vChar;
-+
-+		float px0 = ndc_x((float)cx);
-+		float py0 = ndc_y((float)y);
-+		float px1 = ndc_x((float)(cx + charW));
-+		float py1 = ndc_y((float)(y + charH));
-+
-+		// Triangle 1: top-left, top-right, bottom-left
-+		verts[vi++] = px0; verts[vi++] = py0; verts[vi++] = u0; verts[vi++] = v0;
-+		verts[vi++] = px1; verts[vi++] = py0; verts[vi++] = u1; verts[vi++] = v0;
-+		verts[vi++] = px0; verts[vi++] = py1; verts[vi++] = u0; verts[vi++] = v1;
-+		// Triangle 2: top-right, bottom-right, bottom-left
-+		verts[vi++] = px1; verts[vi++] = py0; verts[vi++] = u1; verts[vi++] = v0;
-+		verts[vi++] = px1; verts[vi++] = py1; verts[vi++] = u1; verts[vi++] = v1;
-+		verts[vi++] = px0; verts[vi++] = py1; verts[vi++] = u0; verts[vi++] = v1;
-+
-+		cx += charW;
-+	}
-+
-+	glUseProgram(s_textProgram);
-+	glActiveTexture(GL_TEXTURE0);
-+	glBindTexture(GL_TEXTURE_2D, s_fontTexture);
-+	glUniform1i(s_textLocTexture, 0);
-+	glUniform4f(s_textLocColor, r, g, b, a);
-+
-+	glBindVertexArray(s_texVAO);
-+	glBindBuffer(GL_ARRAY_BUFFER, s_texVBO);
-+	glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(vi * sizeof(float)), verts);
-+	glDrawArrays(GL_TRIANGLES, 0, len * 6);
-+	glBindVertexArray(0);
-+	glBindTexture(GL_TEXTURE_2D, 0);
-+	glUseProgram(0);
-+}
-+
-+static int ovl_gl_text_width(const char* text, int font_id)
-+{
-+	if (!text) return 0;
-+	int scale = (font_id >= 0 && font_id <= 2) ? s_fontScale[font_id] : 2;
-+	int len = 0;
-+	for (const char* p = text; *p; p++) len++;
-+	return len * 8 * scale;
-+}
-+
-+static int ovl_gl_text_height(int font_id)
-+{
-+	int scale = (font_id >= 0 && font_id <= 2) ? s_fontScale[font_id] : 2;
-+	return 8 * scale;
-+}
-+
-+// ---------------------------------------------------------------------------
-+// Backend struct
-+// ---------------------------------------------------------------------------
-+
-+static EmuOvlRenderBackend s_backend = {
-+	ovl_gl_init,
-+	ovl_gl_destroy,
-+	ovl_gl_draw_rect,
-+	ovl_gl_draw_text,
-+	ovl_gl_text_width,
-+	ovl_gl_text_height,
-+	ovl_gl_begin_frame,
-+	ovl_gl_end_frame,
-+	ovl_gl_capture_frame,
-+	ovl_gl_draw_captured_frame
-+};
-+
-+EmuOvlRenderBackend* overlay_gl_get_backend(void)
-+{
-+	return &s_backend;
-+}
-diff --git a/src/overlay/OverlayGL.h b/src/overlay/OverlayGL.h
-new file mode 100644
-index 00000000..51cc6da7
---- /dev/null
-+++ b/src/overlay/OverlayGL.h
-@@ -0,0 +1,16 @@
-+#ifndef OVERLAY_GL_H
-+#define OVERLAY_GL_H
-+
-+#ifdef __cplusplus
-+extern "C" {
-+#endif
-+
-+#include "emu_overlay_render.h"
-+
-+EmuOvlRenderBackend* overlay_gl_get_backend(void);
-+
-+#ifdef __cplusplus
-+}
-+#endif
-+
-+#endif
 diff --git a/toolchain-aarch64.cmake b/toolchain-aarch64.cmake
 new file mode 100644
 index 00000000..f1402d21
