@@ -144,6 +144,30 @@ STATE_SAVE_DIR="$SHARED_USERDATA_PATH/$EMU_TAG-mupen64plus"
 mkdir -p "$BATTERY_SAVE_DIR" "$STATE_SAVE_DIR"
 sed -i "s|^SaveSRAMPath = .*|SaveSRAMPath = \"$BATTERY_SAVE_DIR/\"|" "$DEVICE_CFG"
 sed -i "s|^SaveStatePath = .*|SaveStatePath = \"$STATE_SAVE_DIR/\"|" "$DEVICE_CFG"
+
+# Migrate legacy battery saves from other N64 paks into our canonical
+# $SAVES_PATH/N64/. Mupen64plus-core uses four separate files per game
+# (.sra/.eep/.fla/.mpk); josegonzalez/minui-n64-pak lets the core fall back
+# to $XDG_DATA_HOME/mupen64plus/save/ which resolves to
+# $USERDATA_PATH/N64-mupen64plus/data/mupen64plus/save/. Older builds of
+# our own pak may also have left files in $SHARED_USERDATA_PATH/N64-mupen64plus/.
+# One-shot migration; stamp file prevents repeat runs. mv -n preserves any
+# pre-existing saves in the target directory.
+SRAM_STAMP="$DEVICE_CONFIG_DIR/.migrated-legacy-sram"
+if [ ! -f "$SRAM_STAMP" ]; then
+    for legacy_root in \
+        "$USERDATA_PATH/N64-mupen64plus" \
+        "$SHARED_USERDATA_PATH/N64-mupen64plus"; do
+        if [ -d "$legacy_root" ]; then
+            find "$legacy_root" -type f \
+                \( -name '*.sra' -o -name '*.eep' -o -name '*.fla' \
+                -o -name '*.mpk' -o -name '*.srm' \) \
+                -not -path "$BATTERY_SAVE_DIR/*" \
+                -exec mv -n {} "$BATTERY_SAVE_DIR/" \; 2>/dev/null
+        fi
+    done
+    touch "$SRAM_STAMP"
+fi
 # Screenshots go into the flat /mnt/SDCARD/Screenshots/ directory (NextUI
 # canonical — `minarch.c:8385` writes `SDCARD_PATH "/Screenshots/%s.%s.png"`).
 SCREENSHOT_DIR="/mnt/SDCARD/Screenshots"
