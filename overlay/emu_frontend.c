@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <SDL2/SDL.h>
 
@@ -19,6 +20,188 @@ static bool s_initialized = false;
 
 // Joystick (managed by emu_frontend for power button + input polling)
 static SDL_Joystick* s_joy = NULL;
+
+// ---------------------------------------------------------------------------
+// Overlay state
+// ---------------------------------------------------------------------------
+
+static EmuOvl s_overlay;
+static EmuOvlConfig s_overlayConfig;
+static bool s_overlayInitialized = false;
+static bool s_overlayConfigLoaded = false;
+static bool s_overlayConfigFailed = false;
+static char s_overlayJsonPath[512] = "";
+static char s_overlayIniPath[512] = "";
+static bool s_menuBtnPrev = false;
+static Uint8 s_prevHat = 0;
+static Uint32 s_prevButtons = 0;
+
+// ---------------------------------------------------------------------------
+// CPU mode (switchable via overlay menu)
+// ---------------------------------------------------------------------------
+
+static void apply_cpu_mode(int mode) {
+	// Detect platform: try tg5050 cpu4 path first, fall back to tg5040 cpu0
+	const char* cpu_path = "/sys/devices/system/cpu/cpu4/cpufreq";
+	FILE* f = fopen("/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor", "r");
+	int is_tg5050 = (f != NULL);
+	if (f) fclose(f);
+	if (!is_tg5050) cpu_path = "/sys/devices/system/cpu/cpu0/cpufreq";
+
+	// Auto (3) = Performance for N64 (CPU demands are high enough)
+	if (mode == 3) mode = 2;
+
+	char path[256];
+	if (mode == 0) { // Powersave
+		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
+		f = fopen(path, "w"); if (f) { fprintf(f, "powersave"); fclose(f); }
+		snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
+		f = fopen(path, "w"); if (f) { fprintf(f, "408000"); fclose(f); }
+		snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
+		f = fopen(path, "w"); if (f) { fprintf(f, "408000"); fclose(f); }
+	} else if (mode == 1) { // Ondemand
+		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
+		f = fopen(path, "w"); if (f) { fprintf(f, "ondemand"); fclose(f); }
+		snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
+		f = fopen(path, "w"); if (f) { fprintf(f, "1200000"); fclose(f); }
+		snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
+		f = fopen(path, "w"); if (f) { fprintf(f, "1800000"); fclose(f); }
+	} else { // Performance (2) or Auto (3, remapped above)
+		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
+		f = fopen(path, "w"); if (f) { fprintf(f, "performance"); fclose(f); }
+		if (is_tg5050) {
+			snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
+			f = fopen(path, "w"); if (f) { fprintf(f, "1992000"); fclose(f); }
+			snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
+			f = fopen(path, "w"); if (f) { fprintf(f, "2160000"); fclose(f); }
+		} else {
+			snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
+			f = fopen(path, "w"); if (f) { fprintf(f, "1608000"); fclose(f); }
+			snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
+			f = fopen(path, "w"); if (f) { fprintf(f, "2000000"); fclose(f); }
+		}
+	}
+}
+
+static int find_cpu_mode_value(EmuOvlConfig* cfg) {
+	for (int s = 0; s < cfg->section_count; s++)
+		for (int i = 0; i < cfg->sections[s].item_count; i++)
+			if (strcmp(cfg->sections[s].items[i].key, "cpu_mode") == 0)
+				return cfg->sections[s].items[i].current_value;
+	return -1;
+}
+
+static void apply_cpu_mode_if_dirty(EmuOvlConfig* cfg) {
+	for (int s = 0; s < cfg->section_count; s++)
+		for (int i = 0; i < cfg->sections[s].item_count; i++)
+			if (strcmp(cfg->sections[s].items[i].key, "cpu_mode") == 0 &&
+			    cfg->sections[s].items[i].dirty) {
+				apply_cpu_mode(cfg->sections[s].items[i].staged_value);
+				return;
+			}
+}
+
+// ---------------------------------------------------------------------------
+// Frame skip (configurable via overlay menu)
+// ---------------------------------------------------------------------------
+
+static int find_frame_skip_value(EmuOvlConfig* cfg) {
+	for (int s = 0; s < cfg->section_count; s++)
+		for (int i = 0; i < cfg->sections[s].item_count; i++)
+			if (strcmp(cfg->sections[s].items[i].key, "frame_skip") == 0)
+				return cfg->sections[s].items[i].current_value;
+	return -1;
+}
+
+static void apply_frame_skip_if_dirty(EmuOvlConfig* cfg) {
+	for (int s = 0; s < cfg->section_count; s++)
+		for (int i = 0; i < cfg->sections[s].item_count; i++)
+			if (strcmp(cfg->sections[s].items[i].key, "frame_skip") == 0 &&
+			    cfg->sections[s].items[i].dirty) {
+				g_frameSkip = cfg->sections[s].items[i].staged_value;
+				return;
+			}
+}
+
+// ---------------------------------------------------------------------------
+// Audio quality (maps numeric overlay value to RESAMPLE string in INI)
+// ---------------------------------------------------------------------------
+
+static void apply_audio_quality_if_dirty(EmuOvlConfig* cfg) {
+	for (int s = 0; s < cfg->section_count; s++)
+		for (int i = 0; i < cfg->sections[s].item_count; i++)
+			if (strcmp(cfg->sections[s].items[i].key, "audio_quality") == 0 &&
+			    cfg->sections[s].items[i].dirty) {
+				const char* resample;
+				switch (cfg->sections[s].items[i].staged_value) {
+					case 0:  resample = "trivial"; break;
+					case 1:  resample = "src-linear"; break;
+					default: resample = "src-sinc-fastest"; break;
+				}
+				if (s_overlayIniPath[0] != '\0') {
+					FILE* f = fopen(s_overlayIniPath, "r");
+					if (!f) return;
+					fseek(f, 0, SEEK_END);
+					long sz = ftell(f);
+					fseek(f, 0, SEEK_SET);
+					char* buf = (char*)malloc(sz + 1);
+					if (!buf) { fclose(f); return; }
+					fread(buf, 1, sz, f);
+					buf[sz] = '\0';
+					fclose(f);
+					char* p = strstr(buf, "RESAMPLE = ");
+					if (p) {
+						char* eol = strchr(p, '\n');
+						if (!eol) eol = buf + sz;
+						char newline[128];
+						snprintf(newline, sizeof(newline), "RESAMPLE = \"%s\"", resample);
+						long before = p - buf;
+						long after_len = sz - (eol - buf);
+						long new_sz = before + (long)strlen(newline) + after_len;
+						char* out = (char*)malloc(new_sz + 1);
+						if (out) {
+							memcpy(out, buf, before);
+							memcpy(out + before, newline, strlen(newline));
+							memcpy(out + before + strlen(newline), eol, after_len);
+							out[new_sz] = '\0';
+							f = fopen(s_overlayIniPath, "w");
+							if (f) {
+								fwrite(out, 1, new_sz, f);
+								fclose(f);
+							}
+							free(out);
+						}
+					}
+					free(buf);
+				}
+				return;
+			}
+}
+
+// ---------------------------------------------------------------------------
+// Turbo buttons (via platform trimui_inputd daemon)
+// ---------------------------------------------------------------------------
+
+static void toggle_turbo_file(const char* name) {
+	char path[128];
+	snprintf(path, sizeof(path), "/tmp/trimui_inputd/turbo_%s", name);
+	if (access(path, F_OK) == 0) {
+		unlink(path);
+	} else {
+		mkdir("/tmp/trimui_inputd", 0755);
+		int fd = open(path, O_CREAT | O_WRONLY, 0644);
+		if (fd >= 0) close(fd);
+	}
+}
+
+static void clear_turbo_files(void) {
+	const char* names[] = {"a","b","x","y","l","l2","r","r2"};
+	for (int i = 0; i < 8; i++) {
+		char path[128];
+		snprintf(path, sizeof(path), "/tmp/trimui_inputd/turbo_%s", names[i]);
+		unlink(path);
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Power button / sleep handling
@@ -150,9 +333,6 @@ static void handle_sleep(void) {
 // Shortcut system (button state tracking + config lookup)
 // ---------------------------------------------------------------------------
 
-static EmuOvlConfig* s_config = NULL;
-static EmuOvl* s_ovl = NULL;
-static bool* s_ovlInitialized = NULL;
 static int s_currentSlot = 0;
 static uint32_t s_btnState = 0;
 static uint32_t s_btnPrev = 0;
@@ -167,11 +347,11 @@ void emu_frontend_update_buttons(void) {
 }
 
 int emu_frontend_get_shortcut(const char* key) {
-	if (!s_config) return -1;
-	for (int s = 0; s < s_config->section_count; s++)
-		for (int i = 0; i < s_config->sections[s].item_count; i++)
-			if (strcmp(s_config->sections[s].items[i].key, key) == 0)
-				return s_config->sections[s].items[i].current_value;
+	if (!s_overlayConfigLoaded) return -1;
+	for (int s = 0; s < s_overlayConfig.section_count; s++)
+		for (int i = 0; i < s_overlayConfig.sections[s].item_count; i++)
+			if (strcmp(s_overlayConfig.sections[s].items[i].key, key) == 0)
+				return s_overlayConfig.sections[s].items[i].current_value;
 	return -1;
 }
 
@@ -227,8 +407,6 @@ static void process_fast_forward(void) {
 // ---------------------------------------------------------------------------
 
 static void request_stop(void) {
-	if (s_pluginOps.on_pre_stop)
-		s_pluginOps.on_pre_stop();
 	emu_frontend_cleanup();
 	if (s_coreAPI.core_cmd)
 		s_coreAPI.core_cmd(M64CMD_STOP, 0, NULL);
@@ -243,8 +421,8 @@ static void trigger_game_switcher(void) {
 		s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, s_currentSlot, NULL);
 		s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 0, NULL);
 	}
-	if (s_ovl && s_ovlInitialized && *s_ovlInitialized)
-		emu_ovl_save_slot_screenshot(s_ovl, s_currentSlot);
+	if (s_overlayInitialized)
+		emu_ovl_save_slot_screenshot(&s_overlay, s_currentSlot);
 	// NextUI checks existence (not content) to show the game switcher screen
 	FILE* f = fopen("/mnt/SDCARD/.userdata/shared/.minui/game_switcher.txt", "w");
 	if (f) { fprintf(f, "unused"); fclose(f); }
@@ -287,12 +465,12 @@ static void rewind_cleanup(void) {
 }
 
 static void rewind_update_config(void) {
-	if (!s_config) return;
+	if (!s_overlayConfigLoaded) return;
 	int bufSetting = 0;
-	for (int s = 0; s < s_config->section_count; s++)
-		for (int i = 0; i < s_config->sections[s].item_count; i++)
-			if (strcmp(s_config->sections[s].items[i].key, "rewind_buffer") == 0)
-				bufSetting = s_config->sections[s].items[i].current_value;
+	for (int s = 0; s < s_overlayConfig.section_count; s++)
+		for (int i = 0; i < s_overlayConfig.sections[s].item_count; i++)
+			if (strcmp(s_overlayConfig.sections[s].items[i].key, "rewind_buffer") == 0)
+				bufSetting = s_overlayConfig.sections[s].items[i].current_value;
 	if (bufSetting < 0 || bufSetting > 3) bufSetting = 0;
 	int newSlots = REWIND_SLOT_COUNTS[bufSetting];
 	if (newSlots != s_rewindSlots) {
@@ -407,7 +585,7 @@ static int cheat_compare(const void* a, const void* b) {
 	return strcmp(ea->name, eb->name);
 }
 
-void emu_frontend_load_cheats(void) {
+static void load_cheats(void) {
 	if (!s_coreAPI.core_cmd) return;
 
 	m64p_rom_header header;
@@ -623,8 +801,8 @@ static void process_state_shortcuts(void) {
 			s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, s_currentSlot, NULL);
 			s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 0, NULL);
 		}
-		if (s_ovl && s_ovlInitialized && *s_ovlInitialized)
-			emu_ovl_save_slot_screenshot(s_ovl, s_currentSlot);
+		if (s_overlayInitialized)
+			emu_ovl_save_slot_screenshot(&s_overlay, s_currentSlot);
 	}
 
 	int loadBtn = emu_frontend_get_shortcut("shortcut_load_state");
@@ -648,6 +826,278 @@ static void process_state_shortcuts(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Turbo + aspect ratio shortcut handlers
+// ---------------------------------------------------------------------------
+
+static void process_turbo_and_aspect_shortcuts(void) {
+	static const struct { const char* key; const char* file; } turbo_map[] = {
+		{"shortcut_turbo_a",  "a"},  {"shortcut_turbo_b",  "b"},
+		{"shortcut_turbo_x",  "x"},  {"shortcut_turbo_y",  "y"},
+		{"shortcut_turbo_l",  "l"},  {"shortcut_turbo_l2", "l2"},
+		{"shortcut_turbo_r",  "r"},  {"shortcut_turbo_r2", "r2"},
+	};
+	for (int i = 0; i < 8; i++) {
+		int btn = emu_frontend_get_shortcut(turbo_map[i].key);
+		if (emu_frontend_btn_just_pressed(btn))
+			toggle_turbo_file(turbo_map[i].file);
+	}
+
+	int aspectBtn = emu_frontend_get_shortcut("shortcut_cycle_aspect");
+	if (emu_frontend_btn_just_pressed(aspectBtn)) {
+		if (s_pluginOps.cycle_aspect)
+			s_pluginOps.cycle_aspect();
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Overlay menu loop (opens on menu button, runs until closed)
+// ---------------------------------------------------------------------------
+
+static void overlay_init_paths(void) {
+	const char* json = getenv("EMU_OVERLAY_JSON");
+	const char* ini  = getenv("EMU_OVERLAY_INI");
+	if (json) strncpy(s_overlayJsonPath, json, sizeof(s_overlayJsonPath) - 1);
+	if (ini)  strncpy(s_overlayIniPath,  ini,  sizeof(s_overlayIniPath) - 1);
+}
+
+// Context for overlay GL init, dispatched on video thread
+typedef struct {
+	int w;
+	int h;
+	EmuOvlRenderBackend* render;
+	const char* gameName;
+	int result;
+} OverlayInitCtx;
+
+static void overlay_init_on_gl_thread(void* ctx) {
+	OverlayInitCtx* c = (OverlayInitCtx*)ctx;
+	if (c->render->init(c->w, c->h) != 0) {
+		c->result = -1;
+		return;
+	}
+	emu_ovl_init(&s_overlay, &s_overlayConfig, c->render,
+	             c->gameName ? c->gameName : "N64", c->w, c->h);
+	c->result = 0;
+}
+
+static void overlay_ensure_init(int w, int h) {
+	if (s_overlayInitialized || s_overlayConfigFailed)
+		return;
+
+	// Load config once (permanent failure if config file is bad)
+	if (!s_overlayConfigLoaded) {
+		overlay_init_paths();
+
+		if (s_overlayJsonPath[0] == '\0')
+			return; // no overlay config provided
+
+		memset(&s_overlayConfig, 0, sizeof(s_overlayConfig));
+		if (emu_ovl_cfg_load(&s_overlayConfig, s_overlayJsonPath) != 0) {
+			fprintf(stderr, "[Overlay] Failed to load config: %s\n", s_overlayJsonPath);
+			s_overlayConfigFailed = true;
+			return;
+		}
+
+		if (s_overlayIniPath[0] != '\0') {
+			emu_ovl_cfg_read_ini(&s_overlayConfig, s_overlayIniPath);
+		}
+
+		s_overlayConfigLoaded = true;
+
+		// Apply saved CPU mode from config on first load
+		int cpu_mode = find_cpu_mode_value(&s_overlayConfig);
+		if (cpu_mode >= 0)
+			apply_cpu_mode(cpu_mode);
+
+		// Apply saved frame skip from config on first load
+		int fs = find_frame_skip_value(&s_overlayConfig);
+		if (fs >= 0)
+			g_frameSkip = fs;
+
+		// Auto-resume: if launched from NextUI game switcher, load the requested state slot
+		const char* resume = getenv("EMU_RESUME_SLOT");
+		if (resume && resume[0] != '\0' && s_coreAPI.core_cmd) {
+			int slot = atoi(resume);
+			s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, slot, NULL);
+			s_coreAPI.core_cmd(M64CMD_STATE_LOAD, 0, NULL);
+			unsetenv("EMU_RESUME_SLOT");
+		}
+
+		// Load cheats from mupencheat.txt for the current ROM
+		load_cheats();
+	}
+
+	// Try GL init on the video thread (retries each frame until GL context is available)
+	if (!s_pluginOps.get_render || !s_pluginOps.exec_on_video_thread)
+		return;
+
+	OverlayInitCtx ctx;
+	ctx.w = w;
+	ctx.h = h;
+	ctx.render = s_pluginOps.get_render();
+	ctx.gameName = getenv("EMU_OVERLAY_GAME");
+	ctx.result = -1;
+
+	s_pluginOps.exec_on_video_thread(overlay_init_on_gl_thread, &ctx);
+
+	if (ctx.result != 0)
+		return; // GL not ready yet, will retry next frame
+
+	s_overlayInitialized = true;
+
+	// Wire cheat callbacks for the overlay's Cheats menu
+	s_overlay.cheat_cb.get_name = cheat_get_name;
+	s_overlay.cheat_cb.get_description = cheat_get_description;
+	s_overlay.cheat_cb.get_value_label = cheat_get_value_label;
+	s_overlay.cheat_cb.get_count = cheat_get_count;
+	s_overlay.cheat_cb.is_enabled = cheat_is_enabled;
+	s_overlay.cheat_cb.toggle = cheat_toggle;
+	s_overlay.cheat_cb.cycle_variant = cheat_cycle_variant;
+
+	fprintf(stderr, "[Overlay] Initialized successfully (%dx%d)\n", w, h);
+}
+
+static bool check_menu_button(void) {
+	SDL_JoystickUpdate();
+	if (!s_joy) return false;
+
+	bool pressed = SDL_JoystickGetButton(s_joy, 8) != 0;
+	bool justPressed = pressed && !s_menuBtnPrev;
+	s_menuBtnPrev = pressed;
+	return justPressed;
+}
+
+static EmuOvlInput poll_overlay_input(void) {
+	EmuOvlInput input;
+	memset(&input, 0, sizeof(input));
+
+	// Use direct state polling instead of SDL events — SDL_PollEvent() may not
+	// deliver joystick events reliably in mupen64plus's threaded plugin context.
+	SDL_JoystickUpdate();
+	if (!s_joy) return input;
+
+	// D-pad (hat) — edge detect: only trigger on newly-pressed directions
+	Uint8 hat = SDL_JoystickGetHat(s_joy, 0);
+	Uint8 hatPressed = hat & ~s_prevHat;
+	s_prevHat = hat;
+
+	if (hatPressed & SDL_HAT_UP)    input.up    = true;
+	if (hatPressed & SDL_HAT_DOWN)  input.down  = true;
+	if (hatPressed & SDL_HAT_LEFT)  input.left  = true;
+	if (hatPressed & SDL_HAT_RIGHT) input.right = true;
+
+	// Buttons — edge detect: only trigger on newly-pressed buttons
+	// SDL button indices: 0=A(hw), 1=B(hw), 2=X(hw), 3=Y(hw), 4=L1, 5=R1, 8=Menu
+	static const int btnMap[] = {0, 1, 4, 5, 8};
+	Uint32 curButtons = 0;
+	for (int i = 0; i < 5; i++) {
+		if (SDL_JoystickGetButton(s_joy, btnMap[i]))
+			curButtons |= (1u << btnMap[i]);
+	}
+	Uint32 btnPressed = curButtons & ~s_prevButtons;
+	s_prevButtons = curButtons;
+
+	if (btnPressed & (1u << 0)) input.b    = true;
+	if (btnPressed & (1u << 1)) input.a    = true;
+	if (btnPressed & (1u << 4)) input.l1   = true;
+	if (btnPressed & (1u << 5)) input.r1   = true;
+	if (btnPressed & (1u << 8)) input.menu = true;
+
+	return input;
+}
+
+// Context for overlay open, dispatched on video thread
+static void overlay_open_on_gl_thread(void* ctx) {
+	(void)ctx;
+	emu_ovl_open(&s_overlay);
+}
+
+// Context for per-frame overlay update+render, dispatched on video thread
+static void overlay_frame_on_gl_thread(void* ctx) {
+	EmuOvlInput* input = (EmuOvlInput*)ctx;
+	emu_ovl_update(&s_overlay, input);
+	emu_ovl_render(&s_overlay);
+	if (s_pluginOps.swap_buffers)
+		s_pluginOps.swap_buffers();
+}
+
+static EmuOvlAction run_overlay_loop(void) {
+	// Pause audio (stays on main thread)
+	SDL_PauseAudio(1);
+
+	// Open overlay on video thread (captures current frame — needs GL)
+	s_pluginOps.exec_on_video_thread(overlay_open_on_gl_thread, NULL);
+
+	// Reset input edge detection state and drain pending SDL events
+	s_prevHat = SDL_JoystickGetHat(s_joy, 0);
+	s_prevButtons = 0;
+	static const int menu_btns[] = {0, 1, 4, 5, 8};
+	for (int i = 0; i < 5; i++) {
+		if (SDL_JoystickGetButton(s_joy, menu_btns[i]))
+			s_prevButtons |= (1u << menu_btns[i]);
+	}
+	SDL_Event ev;
+	while (SDL_PollEvent(&ev)) {}
+	s_menuBtnPrev = true; // prevent re-trigger
+
+	// Menu loop: input polled here, update+render+swap dispatched to video thread
+	while (emu_ovl_is_active(&s_overlay)) {
+		EmuOvlInput input = poll_overlay_input();
+		s_pluginOps.exec_on_video_thread(overlay_frame_on_gl_thread, &input);
+		SDL_Delay(16);
+	}
+
+	// Resume audio (stays on main thread)
+	SDL_PauseAudio(0);
+
+	EmuOvlAction action = emu_ovl_get_action(&s_overlay);
+
+	// Handle config changes: write to INI first (while dirty flags are set), then apply
+	if (emu_ovl_cfg_has_changes(&s_overlayConfig)) {
+		// Apply runtime settings before clearing dirty flags
+		apply_cpu_mode_if_dirty(&s_overlayConfig);
+		apply_frame_skip_if_dirty(&s_overlayConfig);
+		if (s_overlayIniPath[0] != '\0') {
+			emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
+		}
+		// Map audio_quality to RESAMPLE string after INI is written
+		apply_audio_quality_if_dirty(&s_overlayConfig);
+		emu_ovl_cfg_apply_staged(&s_overlayConfig);
+	}
+
+	return action;
+}
+
+static void handle_overlay_action(EmuOvlAction action) {
+	switch (action) {
+	case EMU_OVL_ACTION_QUIT:
+		request_stop();
+		break;
+	case EMU_OVL_ACTION_SAVE_STATE: {
+		int slot = emu_ovl_get_action_param(&s_overlay);
+		s_currentSlot = slot;
+		if (s_coreAPI.core_cmd) {
+			s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, slot, NULL);
+			s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 0, NULL);
+		}
+		emu_ovl_save_slot_screenshot(&s_overlay, slot);
+		break;
+	}
+	case EMU_OVL_ACTION_LOAD_STATE: {
+		int slot = emu_ovl_get_action_param(&s_overlay);
+		s_currentSlot = slot;
+		if (s_coreAPI.core_cmd) {
+			s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, slot, NULL);
+			s_coreAPI.core_cmd(M64CMD_STATE_LOAD, 0, NULL);
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -657,35 +1107,11 @@ void emu_frontend_init(EmuFrontendCoreAPI* api, EmuFrontendPluginOps* ops) {
 	s_initialized = true;
 }
 
-void emu_frontend_set_config(EmuOvlConfig* cfg) {
-	s_config = cfg;
+EmuOvlConfig* emu_frontend_get_overlay_config(void) {
+	return &s_overlayConfig;
 }
 
-void emu_frontend_set_overlay(EmuOvl* ovl, bool* initialized) {
-	s_ovl = ovl;
-	s_ovlInitialized = initialized;
-
-	// Wire cheat callbacks for the overlay's Cheats menu
-	if (ovl) {
-		ovl->cheat_cb.get_name = cheat_get_name;
-		ovl->cheat_cb.get_description = cheat_get_description;
-		ovl->cheat_cb.get_value_label = cheat_get_value_label;
-		ovl->cheat_cb.get_count = cheat_get_count;
-		ovl->cheat_cb.is_enabled = cheat_is_enabled;
-		ovl->cheat_cb.toggle = cheat_toggle;
-		ovl->cheat_cb.cycle_variant = cheat_cycle_variant;
-	}
-}
-
-int emu_frontend_get_current_slot(void) {
-	return s_currentSlot;
-}
-
-void emu_frontend_set_current_slot(int slot) {
-	s_currentSlot = slot;
-}
-
-void emu_frontend_frame(void) {
+void emu_frontend_frame(int w, int h) {
 	// Ensure joystick is open
 	if (!s_joy && SDL_NumJoysticks() > 0)
 		s_joy = SDL_JoystickOpen(0);
@@ -701,30 +1127,26 @@ void emu_frontend_frame(void) {
 
 	// Shortcut button processing
 	emu_frontend_update_buttons();
-	if (s_config) {
+	if (s_overlayConfigLoaded) {
 		process_fast_forward();
 		process_state_shortcuts();
 		process_rewind();
+		process_turbo_and_aspect_shortcuts();
+	}
+
+	// Overlay menu: ensure loaded, then handle menu button press
+	overlay_ensure_init(w, h);
+	if (s_overlayInitialized && check_menu_button()) {
+		EmuOvlAction action = run_overlay_loop();
+		handle_overlay_action(action);
 	}
 }
 
 void emu_frontend_cleanup(void) {
 	rewind_cleanup();
-	// Turbo cleanup will move here in commit 5
+	clear_turbo_files();
 }
 
 SDL_Joystick* emu_frontend_get_joystick(void) {
 	return s_joy;
-}
-
-bool emu_frontend_is_fast_forward(void) {
-	return s_fastForward;
-}
-
-bool emu_frontend_is_ff_toggled(void) {
-	return s_ffToggledOn;
-}
-
-void emu_frontend_set_fast_forward(bool enable) {
-	set_fast_forward(enable);
 }

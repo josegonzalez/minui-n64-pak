@@ -15,13 +15,20 @@ typedef int (*emu_fe_cheat_enabled_fn)(const char* name, int enabled);
 
 // Plugin-provided operations (filled by each video plugin)
 typedef struct {
+	// Present current frame. Called from the menu loop after each overlay render.
 	void (*swap_buffers)(void);
+
+	// Cycle aspect ratio. Plugin updates its internal state AND writes the new
+	// value back to the overlay config so the menu reflects it.
 	void (*cycle_aspect)(void);
+
+	// Returns the overlay render backend the plugin wants to use.
 	EmuOvlRenderBackend* (*get_render)(void);
-	void (*exec_on_video_thread)(void (*fn)(void));
-	// Called before M64CMD_STOP so plugin can run cleanup (e.g. turbo files, rewind buffer).
-	// Temporary — will become unnecessary once all cleanup lives in emu_frontend.
-	void (*on_pre_stop)(void);
+
+	// Dispatch `fn(ctx)` on the video/GL thread (blocking). For non-threaded
+	// plugins, this can just call `fn(ctx)` directly. GLideN64 uses its
+	// OverlayCallbackCommand + executeOverlayCommand path.
+	void (*exec_on_video_thread)(void (*fn)(void* ctx), void* ctx);
 } EmuFrontendPluginOps;
 
 // Core API pointers (set during init)
@@ -34,39 +41,25 @@ typedef struct {
 // Initialize the frontend module. Called once by the video plugin.
 void emu_frontend_init(EmuFrontendCoreAPI* api, EmuFrontendPluginOps* ops);
 
-// Called every frame from the video plugin's render loop.
-void emu_frontend_frame(void);
+// Called every frame from the video plugin's render loop. w/h are current
+// screen dimensions (used for overlay GL init on first open).
+void emu_frontend_frame(int w, int h);
 
-// Cleanup (called on exit)
+// Cleanup (called on exit paths — turbo files, rewind buffer)
 void emu_frontend_cleanup(void);
 
 // Shared joystick handle (managed by emu_frontend)
 SDL_Joystick* emu_frontend_get_joystick(void);
 
-// Set overlay config pointer (called by plugin after loading config)
-void emu_frontend_set_config(EmuOvlConfig* cfg);
-
-// Set overlay reference for save-slot screenshots + auto-wires cheat callbacks.
-// Called by plugin after overlay init.
-void emu_frontend_set_overlay(EmuOvl* ovl, bool* initialized);
-
-// Load cheats from mupencheat.txt for the current ROM (called after config load)
-void emu_frontend_load_cheats(void);
-
-// Current save/load slot (shared with DisplayWindow overlay menu action handler)
-int emu_frontend_get_current_slot(void);
-void emu_frontend_set_current_slot(int slot);
+// Get the overlay config owned by emu_frontend (for plugin callbacks that need
+// to write back to the menu state, e.g. aspect ratio cycling).
+EmuOvlConfig* emu_frontend_get_overlay_config(void);
 
 // Shortcut system (button state tracking + config lookup)
 void emu_frontend_update_buttons(void);
 int emu_frontend_get_shortcut(const char* key);
 bool emu_frontend_btn_just_pressed(int b);
 bool emu_frontend_btn_is_held(int b);
-
-// Fast forward state (for rewind mutual exclusion)
-bool emu_frontend_is_fast_forward(void);
-bool emu_frontend_is_ff_toggled(void);
-void emu_frontend_set_fast_forward(bool enable);
 
 // Frame skip value (owned by emu_frontend, read by GLideN64 RSP.cpp via extern)
 extern int g_frameSkip;

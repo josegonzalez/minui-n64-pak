@@ -480,7 +480,7 @@ index 701d27d2..e6ad4c80 100644
  
  #endif // DISPLAYLOADPROGRESS_H
 diff --git a/src/DisplayWindow.cpp b/src/DisplayWindow.cpp
-index 59725f62..3f5c6127 100644
+index 59725f62..40b83418 100644
 --- a/src/DisplayWindow.cpp
 +++ b/src/DisplayWindow.cpp
 @@ -1,5 +1,11 @@
@@ -495,7 +495,7 @@ index 59725f62..3f5c6127 100644
  #include "Config.h"
  #include "RSP.h"
  #include "VI.h"
-@@ -8,6 +14,500 @@
+@@ -8,6 +14,114 @@
  #include "PluginAPI.h"
  #include "FrameBuffer.h"
  
@@ -534,228 +534,59 @@ index 59725f62..3f5c6127 100644
 +}
 +
 +// ---------------------------------------------------------------------------
-+// Overlay state
++// emu_frontend plugin ops (all custom features now live in overlay/emu_frontend.c)
 +// ---------------------------------------------------------------------------
 +
-+static EmuOvl s_overlay;
-+static EmuOvlConfig s_overlayConfig;
-+static bool s_overlayInitialized = false;
-+static bool s_overlayConfigLoaded = false;
-+static bool s_overlayConfigFailed = false;
-+static char s_overlayJsonPath[512] = "";
-+static char s_overlayIniPath[512] = "";
-+static bool s_menuBtnPrev = false;
-+static Uint8 s_prevHat = 0;
-+static Uint32 s_prevButtons = 0;
++// Present the current frame (plugin_ops.swap_buffers)
++static void gliden64_swap_buffers(void) {
++	::CoreVideo_GL_SwapBuffers();
++}
 +
-+// Joystick is owned by emu_frontend; local alias for convenience
-+#define s_joy (emu_frontend_get_joystick())
++// Return the overlay render backend (plugin_ops.get_render)
++static EmuOvlRenderBackend* gliden64_get_render(void) {
++	return overlay_sdl_get_backend();
++}
 +
-+// ---------------------------------------------------------------------------
-+// CPU mode (switchable via overlay menu)
-+// ---------------------------------------------------------------------------
-+
-+static void apply_cpu_mode(int mode) {
-+	// Detect platform: try tg5050 cpu4 path first, fall back to tg5040 cpu0
-+	const char* cpu_path = "/sys/devices/system/cpu/cpu4/cpufreq";
-+	FILE* f = fopen("/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor", "r");
-+	int is_tg5050 = (f != NULL);
-+	if (f) fclose(f);
-+	if (!is_tg5050) cpu_path = "/sys/devices/system/cpu/cpu0/cpufreq";
-+
-+	// Auto (3) = Performance for N64 (CPU demands are high enough)
-+	if (mode == 3) mode = 2;
-+
-+	char path[256];
-+	if (mode == 0) { // Powersave
-+		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
-+		f = fopen(path, "w"); if (f) { fprintf(f, "powersave"); fclose(f); }
-+		snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
-+		f = fopen(path, "w"); if (f) { fprintf(f, "408000"); fclose(f); }
-+		snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
-+		f = fopen(path, "w"); if (f) { fprintf(f, "408000"); fclose(f); }
-+	} else if (mode == 1) { // Ondemand
-+		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
-+		f = fopen(path, "w"); if (f) { fprintf(f, "ondemand"); fclose(f); }
-+		snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
-+		f = fopen(path, "w"); if (f) { fprintf(f, "1200000"); fclose(f); }
-+		snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
-+		f = fopen(path, "w"); if (f) { fprintf(f, "1800000"); fclose(f); }
-+	} else { // Performance (2) or Auto (3, remapped above)
-+		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
-+		f = fopen(path, "w"); if (f) { fprintf(f, "performance"); fclose(f); }
-+		if (is_tg5050) {
-+			snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
-+			f = fopen(path, "w"); if (f) { fprintf(f, "1992000"); fclose(f); }
-+			snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
-+			f = fopen(path, "w"); if (f) { fprintf(f, "2160000"); fclose(f); }
-+		} else {
-+			snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
-+			f = fopen(path, "w"); if (f) { fprintf(f, "1608000"); fclose(f); }
-+			snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
-+			f = fopen(path, "w"); if (f) { fprintf(f, "2000000"); fclose(f); }
-+		}
++// Cycle aspect ratio (plugin_ops.cycle_aspect). Writes the new value into the
++// overlay config so the Options menu reflects it.
++static void gliden64_cycle_aspect(void) {
++	// GLideN64: aStretch=0, a43=1, a169=2, aAdjust43=3
++	// Cycle: Auto(3) → 4:3(1) → 16:9(2) → Stretch(0) → Auto(3)
++	int cur = config.frameBufferEmulation.aspect;
++	switch (cur) {
++		case 3: cur = 1; break;  // Auto → 4:3
++		case 1: cur = 2; break;  // 4:3 → 16:9
++		case 2: cur = 0; break;  // 16:9 → Stretch
++		default: cur = 3; break; // Stretch (or other) → Auto
++	}
++	config.frameBufferEmulation.aspect = cur;
++	// Sync overlay config so the menu shows the updated value
++	EmuOvlConfig* cfg = emu_frontend_get_overlay_config();
++	if (cfg) {
++		for (int s = 0; s < cfg->section_count; s++)
++			for (int i = 0; i < cfg->sections[s].item_count; i++)
++				if (strcmp(cfg->sections[s].items[i].key, "AspectRatio") == 0) {
++					cfg->sections[s].items[i].current_value = cur;
++					cfg->sections[s].items[i].staged_value = cur;
++				}
 +	}
 +}
 +
-+// Find cpu_mode item in overlay config and return its current value (-1 if not found)
-+static int find_cpu_mode_value(EmuOvlConfig* cfg) {
-+	for (int s = 0; s < cfg->section_count; s++)
-+		for (int i = 0; i < cfg->sections[s].item_count; i++)
-+			if (strcmp(cfg->sections[s].items[i].key, "cpu_mode") == 0)
-+				return cfg->sections[s].items[i].current_value;
-+	return -1;
-+}
-+
-+// Apply cpu_mode if it was changed in the overlay menu
-+static void apply_cpu_mode_if_dirty(EmuOvlConfig* cfg) {
-+	for (int s = 0; s < cfg->section_count; s++)
-+		for (int i = 0; i < cfg->sections[s].item_count; i++)
-+			if (strcmp(cfg->sections[s].items[i].key, "cpu_mode") == 0 &&
-+			    cfg->sections[s].items[i].dirty) {
-+				apply_cpu_mode(cfg->sections[s].items[i].staged_value);
-+				return;
-+			}
-+}
-+
-+// ---------------------------------------------------------------------------
-+// Frame skip (configurable via overlay menu)
-+// ---------------------------------------------------------------------------
-+
-+static int find_frame_skip_value(EmuOvlConfig* cfg) {
-+	for (int s = 0; s < cfg->section_count; s++)
-+		for (int i = 0; i < cfg->sections[s].item_count; i++)
-+			if (strcmp(cfg->sections[s].items[i].key, "frame_skip") == 0)
-+				return cfg->sections[s].items[i].current_value;
-+	return -1;
-+}
-+
-+static void apply_frame_skip_if_dirty(EmuOvlConfig* cfg) {
-+	for (int s = 0; s < cfg->section_count; s++)
-+		for (int i = 0; i < cfg->sections[s].item_count; i++)
-+			if (strcmp(cfg->sections[s].items[i].key, "frame_skip") == 0 &&
-+			    cfg->sections[s].items[i].dirty) {
-+				g_frameSkip = cfg->sections[s].items[i].staged_value;
-+				return;
-+			}
-+}
-+
-+// ---------------------------------------------------------------------------
-+// Audio quality (maps numeric overlay value to RESAMPLE string in INI)
-+// ---------------------------------------------------------------------------
-+
-+static void apply_audio_quality_if_dirty(EmuOvlConfig* cfg) {
-+	for (int s = 0; s < cfg->section_count; s++)
-+		for (int i = 0; i < cfg->sections[s].item_count; i++)
-+			if (strcmp(cfg->sections[s].items[i].key, "audio_quality") == 0 &&
-+			    cfg->sections[s].items[i].dirty) {
-+				const char* resample;
-+				switch (cfg->sections[s].items[i].staged_value) {
-+					case 0:  resample = "trivial"; break;
-+					case 1:  resample = "src-linear"; break;
-+					default: resample = "src-sinc-fastest"; break;
-+				}
-+				if (s_overlayIniPath[0] != '\0') {
-+					FILE* f = fopen(s_overlayIniPath, "r");
-+					if (!f) return;
-+					fseek(f, 0, SEEK_END);
-+					long sz = ftell(f);
-+					fseek(f, 0, SEEK_SET);
-+					char* buf = (char*)malloc(sz + 1);
-+					if (!buf) { fclose(f); return; }
-+					fread(buf, 1, sz, f);
-+					buf[sz] = '\0';
-+					fclose(f);
-+					char* p = strstr(buf, "RESAMPLE = ");
-+					if (p) {
-+						char* eol = strchr(p, '\n');
-+						if (!eol) eol = buf + sz;
-+						char newline[128];
-+						snprintf(newline, sizeof(newline), "RESAMPLE = \"%s\"", resample);
-+						long before = p - buf;
-+						long after_len = sz - (eol - buf);
-+						long new_sz = before + (long)strlen(newline) + after_len;
-+						char* out = (char*)malloc(new_sz + 1);
-+						if (out) {
-+							memcpy(out, buf, before);
-+							memcpy(out + before, newline, strlen(newline));
-+							memcpy(out + before + strlen(newline), eol, after_len);
-+							out[new_sz] = '\0';
-+							f = fopen(s_overlayIniPath, "w");
-+							if (f) {
-+								fwrite(out, 1, new_sz, f);
-+								fclose(f);
-+							}
-+							free(out);
-+						}
-+					}
-+					free(buf);
-+				}
-+				return;
-+			}
-+}
-+
-+// Shortcut system + fast forward + state shortcuts moved to overlay/emu_frontend.c
-+// Convenience aliases for remaining handlers in this file
-+#define get_shortcut_button(cfg, key) emu_frontend_get_shortcut(key)
-+#define btn_just_pressed(b) emu_frontend_btn_just_pressed(b)
-+#define btn_is_held(b) emu_frontend_btn_is_held(b)
-+#define s_fastForward (emu_frontend_is_fast_forward())
-+#define s_ffToggledOn (emu_frontend_is_ff_toggled())
-+#define set_fast_forward(e) emu_frontend_set_fast_forward(e)
-+
-+// Rewind moved to overlay/emu_frontend.c
-+
-+// ---------------------------------------------------------------------------
-+// Turbo buttons (via platform trimui_inputd daemon)
-+// ---------------------------------------------------------------------------
-+
-+static void toggle_turbo_file(const char* name) {
-+	char path[128];
-+	snprintf(path, sizeof(path), "/tmp/trimui_inputd/turbo_%s", name);
-+	if (access(path, F_OK) == 0) {
-+		unlink(path);
++// Dispatch a function on the video/GL thread (plugin_ops.exec_on_video_thread).
++// Threaded mode: wraps in OverlayCallbackCommand. Non-threaded: direct call.
++static void gliden64_exec_on_video_thread(void (*fn)(void*), void* ctx) {
++	if (opengl::FunctionWrapper::isThreadedMode()) {
++		opengl::FunctionWrapper::executeOverlayCommand(
++			opengl::OverlayCallbackCommand::get([fn, ctx]() {
++				fn(ctx);
++			})
++		);
 +	} else {
-+		mkdir("/tmp/trimui_inputd", 0755);
-+		int fd = open(path, O_CREAT | O_WRONLY, 0644);
-+		if (fd >= 0) close(fd);
++		fn(ctx);
 +	}
-+}
-+
-+static void clear_turbo_files() {
-+	const char* names[] = {"a","b","x","y","l","l2","r","r2"};
-+	for (int i = 0; i < 8; i++) {
-+		char path[128];
-+		snprintf(path, sizeof(path), "/tmp/trimui_inputd/turbo_%s", names[i]);
-+		unlink(path);
-+	}
-+}
-+
-+// Game switcher moved to overlay/emu_frontend.c
-+
-+// Cheat system moved to overlay/emu_frontend.c
-+
-+// Power button / sleep handling moved to overlay/emu_frontend.c
-+
-+// ---------------------------------------------------------------------------
-+// Overlay helpers
-+// ---------------------------------------------------------------------------
-+
-+static void overlay_init_paths()
-+{
-+	const char* json = getenv("EMU_OVERLAY_JSON");
-+	const char* ini  = getenv("EMU_OVERLAY_INI");
-+	if (json) strncpy(s_overlayJsonPath, json, sizeof(s_overlayJsonPath) - 1);
-+	if (ini)  strncpy(s_overlayIniPath,  ini,  sizeof(s_overlayIniPath) - 1);
 +}
 +
 +static bool s_frontendInitialized = false;
-+
-+// Plugin pre-stop cleanup: turbo still lives here until commit 5.
-+static void frontend_pre_stop()
-+{
-+	clear_turbo_files();
-+}
 +
 +static void ensure_frontend_init()
 +{
@@ -766,311 +597,30 @@ index 59725f62..3f5c6127 100644
 +	api.core_cmd = (emu_fe_core_cmd_fn)CoreDoCommand;
 +	api.add_cheat = (emu_fe_add_cheat_fn)CoreAddCheat;
 +	api.cheat_enabled = (emu_fe_cheat_enabled_fn)CoreCheatEnabled;
++
 +	EmuFrontendPluginOps ops = {};
-+	ops.on_pre_stop = frontend_pre_stop;
++	ops.swap_buffers = gliden64_swap_buffers;
++	ops.cycle_aspect = gliden64_cycle_aspect;
++	ops.get_render = gliden64_get_render;
++	ops.exec_on_video_thread = gliden64_exec_on_video_thread;
++
 +	emu_frontend_init(&api, &ops);
-+}
-+
-+static void overlay_ensure_init(int w, int h)
-+{
-+	if (s_overlayInitialized || s_overlayConfigFailed)
-+		return;
-+
-+	ensure_frontend_init();
-+
-+	// Load config once (permanent failure if config file is bad)
-+	if (!s_overlayConfigLoaded) {
-+		overlay_init_paths();
-+
-+		if (s_overlayJsonPath[0] == '\0')
-+			return; // no overlay config provided
-+
-+		memset(&s_overlayConfig, 0, sizeof(s_overlayConfig));
-+		if (emu_ovl_cfg_load(&s_overlayConfig, s_overlayJsonPath) != 0) {
-+			fprintf(stderr, "[Overlay] Failed to load config: %s\n", s_overlayJsonPath);
-+			s_overlayConfigFailed = true;
-+			return;
-+		}
-+
-+		if (s_overlayIniPath[0] != '\0') {
-+			emu_ovl_cfg_read_ini(&s_overlayConfig, s_overlayIniPath);
-+		}
-+
-+		s_overlayConfigLoaded = true;
-+		emu_frontend_set_config(&s_overlayConfig);
-+
-+		// Apply saved CPU mode from config on first load
-+		int cpu_mode = find_cpu_mode_value(&s_overlayConfig);
-+		if (cpu_mode >= 0)
-+			apply_cpu_mode(cpu_mode);
-+
-+		// Apply saved frame skip from config on first load
-+		int fs = find_frame_skip_value(&s_overlayConfig);
-+		if (fs >= 0)
-+			g_frameSkip = fs;
-+
-+		// Auto-resume: if launched from NextUI game switcher, load the requested state slot
-+		const char* resume = getenv("EMU_RESUME_SLOT");
-+		if (resume && resume[0] != '\0' && CoreDoCommand) {
-+			int slot = atoi(resume);
-+			CoreDoCommand(M64CMD_STATE_SET_SLOT, slot, nullptr);
-+			CoreDoCommand(M64CMD_STATE_LOAD, 0, nullptr);
-+			unsetenv("EMU_RESUME_SLOT");
-+		}
-+
-+		// Load cheats from mupencheat.txt for the current ROM
-+		emu_frontend_load_cheats();
-+	}
-+
-+	// Try GL init on the video thread (retries each frame until GL context is available)
-+	int initResult = -1;
-+	EmuOvlRenderBackend* render = overlay_sdl_get_backend();
-+	const char* gameName = getenv("EMU_OVERLAY_GAME");
-+
-+	// [&] capture is safe: executeOverlayCommand blocks until the callback completes
-+	// (synced command), so all local variables remain alive for the duration.
-+	opengl::FunctionWrapper::executeOverlayCommand(
-+		opengl::OverlayCallbackCommand::get([&]() {
-+			if (render->init(w, h) != 0) {
-+				initResult = -1;
-+				return;
-+			}
-+			emu_ovl_init(&s_overlay, &s_overlayConfig, render,
-+			             gameName ? gameName : "N64", w, h);
-+			initResult = 0;
-+		})
-+	);
-+
-+	if (initResult != 0)
-+		return; // GL not ready yet, will retry next frame
-+
-+	s_overlayInitialized = true;
-+	emu_frontend_set_overlay(&s_overlay, &s_overlayInitialized);
-+
-+	fprintf(stderr, "[Overlay] Initialized successfully (%dx%d)\n", w, h);
-+}
-+
-+static bool check_menu_button()
-+{
-+	SDL_JoystickUpdate();
-+
-+	if (!s_joy)
-+		return false;
-+
-+	bool pressed = SDL_JoystickGetButton(s_joy, 8) != 0;
-+	bool justPressed = pressed && !s_menuBtnPrev;
-+	s_menuBtnPrev = pressed;
-+	return justPressed;
-+}
-+
-+static EmuOvlInput poll_overlay_input()
-+{
-+	EmuOvlInput input;
-+	memset(&input, 0, sizeof(input));
-+
-+	// Use direct state polling instead of SDL events — SDL_PollEvent() may not
-+	// deliver joystick events reliably in mupen64plus's threaded plugin context.
-+	SDL_JoystickUpdate();
-+	if (!s_joy) return input;
-+
-+	// D-pad (hat) — edge detect: only trigger on newly-pressed directions
-+	Uint8 hat = SDL_JoystickGetHat(s_joy, 0);
-+	Uint8 hatPressed = hat & ~s_prevHat;
-+	s_prevHat = hat;
-+
-+	if (hatPressed & SDL_HAT_UP)    input.up    = true;
-+	if (hatPressed & SDL_HAT_DOWN)  input.down  = true;
-+	if (hatPressed & SDL_HAT_LEFT)  input.left  = true;
-+	if (hatPressed & SDL_HAT_RIGHT) input.right = true;
-+
-+	// Buttons — edge detect: only trigger on newly-pressed buttons
-+	// SDL button indices: 0=A(hw), 1=B(hw), 2=X(hw), 3=Y(hw), 4=L1, 5=R1, 8=Menu
-+	static const int btnMap[] = {0, 1, 4, 5, 8};
-+	Uint32 curButtons = 0;
-+	for (int i = 0; i < 5; i++) {
-+		if (SDL_JoystickGetButton(s_joy, btnMap[i]))
-+			curButtons |= (1u << btnMap[i]);
-+	}
-+	Uint32 btnPressed = curButtons & ~s_prevButtons;
-+	s_prevButtons = curButtons;
-+
-+	if (btnPressed & (1u << 0)) input.b    = true;
-+	if (btnPressed & (1u << 1)) input.a    = true;
-+	if (btnPressed & (1u << 4)) input.l1   = true;
-+	if (btnPressed & (1u << 5)) input.r1   = true;
-+	if (btnPressed & (1u << 8)) input.menu = true;
-+
-+	return input;
-+}
-+
-+static EmuOvlAction run_overlay_loop(DisplayWindow& wnd)
-+{
-+	EmuOvlRenderBackend* render = s_overlay.render;
-+
-+	// Pause audio (stays on main thread)
-+	SDL_PauseAudio(1);
-+
-+	if (opengl::FunctionWrapper::isThreadedMode()) {
-+		// Threaded mode: SDL input must be polled on the main thread (the thread
-+		// that initialized SDL). GL calls are dispatched per-frame to the video thread.
-+
-+		// Open overlay on video thread (captures current frame — needs GL)
-+		opengl::FunctionWrapper::executeOverlayCommand(
-+			opengl::OverlayCallbackCommand::get([&]() {
-+				emu_ovl_open(&s_overlay);
-+			})
-+		);
-+
-+		// Reset input edge detection state and drain pending SDL events
-+		s_prevHat = SDL_JoystickGetHat(s_joy, 0);
-+		s_prevButtons = 0;
-+		for (int i : {0, 1, 4, 5, 8}) {
-+			if (SDL_JoystickGetButton(s_joy, i))
-+				s_prevButtons |= (1u << i);
-+		}
-+		SDL_Event ev;
-+		while (SDL_PollEvent(&ev)) {}
-+		s_menuBtnPrev = true; // prevent re-trigger
-+
-+		// Menu loop: input on main thread, render on video thread
-+		while (emu_ovl_is_active(&s_overlay)) {
-+			EmuOvlInput input = poll_overlay_input();
-+
-+			// Dispatch update + render + swap to video thread.
-+			// [&] capture safe: executeOverlayCommand blocks until complete.
-+			opengl::FunctionWrapper::executeOverlayCommand(
-+				opengl::OverlayCallbackCommand::get([&]() {
-+					emu_ovl_update(&s_overlay, &input);
-+					emu_ovl_render(&s_overlay);
-+					// Raw function pointer — avoids deadlock (see comment in non-threaded path)
-+					::CoreVideo_GL_SwapBuffers();
-+				})
-+			);
-+
-+			SDL_Delay(16);
-+		}
-+	} else {
-+		// Non-threaded mode: everything runs on the main thread
-+		emu_ovl_open(&s_overlay);
-+
-+		s_prevHat = SDL_JoystickGetHat(s_joy, 0);
-+		s_prevButtons = 0;
-+		for (int i : {0, 1, 4, 5, 8}) {
-+			if (SDL_JoystickGetButton(s_joy, i))
-+				s_prevButtons |= (1u << i);
-+		}
-+		SDL_Event ev;
-+		while (SDL_PollEvent(&ev)) {}
-+		s_menuBtnPrev = true;
-+
-+		while (emu_ovl_is_active(&s_overlay)) {
-+			EmuOvlInput input = poll_overlay_input();
-+			emu_ovl_update(&s_overlay, &input);
-+			emu_ovl_render(&s_overlay);
-+			CoreVideo_GL_SwapBuffers();
-+			SDL_Delay(16);
-+		}
-+	}
-+
-+	// Resume audio (stays on main thread)
-+	SDL_PauseAudio(0);
-+
-+	EmuOvlAction action = emu_ovl_get_action(&s_overlay);
-+
-+	// Handle config changes: write to INI first (while dirty flags are set), then apply
-+	if (emu_ovl_cfg_has_changes(&s_overlayConfig)) {
-+		// Apply runtime settings before clearing dirty flags
-+		apply_cpu_mode_if_dirty(&s_overlayConfig);
-+		apply_frame_skip_if_dirty(&s_overlayConfig);
-+		if (s_overlayIniPath[0] != '\0') {
-+			emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
-+		}
-+		// Map audio_quality to RESAMPLE string after INI is written
-+		apply_audio_quality_if_dirty(&s_overlayConfig);
-+		emu_ovl_cfg_apply_staged(&s_overlayConfig);
-+	}
-+
-+	return action;
 +}
 +
  bool DisplayWindow::start()
  {
  	if (!_start())
-@@ -48,6 +548,78 @@ void DisplayWindow::swapBuffers()
+@@ -48,6 +162,14 @@ void DisplayWindow::swapBuffers()
  {
  	m_drawer.drawOSD();
  	m_drawer.clearStatistics();
 +
-+	// Frontend per-frame: power button, button state, fast forward, state shortcuts
-+	emu_frontend_frame();
-+
-+	// Remaining shortcut handlers (will move to emu_frontend in later commits)
-+	if (s_overlayConfigLoaded) {
-+		// Turbo toggles (via platform trimui_inputd daemon)
-+		static const struct { const char* key; const char* file; } turbo_map[] = {
-+			{"shortcut_turbo_a",  "a"},  {"shortcut_turbo_b",  "b"},
-+			{"shortcut_turbo_x",  "x"},  {"shortcut_turbo_y",  "y"},
-+			{"shortcut_turbo_l",  "l"},  {"shortcut_turbo_l2", "l2"},
-+			{"shortcut_turbo_r",  "r"},  {"shortcut_turbo_r2", "r2"},
-+		};
-+		for (int i = 0; i < 8; i++) {
-+			int btn = get_shortcut_button(&s_overlayConfig, turbo_map[i].key);
-+			if (btn_just_pressed(btn))
-+				toggle_turbo_file(turbo_map[i].file);
-+		}
-+
-+		// Cycle aspect ratio (takes effect immediately — no restart needed)
-+		int aspectBtn = get_shortcut_button(&s_overlayConfig, "shortcut_cycle_aspect");
-+		if (btn_just_pressed(aspectBtn)) {
-+			// GLideN64: aStretch=0, a43=1, a169=2, aAdjust43=3
-+			// Cycle: Auto(3) → 4:3(1) → 16:9(2) → Stretch(0) → Auto(3)
-+			int cur = config.frameBufferEmulation.aspect;
-+			switch (cur) {
-+				case 3: cur = 1; break;  // Auto → 4:3
-+				case 1: cur = 2; break;  // 4:3 → 16:9
-+				case 2: cur = 0; break;  // 16:9 → Stretch
-+				default: cur = 3; break; // Stretch (or other) → Auto
-+			}
-+			config.frameBufferEmulation.aspect = cur;
-+			// Sync overlay config so the menu shows the updated value
-+			for (int s = 0; s < s_overlayConfig.section_count; s++)
-+				for (int i = 0; i < s_overlayConfig.sections[s].item_count; i++)
-+					if (strcmp(s_overlayConfig.sections[s].items[i].key, "AspectRatio") == 0) {
-+						s_overlayConfig.sections[s].items[i].current_value = cur;
-+						s_overlayConfig.sections[s].items[i].staged_value = cur;
-+					}
-+		}
-+	}
-+
-+	// Skip overlay during texture loading (prevents GL state corruption and
-+	// avoids confusing overlay menu while hi-res textures are being indexed)
-+	if (!isLoadProgressActive()) {
-+		overlay_ensure_init(getScreenWidth(), getScreenHeight());
-+		if (s_overlayInitialized && check_menu_button()) {
-+			EmuOvlAction action = run_overlay_loop(*this);
-+			if (action == EMU_OVL_ACTION_QUIT) {
-+				clear_turbo_files();
-+				emu_frontend_cleanup();
-+				if (CoreDoCommand)
-+					CoreDoCommand(M64CMD_STOP, 0, nullptr);
-+			} else if (action == EMU_OVL_ACTION_SAVE_STATE) {
-+				int slot = emu_ovl_get_action_param(&s_overlay);
-+				emu_frontend_set_current_slot(slot);
-+				if (CoreDoCommand) {
-+					CoreDoCommand(M64CMD_STATE_SET_SLOT, slot, nullptr);
-+					CoreDoCommand(M64CMD_STATE_SAVE, 0, nullptr);
-+				}
-+				emu_ovl_save_slot_screenshot(&s_overlay, slot);
-+			} else if (action == EMU_OVL_ACTION_LOAD_STATE) {
-+				int slot = emu_ovl_get_action_param(&s_overlay);
-+				emu_frontend_set_current_slot(slot);
-+				if (CoreDoCommand) {
-+					CoreDoCommand(M64CMD_STATE_SET_SLOT, slot, nullptr);
-+					CoreDoCommand(M64CMD_STATE_LOAD, 0, nullptr);
-+				}
-+			}
-+		}
-+	}
++	// All custom features (power, shortcuts, FF, rewind, cheats, overlay menu)
++	// live in overlay/emu_frontend.c. Skip during texture loading to avoid
++	// GL state corruption while hi-res textures are being indexed.
++	ensure_frontend_init();
++	if (!isLoadProgressActive())
++		emu_frontend_frame(getScreenWidth(), getScreenHeight());
 +
  	_swapBuffers();
  	if (!RSP.LLE) {
