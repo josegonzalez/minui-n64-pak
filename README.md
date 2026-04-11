@@ -53,6 +53,14 @@ All components are built from upstream via Docker cross-compilation toolchains.
 | GLideN64 | `gonetz/GLideN64` @ c8ef81c | `mupen64plus-video-GLideN64.so` |
 | mupen64plus-video-rice | `mupen64plus/mupen64plus-video-rice` @ 2.6.0 | `mupen64plus-video-rice.so` |
 
+## ROM formats
+
+Raw ROMs (`.z64`, `.n64`, `.v64`, `.rom`) are passed directly to mupen64plus.
+
+Archived ROMs (`.zip`, `.7z`) are extracted to a tmpfs scratch directory (`/tmp/m64p_extracted.*`) at launch time using a bundled statically-linked [7-Zip](https://www.7-zip.org/) binary (`7zzs`, v26.00). `launch.sh` picks the first `.z64`/`.n64`/`.v64`/`.rom` file in the archive (or the first regular file if none match) and renames it to the archive's basename so that mupen64plus-ui-console's save-name derivation produces the same result as a raw ROM — e.g. `Zelda.zip` and `Zelda.z64` both save to `Zelda.srm`. The scratch directory is cleaned up on exit via an `EXIT/INT/TERM/HUP/QUIT` trap. All overlay metadata (per-game Input Mode file, screenshot previews, game-switcher auto-resume) uses the *original* archive filename so settings persist across runs.
+
+The 7-Zip binary ships alongside the plugins and is downloaded + sha256-verified from `github.com/ip7z/7zip` during `make clone`. Its license (`7zzs.LICENSE`, LGPL / unRAR) sits next to the binary in each platform dir.
+
 ## Patches
 
 All patches live in `patches/shared/`:
@@ -83,6 +91,8 @@ dist/N64.pak/
 │   ├── RiceVideoLinux.ini              Rice per-ROM rendering hints
 │   ├── InputAutoCfg.ini                input auto-config
 │   ├── mupencheat.txt                  cheat codes
+│   ├── 7zzs                            7-Zip standalone (for .zip/.7z ROMs)
+│   ├── 7zzs.LICENSE                    7-Zip license
 │   ├── libpng16.so.16                  libpng runtime
 │   └── libz.so.1                       zlib runtime (libpng16 dep)
 └── tg5050/                            TrimUI Smart Pro S

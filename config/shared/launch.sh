@@ -225,6 +225,62 @@ if [ "$DEVICE" = "brick" ]; then
     export EMU_INPUT_MODE_FILE="$PER_GAME_DIR/$(basename "$ROM").cfg"
 fi
 
+# ── Archive extraction ───────────────────────────────────────────────────────
+# If the ROM is a .zip or .7z, extract the inner N64 ROM to a tmpfs directory
+# and hand that path to mupen64plus instead. We keep the *original* $ROM name
+# (archive name minus its .zip/.7z) as the extracted file's basename so the
+# core's save-filename logic (mupen64plus-ui-console.patch) derives the same
+# save name it would for a raw .z64 — i.e. "Zelda.zip" saves to "Zelda.srm"
+# just like "Zelda.z64" would. Magic-byte detection in rom.c makes the final
+# extension irrelevant; we use .z64 as a placeholder for clarity.
+#
+# All metadata env vars exported above ($EMU_OVERLAY_GAME, $EMU_OVERLAY_ROMFILE,
+# $EMU_INPUT_MODE_FILE, $EMU_ROM_PATH) intentionally still reference the
+# original archive path so per-game settings, save states, and the overlay
+# title all stay stable across runs.
+case "$ROM" in
+    *.zip|*.7z|*.ZIP|*.7Z)
+        ROM_ARCHIVE="$ROM"
+        ROM_EXTRACT_DIR=$(mktemp -d /tmp/m64p_extracted.XXXXXX)
+        trap 'rm -rf "$ROM_EXTRACT_DIR"' EXIT INT TERM HUP QUIT
+        if ! "$BIN_DIR/7zzs" e "$ROM_ARCHIVE" -o"$ROM_EXTRACT_DIR" -y >/dev/null; then
+            echo "[launch] 7zzs failed to extract $ROM_ARCHIVE" >&2
+            exit 1
+        fi
+        # Pick the first N64 ROM file; fall back to the largest regular file
+        # if the archive didn't use a standard extension.
+        ROM_INNER=""
+        for f in "$ROM_EXTRACT_DIR"/*.z64 "$ROM_EXTRACT_DIR"/*.n64 \
+                 "$ROM_EXTRACT_DIR"/*.v64 "$ROM_EXTRACT_DIR"/*.rom; do
+            if [ -f "$f" ]; then
+                ROM_INNER="$f"
+                break
+            fi
+        done
+        if [ -z "$ROM_INNER" ]; then
+            for f in "$ROM_EXTRACT_DIR"/*; do
+                if [ -f "$f" ]; then
+                    ROM_INNER="$f"
+                    break
+                fi
+            done
+        fi
+        if [ -z "$ROM_INNER" ]; then
+            echo "[launch] no ROM file found inside $ROM_ARCHIVE" >&2
+            exit 1
+        fi
+        # Rename so the basename matches the archive (sans .zip/.7z). This is
+        # what mupen64plus-ui-console.patch reads for M64CMD_SET_ROM_FILENAME.
+        ROM_BASENAME=$(basename "$ROM_ARCHIVE")
+        ROM_STEM="${ROM_BASENAME%.*}"
+        ROM_RENAMED="$ROM_EXTRACT_DIR/${ROM_STEM}.z64"
+        if [ "$ROM_INNER" != "$ROM_RENAMED" ]; then
+            mv "$ROM_INNER" "$ROM_RENAMED"
+        fi
+        ROM="$ROM_RENAMED"
+        ;;
+esac
+
 # ── Launch ────────────────────────────────────────────────────────────────────
 # Mute speaker before launch to prevent audio pop, then unmute after init
 echo 1 > /sys/class/speaker/mute 2>/dev/null || true

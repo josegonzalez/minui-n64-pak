@@ -28,6 +28,13 @@ NX_REDUX_TAG  := v1.1.1
 ZLIB_REPO     := https://github.com/madler/zlib
 ZLIB_TAG      := v1.3.2
 
+# 7-Zip standalone binary for ZIP/7Z ROM extraction. Pre-built AArch64 blob
+# published by the upstream 7-Zip project on GitHub. Sha256-verified.
+SEVENZ_VERSION := 26.00
+SEVENZ_TAG     := 2600
+SEVENZ_URL     := https://github.com/ip7z/7zip/releases/download/$(SEVENZ_VERSION)/7z$(SEVENZ_TAG)-linux-arm64.tar.xz
+SEVENZ_SHA256  := aa8f3d0a19af9674d3af0ec788b4e261501071e626cd75ad149f1c2c176cc87d
+
 # ── Docker toolchain images ───────────────────────────────────────────────────
 TG5040_IMAGE := ghcr.io/loveretro/tg5040-toolchain:latest
 TG5050_IMAGE := ghcr.io/loveretro/tg5050-toolchain:latest
@@ -79,7 +86,7 @@ clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
        $(SRC)/mupen64plus-audio-sdl $(SRC)/mupen64plus-input-sdl \
        $(SRC)/mupen64plus-rsp-hle $(SRC)/GLideN64 \
        $(SRC)/mupen64plus-video-rice $(SRC)/nx-redux \
-       $(SRC)/zlib
+       $(SRC)/zlib $(SRC)/7zip/7zzs
 	@# Write Docker env helper script (sets up cross-compile env, then exec's args)
 	@printf '#!/bin/bash\nsource ~/.bashrc\nexport PKG_CONFIG_PATH=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/pkgconfig\nexport PKG_CONFIG_SYSROOT_DIR=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc\nexport SDL_CFLAGS="$$(pkg-config --cflags sdl2)"\nexport SDL_LDLIBS="$$(pkg-config --libs sdl2)"\nexec "$$@"\n' > $(SRC)/.docker-env.sh
 	@chmod +x $(SRC)/.docker-env.sh
@@ -120,6 +127,18 @@ $(SRC)/nx-redux:
 
 $(SRC)/zlib:
 	git clone --depth 1 --branch $(ZLIB_TAG) $(ZLIB_REPO) $@
+
+# 7-Zip standalone static binary for ZIP/7Z ROM extraction at launch time.
+# Downloaded pre-built from upstream and sha256-verified. Only 7zzs and the
+# License.txt are needed; everything else in the tarball is discarded.
+$(SRC)/7zip/7zzs:
+	@mkdir -p $(SRC)/7zip
+	@echo "Fetching 7-Zip $(SEVENZ_VERSION) (arm64) from upstream…"
+	@curl -fsSL -o $(SRC)/7zip/7z-linux-arm64.tar.xz $(SEVENZ_URL)
+	@echo "$(SEVENZ_SHA256)  $(SRC)/7zip/7z-linux-arm64.tar.xz" | shasum -a 256 -c -
+	@tar -xJf $(SRC)/7zip/7z-linux-arm64.tar.xz -C $(SRC)/7zip 7zzs License.txt
+	@chmod +x $(SRC)/7zip/7zzs
+	@rm -f $(SRC)/7zip/7z-linux-arm64.tar.xz
 
 # ── Patch ─────────────────────────────────────────────────────────────────────
 
@@ -245,6 +264,8 @@ define DIST_COMMON
 	cp $(SRC)/mupen64plus-input-sdl/data/InputAutoCfg.ini $(1)/
 	cp $(SRC)/mupen64plus-core/data/mupencheat.txt     $(1)/
 	cp $(SRC)/mupen64plus-video-rice/data/RiceVideoLinux.ini $(1)/
+	cp $(SRC)/7zip/7zzs                                $(1)/
+	cp $(SRC)/7zip/License.txt                         $(1)/7zzs.LICENSE
 	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_a.png $(1)/
 	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_b.png $(1)/
 	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_dpad_horizontal.png $(1)/
