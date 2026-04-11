@@ -150,6 +150,9 @@ static void handle_sleep(void) {
 // ---------------------------------------------------------------------------
 
 static EmuOvlConfig* s_config = NULL;
+static EmuOvl* s_ovl = NULL;
+static bool* s_ovlInitialized = NULL;
+static int s_currentSlot = 0;
 static uint32_t s_btnState = 0;
 static uint32_t s_btnPrev = 0;
 
@@ -219,6 +222,76 @@ static void process_fast_forward(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Stop emulation (shared by poweroff and game switcher)
+// ---------------------------------------------------------------------------
+
+static void request_stop(void) {
+	if (s_pluginOps.on_pre_stop)
+		s_pluginOps.on_pre_stop();
+	emu_frontend_cleanup();
+	if (s_coreAPI.core_cmd)
+		s_coreAPI.core_cmd(EMU_FE_CMD_STOP, 0, NULL);
+}
+
+// ---------------------------------------------------------------------------
+// Game switcher (save state + thumbnail + marker file + stop)
+// ---------------------------------------------------------------------------
+
+static void trigger_game_switcher(void) {
+	if (s_coreAPI.core_cmd) {
+		s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SET_SLOT, s_currentSlot, NULL);
+		s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SAVE, 0, NULL);
+	}
+	if (s_ovl && s_ovlInitialized && *s_ovlInitialized)
+		emu_ovl_save_slot_screenshot(s_ovl, s_currentSlot);
+	// NextUI checks existence (not content) to show the game switcher screen
+	FILE* f = fopen("/mnt/SDCARD/.userdata/shared/.minui/game_switcher.txt", "w");
+	if (f) { fprintf(f, "unused"); fclose(f); }
+	request_stop();
+}
+
+// ---------------------------------------------------------------------------
+// Shortcut handlers for reset / save / load / screenshot / game switcher
+// ---------------------------------------------------------------------------
+
+static void process_state_shortcuts(void) {
+	int resetBtn = emu_frontend_get_shortcut("shortcut_reset");
+	if (emu_frontend_btn_just_pressed(resetBtn)) {
+		if (s_coreAPI.core_cmd)
+			s_coreAPI.core_cmd(EMU_FE_CMD_RESET, 0, NULL);
+	}
+
+	int saveBtn = emu_frontend_get_shortcut("shortcut_save_state");
+	if (emu_frontend_btn_just_pressed(saveBtn)) {
+		if (s_coreAPI.core_cmd) {
+			s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SET_SLOT, s_currentSlot, NULL);
+			s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SAVE, 0, NULL);
+		}
+		if (s_ovl && s_ovlInitialized && *s_ovlInitialized)
+			emu_ovl_save_slot_screenshot(s_ovl, s_currentSlot);
+	}
+
+	int loadBtn = emu_frontend_get_shortcut("shortcut_load_state");
+	if (emu_frontend_btn_just_pressed(loadBtn)) {
+		if (s_coreAPI.core_cmd) {
+			s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SET_SLOT, s_currentSlot, NULL);
+			s_coreAPI.core_cmd(EMU_FE_CMD_STATE_LOAD, 0, NULL);
+		}
+	}
+
+	int screenshotBtn = emu_frontend_get_shortcut("shortcut_screenshot");
+	if (emu_frontend_btn_just_pressed(screenshotBtn)) {
+		if (s_coreAPI.core_cmd)
+			s_coreAPI.core_cmd(EMU_FE_CMD_TAKE_SCREENSHOT, 0, NULL);
+	}
+
+	int gsBtn = emu_frontend_get_shortcut("shortcut_game_switcher");
+	if (emu_frontend_btn_just_pressed(gsBtn)) {
+		trigger_game_switcher();
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -232,6 +305,19 @@ void emu_frontend_set_config(EmuOvlConfig* cfg) {
 	s_config = cfg;
 }
 
+void emu_frontend_set_overlay(EmuOvl* ovl, bool* initialized) {
+	s_ovl = ovl;
+	s_ovlInitialized = initialized;
+}
+
+int emu_frontend_get_current_slot(void) {
+	return s_currentSlot;
+}
+
+void emu_frontend_set_current_slot(int slot) {
+	s_currentSlot = slot;
+}
+
 void emu_frontend_frame(void) {
 	// Ensure joystick is open
 	if (!s_joy && SDL_NumJoysticks() > 0)
@@ -243,15 +329,14 @@ void emu_frontend_frame(void) {
 		handle_sleep();
 	} else if (pwr == 2) {
 		system("touch /tmp/poweroff");
-		emu_frontend_cleanup();
-		if (s_coreAPI.core_cmd)
-			s_coreAPI.core_cmd(EMU_FE_CMD_STOP, 0, NULL);
+		request_stop();
 	}
 
 	// Shortcut button processing
 	emu_frontend_update_buttons();
 	if (s_config) {
 		process_fast_forward();
+		process_state_shortcuts();
 	}
 }
 

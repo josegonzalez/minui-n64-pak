@@ -30,6 +30,9 @@ typedef struct {
 	void (*cycle_aspect)(void);
 	EmuOvlRenderBackend* (*get_render)(void);
 	void (*exec_on_video_thread)(void (*fn)(void));
+	// Called before M64CMD_STOP so plugin can run cleanup (e.g. turbo files, rewind buffer).
+	// Temporary — will become unnecessary once all cleanup lives in emu_frontend.
+	void (*on_pre_stop)(void);
 } EmuFrontendPluginOps;
 
 // Core API pointers (set during init)
@@ -53,6 +56,13 @@ SDL_Joystick* emu_frontend_get_joystick(void);
 
 // Set overlay config pointer (called by plugin after loading config)
 void emu_frontend_set_config(EmuOvlConfig* cfg);
+
+// Set overlay reference for save-slot screenshots (called by plugin after overlay init)
+void emu_frontend_set_overlay(EmuOvl* ovl, bool* initialized);
+
+// Current save/load slot (shared with DisplayWindow overlay menu action handler)
+int emu_frontend_get_current_slot(void);
+void emu_frontend_set_current_slot(int slot);
 
 // Shortcut system (button state tracking + config lookup)
 void emu_frontend_update_buttons(void);
