@@ -19,6 +19,9 @@ RSP_TAG      := 2.6.0
 GLIDEN64_REPO := https://github.com/gonetz/GLideN64
 GLIDEN64_REV  := c8ef81c7d9aede9f67f6ed3d3426c90541f9f13e
 
+RICE_REPO    := https://github.com/mupen64plus/mupen64plus-video-rice
+RICE_TAG     := 2.6.0
+
 NX_REDUX_REPO := https://github.com/mohammadsyuhada/nx-redux
 NX_REDUX_TAG  := v1.1.1
 
@@ -53,7 +56,7 @@ DOCKER_SCRIPT := /build/src/.docker-env.sh
 # Top-level targets
 # ══════════════════════════════════════════════════════════════════════════════
 
-.PHONY: all build tg5040 tg5050 gliden64 dist clone patch patches clean
+.PHONY: all build tg5040 tg5050 gliden64 rice dist clone patch patches clean
 
 build: all
 
@@ -62,8 +65,10 @@ build: all
 all: clone patch
 	$(MAKE) tg5040
 	$(MAKE) gliden64
+	$(MAKE) rice-tg5040
 	$(MAKE) dist-tg5040
 	$(MAKE) tg5050
+	$(MAKE) rice-tg5050
 	$(MAKE) dist-tg5050
 	@echo "=== Build complete. dist/N64.pak/ assembled ==="
 	@find $(DIST) -type f | sort
@@ -72,7 +77,8 @@ all: clone patch
 
 clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
        $(SRC)/mupen64plus-audio-sdl $(SRC)/mupen64plus-input-sdl \
-       $(SRC)/mupen64plus-rsp-hle $(SRC)/GLideN64 $(SRC)/nx-redux \
+       $(SRC)/mupen64plus-rsp-hle $(SRC)/GLideN64 \
+       $(SRC)/mupen64plus-video-rice $(SRC)/nx-redux \
        $(SRC)/zlib
 	@# Write Docker env helper script (sets up cross-compile env, then exec's args)
 	@printf '#!/bin/bash\nsource ~/.bashrc\nexport PKG_CONFIG_PATH=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/pkgconfig\nexport PKG_CONFIG_SYSROOT_DIR=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc\nexport SDL_CFLAGS="$$(pkg-config --cflags sdl2)"\nexport SDL_LDLIBS="$$(pkg-config --libs sdl2)"\nexec "$$@"\n' > $(SRC)/.docker-env.sh
@@ -106,6 +112,9 @@ $(SRC)/GLideN64:
 	git clone $(GLIDEN64_REPO) $@
 	cd $@ && git checkout $(GLIDEN64_REV)
 
+$(SRC)/mupen64plus-video-rice:
+	git clone --depth 1 --branch $(RICE_TAG) $(RICE_REPO) $@
+
 $(SRC)/nx-redux:
 	git clone --depth 1 --branch $(NX_REDUX_TAG) $(NX_REDUX_REPO) $@
 
@@ -128,6 +137,7 @@ $(PATCH_STAMP): | clone
 		cd $(SRC)/mupen64plus-core && git apply $(PATCHES)/mupen64plus-core.patch; \
 		cd $(SRC)/GLideN64 && git apply --exclude='src/GLideNHQ/lib/*.a' $(PATCHES)/GLideN64-standalone.patch; \
 		cd $(SRC)/mupen64plus-input-sdl && git apply $(PATCHES)/mupen64plus-input-sdl.patch; \
+		cd $(SRC)/mupen64plus-video-rice && git apply $(PATCHES)/mupen64plus-video-rice.patch; \
 		touch $(PATCH_STAMP); \
 	fi
 
@@ -212,6 +222,16 @@ gliden64: $(PATCH_STAMP)
 	cp $(SRC)/zlib/libz.a $(SRC)/GLideN64/src/GLideNHQ/lib/libz.a
 	$(DOCKER_RUN_5040) bash -c 'cd /build/src/GLideN64/src && mkdir -p build && cd build && cmake -DCMAKE_TOOLCHAIN_FILE=../../toolchain-aarch64.cmake -DMUPENPLUSAPI=ON -DEGL=ON -DMESA=ON -DNEON_OPT=ON -DCRC_ARMV8=ON .. && make -j$$(nproc) mupen64plus-video-GLideN64'
 
+# ── Rice video plugin (built per-platform toolchain) ─────────────────────────
+
+.PHONY: rice-tg5040 rice-tg5050
+
+rice-tg5040: $(PATCH_STAMP)
+	$(DOCKER_RUN_5040) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) USE_GLES=1'
+
+rice-tg5050: $(PATCH_STAMP) tg5050-libpng-headers
+	$(DOCKER_RUN_5050) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) USE_GLES=1 CPPFLAGS="-I/build/include" LIBPNG_CFLAGS="-I/build/src/libpng-headers/libpng-1.6.37" LIBPNG_LDLIBS="-lpng16 -lz"'
+
 # ── Dist assembly ─────────────────────────────────────────────────────────────
 
 .PHONY: dist dist-tg5040 dist-tg5050
@@ -224,6 +244,7 @@ define DIST_COMMON
 	cp $(SRC)/mupen64plus-core/data/mupen64plus.ini    $(1)/
 	cp $(SRC)/mupen64plus-input-sdl/data/InputAutoCfg.ini $(1)/
 	cp $(SRC)/mupen64plus-core/data/mupencheat.txt     $(1)/
+	cp $(SRC)/mupen64plus-video-rice/data/RiceVideoLinux.ini $(1)/
 	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_a.png $(1)/
 	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_b.png $(1)/
 	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_dpad_horizontal.png $(1)/
@@ -241,8 +262,10 @@ dist-tg5040:
 	cp $(SRC)/mupen64plus-audio-sdl/projects/unix/mupen64plus-audio-sdl.so $(DIST)/tg5040/
 	cp $(SRC)/mupen64plus-input-sdl/projects/unix/mupen64plus-input-sdl.so $(DIST)/tg5040/
 	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5040/
+	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/tg5040/
 	$(call DIST_COMMON,$(DIST)/tg5040)
 	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5040/libpng16.so.16
+	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5040/libz.so.1
 
 dist-tg5050:
 	mkdir -p $(DIST)/tg5050
@@ -252,8 +275,10 @@ dist-tg5050:
 	cp $(SRC)/mupen64plus-audio-sdl/projects/unix/mupen64plus-audio-sdl.so $(DIST)/tg5050/
 	cp $(SRC)/mupen64plus-input-sdl/projects/unix/mupen64plus-input-sdl.so $(DIST)/tg5050/
 	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5050/
+	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/tg5050/
 	$(call DIST_COMMON,$(DIST)/tg5050)
 	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
+	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5050/libz.so.1
 
 # ── Regenerate patches from current source trees ─────────────────────────────
 
@@ -262,6 +287,7 @@ patches:
 	cd $(SRC)/mupen64plus-core && git add -N . && git diff > $(PATCHES)/mupen64plus-core.patch && git reset -q
 	cd $(SRC)/mupen64plus-ui-console && git add -N . && git diff > $(PATCHES)/mupen64plus-ui-console.patch && git reset -q
 	cd $(SRC)/mupen64plus-input-sdl && git add -N . && git diff > $(PATCHES)/mupen64plus-input-sdl.patch && git reset -q
+	cd $(SRC)/mupen64plus-video-rice && git add -N . && git diff > $(PATCHES)/mupen64plus-video-rice.patch && git reset -q
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 

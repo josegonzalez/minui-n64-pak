@@ -136,6 +136,23 @@ export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
 export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"
 export EMU_OVERLAY_INI="$DEVICE_CONFIG_DIR/mupen64plus.cfg"
 export EMU_OVERLAY_GAME="$(basename "$ROM" | sed 's/\.[^.]*$//')"
+
+# ── Video plugin selection (reads [NextUI] VideoPlugin from mupen64plus.cfg) ─
+VIDEO_PLUGIN_VALUE=$(awk -F' = ' '
+    /^\[NextUI\]/ { in_section=1; next }
+    /^\[/         { in_section=0 }
+    in_section && $1 == "VideoPlugin" { gsub(/[[:space:]]+/, "", $2); print $2; exit }
+' "$DEVICE_CFG" 2>/dev/null)
+case "$VIDEO_PLUGIN_VALUE" in
+    1)
+        GFX_PLUGIN="mupen64plus-video-rice.so"
+        export EMU_VIDEO_PLUGIN=rice
+        ;;
+    *)
+        GFX_PLUGIN="mupen64plus-video-GLideN64.so"
+        export EMU_VIDEO_PLUGIN=gliden64
+        ;;
+esac
 # Font from NextUI system resources; icon PNGs vendored in platform dir
 FONT_FILE=$(ls "$SDCARD_PATH/.system/res/"*.ttf 2>/dev/null | head -1)
 export EMU_OVERLAY_FONT="${FONT_FILE:-$SDCARD_PATH/.system/res/font.ttf}"
@@ -161,7 +178,7 @@ cd "$BIN_DIR"
     --configdir "$DEVICE_CONFIG_DIR" \
     --datadir "$BIN_DIR" \
     --plugindir "$BIN_DIR" \
-    --gfx "$BIN_DIR/mupen64plus-video-GLideN64.so" \
+    --gfx "$BIN_DIR/$GFX_PLUGIN" \
     --audio mupen64plus-audio-sdl.so \
     --input mupen64plus-input-sdl.so \
     --rsp mupen64plus-rsp-hle.so \

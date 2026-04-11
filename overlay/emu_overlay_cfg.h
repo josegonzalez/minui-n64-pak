@@ -18,6 +18,7 @@ typedef struct {
 	char key[EMU_OVL_MAX_STR];
 	char label[EMU_OVL_MAX_STR];
 	char description[EMU_OVL_MAX_STR];
+	char ini_section[EMU_OVL_MAX_STR]; // optional per-item INI section override
 	EmuOvlItemType type;
 	int values[EMU_OVL_MAX_VALUES];
 	char labels[EMU_OVL_MAX_VALUES][EMU_OVL_MAX_STR];

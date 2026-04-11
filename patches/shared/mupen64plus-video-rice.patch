@@ -1,0 +1,181 @@
+diff --git a/projects/unix/Makefile b/projects/unix/Makefile
+index da26ff1..9955caa 100755
+--- a/projects/unix/Makefile
++++ b/projects/unix/Makefile
+@@ -140,11 +140,12 @@ endif
+ 
+ SRCDIR = ../../src
+ OBJDIR = _obj$(POSTFIX)
++OVERLAY_DIR = ../../../../overlay
+ 
+ # base CFLAGS, LDLIBS, and LDFLAGS
+ OPTFLAGS ?= -O3 -flto
+ WARNFLAGS ?= -Wall
+-CFLAGS += $(OPTFLAGS) $(WARNFLAGS) -ffast-math -fno-strict-aliasing -fvisibility=hidden -I$(SRCDIR)
++CFLAGS += $(OPTFLAGS) $(WARNFLAGS) -ffast-math -fno-strict-aliasing -fvisibility=hidden -I$(SRCDIR) -I$(OVERLAY_DIR)
+ CXXFLAGS += -fvisibility-inlines-hidden
+ LDFLAGS += $(SHARED)
+ 
+@@ -266,7 +267,7 @@ ifeq ($(origin SDL_CFLAGS) $(origin SDL_LDLIBS), undefined undefined)
+   SDL_LDLIBS += $(shell $(SDL_CONFIG) --libs)
+ endif
+ CFLAGS += $(SDL_CFLAGS)
+-LDLIBS += $(SDL_LDLIBS)
++LDLIBS += $(SDL_LDLIBS) -lSDL2_ttf -lSDL2_image
+ 
+ # set mupen64plus core API header path
+ ifneq ("$(APIDIR)","")
+@@ -370,7 +371,12 @@ SOURCE = \
+ 	$(SRCDIR)/TextureFilters_hq4x.cpp \
+ 	$(SRCDIR)/TextureManager.cpp \
+ 	$(SRCDIR)/VectorMath.cpp \
+-	$(SRCDIR)/Video.cpp
++	$(SRCDIR)/Video.cpp \
++	$(OVERLAY_DIR)/emu_overlay.c \
++	$(OVERLAY_DIR)/emu_overlay_cfg.c \
++	$(OVERLAY_DIR)/emu_overlay_sdl.c \
++	$(OVERLAY_DIR)/emu_frontend.c \
++	$(OVERLAY_DIR)/cjson/cJSON.c
+ 
+ ifeq ($(OS),MINGW)
+ SOURCE += \
+@@ -383,8 +389,11 @@ SOURCE += \
+ endif
+ 
+ # generate a list of object files build, make a temporary directory for them
+-OBJECTS := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(filter %.c, $(SOURCE)))
+-OBJECTS += $(patsubst $(SRCDIR)/%.cpp, $(OBJDIR)/%.o, $(filter %.cpp, $(SOURCE)))
++RICE_SOURCES := $(filter $(SRCDIR)/%,$(SOURCE))
++OVERLAY_SOURCES := $(filter $(OVERLAY_DIR)/%,$(SOURCE))
++OBJECTS := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(filter %.c, $(RICE_SOURCES)))
++OBJECTS += $(patsubst $(SRCDIR)/%.cpp, $(OBJDIR)/%.o, $(filter %.cpp, $(RICE_SOURCES)))
++OBJECTS += $(patsubst $(OVERLAY_DIR)/%.c, $(OBJDIR)/overlay/%.o, $(filter %.c, $(OVERLAY_SOURCES)))
+ OBJDIRS = $(dir $(OBJECTS))
+ $(shell $(MKDIR) $(OBJDIRS))
+ 
+@@ -449,6 +458,10 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
+ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
+ 	$(COMPILE.cc) -o $@ $<
+ 
++# overlay sources live outside the Rice source tree
++$(OBJDIR)/overlay/%.o: $(OVERLAY_DIR)/%.c
++	$(COMPILE.c) -o $@ $<
++
+ $(TARGET): $(OBJECTS)
+ 	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
+ 
+diff --git a/src/Video.cpp b/src/Video.cpp
+index c32e1ce..3a49e93 100644
+--- a/src/Video.cpp
++++ b/src/Video.cpp
+@@ -42,9 +42,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ #include "m64p_common.h"
+ #include "m64p_plugin.h"
+ #include "m64p_types.h"
++#include "m64p_frontend.h"
+ #include "osal_dynamiclib.h"
+ #include "version.h"
+ 
++extern "C" {
++#include "emu_overlay_sdl.h"
++#include "emu_frontend.h"
++}
++
+ //=======================================================
+ // local variables
+ 
+@@ -105,6 +111,12 @@ ptr_VidExt_GL_SetAttribute       CoreVideo_GL_SetAttribute = NULL;
+ ptr_VidExt_GL_GetAttribute       CoreVideo_GL_GetAttribute = NULL;
+ ptr_VidExt_GL_SwapBuffers        CoreVideo_GL_SwapBuffers = NULL;
+ 
++/* definitions of pointers to Core functions (used by emu_frontend for state,
++ * cheats, and core-state commands) */
++static ptr_CoreDoCommand    CoreDoCommand = NULL;
++static ptr_CoreAddCheat     CoreAddCheat = NULL;
++static ptr_CoreCheatEnabled CoreCheatEnabled = NULL;
++
+ //---------------------------------------------------------------------------------------
+ // Forward function declarations
+ 
+@@ -658,6 +670,11 @@ EXPORT m64p_error CALL PluginStartup(m64p_dynlib_handle CoreLibHandle, void *Con
+     CoreVideo_GL_GetAttribute = (ptr_VidExt_GL_GetAttribute) osal_dynlib_getproc(CoreLibHandle, "VidExt_GL_GetAttribute");
+     CoreVideo_GL_SwapBuffers = (ptr_VidExt_GL_SwapBuffers) osal_dynlib_getproc(CoreLibHandle, "VidExt_GL_SwapBuffers");
+ 
++    /* Core functions for emu_frontend (state, cheats, core-state) */
++    CoreDoCommand    = (ptr_CoreDoCommand)    osal_dynlib_getproc(CoreLibHandle, "CoreDoCommand");
++    CoreAddCheat     = (ptr_CoreAddCheat)     osal_dynlib_getproc(CoreLibHandle, "CoreAddCheat");
++    CoreCheatEnabled = (ptr_CoreCheatEnabled) osal_dynlib_getproc(CoreLibHandle, "CoreCheatEnabled");
++
+     if (!CoreVideo_Init || !CoreVideo_Quit || !CoreVideo_ListFullscreenModes || !CoreVideo_SetVideoMode ||
+         !CoreVideo_ResizeWindow || !CoreVideo_SetCaption || !CoreVideo_ToggleFullScreen || !CoreVideo_GL_GetProcAddress ||
+         !CoreVideo_GL_SetAttribute || !CoreVideo_GL_GetAttribute || !CoreVideo_GL_SwapBuffers)
+@@ -775,6 +792,58 @@ EXPORT int CALL RomOpen(void)
+ }
+ 
+ 
++//---------------------------------------------------------------------------------------
++// emu_frontend plugin ops (custom features shared with GLideN64 via overlay/emu_frontend.c)
++
++static void rice_swap_buffers(void)
++{
++    CoreVideo_GL_SwapBuffers();
++}
++
++static EmuOvlRenderBackend* rice_get_render(void)
++{
++    return overlay_sdl_get_backend();
++}
++
++// Rice is single-threaded — no GL thread pool — so dispatch is a direct call.
++static void rice_exec_on_video_thread(void (*fn)(void*), void* ctx)
++{
++    fn(ctx);
++}
++
++// Rice does not expose a user-configurable aspect ratio setting (it computes
++// the output from the N64 VI registers + display dimensions). We cycle a local
++// override that resizes the GL viewport. For the MVP, this is a no-op and the
++// overlay config's AspectRatio item stays as-is. The aspect-cycle shortcut
++// still triggers this callback; adding actual cycling is a future improvement.
++static void rice_cycle_aspect(void)
++{
++    // no-op: Rice aspect comes from VI registers, not a cycle-able setting
++}
++
++static bool s_frontendInitialized = false;
++
++static void ensure_frontend_init(void)
++{
++    if (s_frontendInitialized) return;
++    s_frontendInitialized = true;
++
++    EmuFrontendCoreAPI api;
++    memset(&api, 0, sizeof(api));
++    api.core_cmd      = (emu_fe_core_cmd_fn)      CoreDoCommand;
++    api.add_cheat     = (emu_fe_add_cheat_fn)     CoreAddCheat;
++    api.cheat_enabled = (emu_fe_cheat_enabled_fn) CoreCheatEnabled;
++
++    EmuFrontendPluginOps ops;
++    memset(&ops, 0, sizeof(ops));
++    ops.swap_buffers         = rice_swap_buffers;
++    ops.cycle_aspect         = rice_cycle_aspect;
++    ops.get_render           = rice_get_render;
++    ops.exec_on_video_thread = rice_exec_on_video_thread;
++
++    emu_frontend_init(&api, &ops);
++}
++
+ //---------------------------------------------------------------------------------------
+ EXPORT void CALL UpdateScreen(void)
+ {
+@@ -794,6 +863,10 @@ EXPORT void CALL UpdateScreen(void)
+         }
+     }
+     UpdateScreenStep2();
++
++    // emu_frontend: power button, shortcuts, overlay menu (shared with GLideN64)
++    ensure_frontend_init();
++    emu_frontend_frame(windowSetting.uDisplayWidth, windowSetting.uDisplayHeight);
+ }
+ 
+ //---------------------------------------------------------------------------------------

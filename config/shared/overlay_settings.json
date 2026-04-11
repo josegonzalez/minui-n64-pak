@@ -15,8 +15,16 @@
           "label": "Audio Quality",
           "description": "Resampling quality (restart required)",
           "type": "cycle",
-          "values": [0, 1, 2],
-          "labels": ["Low", "Medium", "High"],
+          "values": [
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "Low",
+            "Medium",
+            "High"
+          ],
           "default": 1
         }
       ]
@@ -26,12 +34,38 @@
       "ini_section": "Core",
       "items": [
         {
+          "key": "VideoPlugin",
+          "label": "Video Plugin",
+          "description": "Restart game to apply",
+          "type": "cycle",
+          "values": [
+            0,
+            1
+          ],
+          "labels": [
+            "GLideN64",
+            "Rice"
+          ],
+          "default": 0,
+          "ini_section": "NextUI"
+        },
+        {
           "key": "CountPerOpDenomPot",
           "label": "CPU Overclock",
           "description": "Overclock emulated N64 CPU (restart required)",
           "type": "cycle",
-          "values": [0, 1, 2, 3],
-          "labels": ["Off", "2x", "4x", "8x"],
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Off",
+            "2x",
+            "4x",
+            "8x"
+          ],
           "default": 0
         }
       ]
@@ -44,26 +78,39 @@
           "label": "Show FPS",
           "description": "Display frames per second (restart required)",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
         },
         {
           "key": "ShowVIS",
           "label": "Show VI/s",
           "description": "Display VI interrupts per second (restart required)",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
         },
         {
           "key": "ShowPercent",
           "label": "Show Speed %",
           "description": "Display emulation speed percentage (restart required)",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "ShowFPS",
+          "label": "Show FPS",
+          "description": "Display frames per second (restart required)",
+          "type": "bool",
+          "default": false,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
         }
       ]
     },
     {
       "name": "Dithering",
+      "plugin": "gliden64",
       "items": [
         {
           "key": "EnableDitheringPattern",
@@ -84,8 +131,18 @@
           "label": "RDRAM Dithering",
           "description": "RDRAM image dithering algorithm",
           "type": "cycle",
-          "values": [0, 1, 2, 3],
-          "labels": ["Off", "Bayer", "Magic Square", "Blue Noise"],
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Off",
+            "Bayer",
+            "Magic Square",
+            "Blue Noise"
+          ],
           "default": 3
         },
         {
@@ -105,53 +162,147 @@
           "label": "FB Emulation",
           "description": "Frame buffer emulation (required for many effects)",
           "type": "bool",
-          "default": true
+          "default": true,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableCopyColorToRDRAM",
           "label": "Color to RDRAM",
           "description": "Copy color buffer to N64 memory",
           "type": "cycle",
-          "values": [0, 1, 2],
-          "labels": ["Off", "Sync", "Async"],
-          "default": 2
+          "values": [
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "Off",
+            "Sync",
+            "Async"
+          ],
+          "default": 2,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableCopyDepthToRDRAM",
           "label": "Depth to RDRAM",
           "description": "Copy depth buffer to N64 memory",
           "type": "cycle",
-          "values": [0, 1, 2],
-          "labels": ["Off", "From VRAM", "Software"],
-          "default": 2
+          "values": [
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "Off",
+            "From VRAM",
+            "Software"
+          ],
+          "default": 2,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableCopyColorFromRDRAM",
           "label": "Color from RDRAM",
           "description": "Copy color buffer from N64 memory",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableN64DepthCompare",
           "label": "N64 Depth Compare",
           "description": "N64 depth compare (CPU intensive)",
           "type": "cycle",
-          "values": [0, 1, 2],
-          "labels": ["Off", "Fast", "Compatible"],
-          "default": 0
+          "values": [
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "Off",
+            "Fast",
+            "Compatible"
+          ],
+          "default": 0,
+          "plugin": "gliden64"
         },
         {
           "key": "DisableFBInfo",
           "label": "Disable FB Info",
           "description": "Disable frame buffer info (performance)",
           "type": "bool",
-          "default": true
+          "default": true,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "FrameBufferSetting",
+          "label": "FB Setting",
+          "description": "Frame buffer emulation mode",
+          "type": "cycle",
+          "values": [
+            0,
+            1
+          ],
+          "labels": [
+            "ROM Default",
+            "Disable"
+          ],
+          "default": 0,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "RenderToTexture",
+          "label": "Render To Texture",
+          "description": "Render-to-texture emulation mode",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "None",
+            "Ignore",
+            "Normal"
+          ],
+          "default": 0,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "ScreenUpdateSetting",
+          "label": "Screen Update",
+          "description": "Control when the screen is updated",
+          "type": "cycle",
+          "values": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "labels": [
+            "VI Update",
+            "VI Change",
+            "CI Change",
+            "1st CI Change",
+            "1st Primitive",
+            "Before Clear",
+            "After Drawn"
+          ],
+          "default": 4,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
         }
       ]
     },
     {
       "name": "Gamma",
+      "plugin": "gliden64",
       "items": [
         {
           "key": "ForceGammaCorrection",
@@ -165,8 +316,28 @@
           "label": "Gamma Level",
           "description": "Gamma correction level",
           "type": "cycle",
-          "values": [10, 15, 20, 25, 30, 35, 40, 45, 50],
-          "labels": ["1.0", "1.5", "2.0", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0"],
+          "values": [
+            10,
+            15,
+            20,
+            25,
+            30,
+            35,
+            40,
+            45,
+            50
+          ],
+          "labels": [
+            "1.0",
+            "1.5",
+            "2.0",
+            "2.5",
+            "3.0",
+            "3.5",
+            "4.0",
+            "4.5",
+            "5.0"
+          ],
           "float_scale": 10,
           "default": 20
         }
@@ -180,28 +351,50 @@
           "label": "Enable Hi-Res",
           "description": "Load high-resolution texture packs",
           "type": "bool",
-          "default": true
+          "default": true,
+          "plugin": "gliden64"
         },
         {
           "key": "txHiresTextureFileStorage",
           "label": "File Storage",
           "description": "Lazy load textures from files",
           "type": "bool",
-          "default": true
+          "default": true,
+          "plugin": "gliden64"
         },
         {
           "key": "txHiresFullAlphaChannel",
           "label": "Full Alpha Channel",
           "description": "Use full alpha channel for hi-res",
           "type": "bool",
-          "default": true
+          "default": true,
+          "plugin": "gliden64"
         },
         {
           "key": "txHresAltCRC",
           "label": "Alt CRC",
           "description": "Use alternative CRC for texture matching",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "LoadHiResTextures",
+          "label": "Load Hi-Res Textures",
+          "description": "Enable hi-resolution texture file loading",
+          "type": "bool",
+          "default": false,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "LoadHiResCRCOnly",
+          "label": "Hi-Res CRC Only",
+          "description": "Match hi-res textures by CRC only",
+          "type": "bool",
+          "default": true,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
         }
       ]
     },
@@ -213,45 +406,95 @@
           "label": "Inaccurate Tex Coords",
           "description": "Faster but less accurate texture coords",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableLegacyBlending",
           "label": "Legacy Blending",
           "description": "Use legacy blending mode",
           "type": "bool",
-          "default": false
+          "default": true,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableShadersStorage",
           "label": "Shader Cache",
           "description": "Cache compiled shaders to disk",
           "type": "bool",
-          "default": true
+          "default": true,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableFragmentDepthWrite",
           "label": "Fragment Depth Write",
           "description": "Write fragment depth in shader",
           "type": "bool",
-          "default": true
+          "default": true,
+          "plugin": "gliden64"
         },
         {
           "key": "BackgroundsMode",
           "label": "Backgrounds Mode",
           "description": "Background rendering mode",
           "type": "cycle",
-          "values": [0, 1, 2],
-          "labels": ["One piece", "Stripped", "Best performance"],
-          "default": 0
+          "values": [
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "One piece",
+            "Stripped",
+            "Best performance"
+          ],
+          "default": 0,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "FastTextureLoading",
+          "label": "Fast Texture Loading",
+          "description": "Faster algorithm for texture loading and CRC",
+          "type": "bool",
+          "default": false,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "SkipFrame",
+          "label": "Skip Frame",
+          "description": "Skip every other frame",
+          "type": "bool",
+          "default": false,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "AccurateTextureMapping",
+          "label": "Accurate Texture Mapping",
+          "description": "Use different texture coordinate clamping",
+          "type": "bool",
+          "default": true,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
         },
         {
           "key": "cpu_mode",
           "label": "CPU Mode",
           "description": "Powersave saves battery, Performance maximizes speed",
           "type": "cycle",
-          "values": [0, 1, 2, 3],
-          "labels": ["Powersave", "Ondemand", "Performance", "Auto"],
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Powersave",
+            "Ondemand",
+            "Performance",
+            "Auto"
+          ],
           "default": 1
         },
         {
@@ -259,8 +502,18 @@
           "label": "Rewind Buffer",
           "description": "Off saves RAM, Large gives more rewind time",
           "type": "cycle",
-          "values": [0, 1, 2, 3],
-          "labels": ["Off", "Small (5s)", "Medium (15s)", "Large (30s)"],
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Off",
+            "Small (5s)",
+            "Medium (15s)",
+            "Large (30s)"
+          ],
           "default": 0
         },
         {
@@ -268,8 +521,18 @@
           "label": "Frame Skip",
           "description": "Auto-skip frames when below target FPS",
           "type": "cycle",
-          "values": [0, 1, 2, 3],
-          "labels": ["Off", "20fps", "25fps", "30fps"],
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Off",
+            "20fps",
+            "25fps",
+            "30fps"
+          ],
           "default": 0
         }
       ]
@@ -282,89 +545,259 @@
           "label": "Resolution Factor",
           "description": "Internal rendering resolution multiplier",
           "type": "cycle",
-          "values": [0, 1, 2, 3, 4],
-          "labels": ["Auto", "1x", "2x", "3x", "4x"],
-          "default": 2
+          "values": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "labels": [
+            "Auto",
+            "1x",
+            "2x",
+            "3x",
+            "4x"
+          ],
+          "default": 2,
+          "plugin": "gliden64"
         },
         {
           "key": "AspectRatio",
           "label": "Aspect Ratio",
           "description": "Display aspect ratio mode",
           "type": "cycle",
-          "values": [3, 1, 2, 0],
-          "labels": ["Auto", "4:3", "16:9", "Stretch"],
-          "default": 1
+          "values": [
+            3,
+            1,
+            2,
+            0
+          ],
+          "labels": [
+            "Auto",
+            "4:3",
+            "16:9",
+            "Stretch"
+          ],
+          "default": 1,
+          "plugin": "gliden64"
         },
         {
           "key": "FXAA",
           "label": "FXAA",
           "description": "Fast approximate anti-aliasing",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
         },
         {
           "key": "MultiSampling",
           "label": "Multi-Sampling",
           "description": "Multi-sample anti-aliasing level",
           "type": "cycle",
-          "values": [0, 2, 4, 8],
-          "labels": ["Off", "2x", "4x", "8x"],
-          "default": 0
+          "values": [
+            0,
+            2,
+            4,
+            8
+          ],
+          "labels": [
+            "Off",
+            "2x",
+            "4x",
+            "8x"
+          ],
+          "default": 0,
+          "plugin": "gliden64"
         },
         {
           "key": "anisotropy",
           "label": "Anisotropic Filtering",
           "description": "Anisotropic texture filtering",
           "type": "cycle",
-          "values": [0, 1, 2, 4, 8, 16],
-          "labels": ["Off", "1x", "2x", "4x", "8x", "16x"],
-          "default": 2
+          "values": [
+            0,
+            1,
+            2,
+            4,
+            8,
+            16
+          ],
+          "labels": [
+            "Off",
+            "1x",
+            "2x",
+            "4x",
+            "8x",
+            "16x"
+          ],
+          "default": 2,
+          "plugin": "gliden64"
         },
         {
           "key": "bilinearMode",
           "label": "Bilinear Mode",
           "description": "Texture bilinear filtering mode",
           "type": "cycle",
-          "values": [0, 1],
-          "labels": ["3-point", "Standard"],
-          "default": 1
+          "values": [
+            0,
+            1
+          ],
+          "labels": [
+            "3-point",
+            "Standard"
+          ],
+          "default": 1,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableHybridFilter",
           "label": "Hybrid Filter",
           "description": "Hybrid integer scaling filter",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableHWLighting",
           "label": "HW Lighting",
           "description": "Hardware per-pixel lighting",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableCoverage",
           "label": "Coverage",
           "description": "Coverage calculation (anti-aliasing)",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
         },
         {
           "key": "EnableClipping",
           "label": "Clipping",
           "description": "Vertex clipping",
           "type": "bool",
-          "default": true
+          "default": true,
+          "plugin": "gliden64"
         },
         {
           "key": "BufferSwapMode",
           "label": "Buffer Swap Mode",
           "description": "Frame buffer swap timing",
           "type": "cycle",
-          "values": [0, 1, 2],
-          "labels": ["On VI update", "On VI origin change", "On buffer update"],
-          "default": 0
+          "values": [
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "On VI update",
+            "On VI origin change",
+            "On buffer update"
+          ],
+          "default": 0,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "MultiSampling",
+          "label": "Multi-Sampling",
+          "description": "Multi-sample anti-aliasing level",
+          "type": "cycle",
+          "values": [
+            0,
+            2,
+            4,
+            8,
+            16
+          ],
+          "labels": [
+            "Off",
+            "2x",
+            "4x",
+            "8x",
+            "16x"
+          ],
+          "default": 0,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "AnisotropicFiltering",
+          "label": "Anisotropic Filtering",
+          "description": "Anisotropic texture filtering",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2,
+            4,
+            8,
+            16
+          ],
+          "labels": [
+            "Off",
+            "1x",
+            "2x",
+            "4x",
+            "8x",
+            "16x"
+          ],
+          "default": 0,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "ColorQuality",
+          "label": "Color Quality",
+          "description": "Color bit depth for rendering",
+          "type": "cycle",
+          "values": [
+            0,
+            1
+          ],
+          "labels": [
+            "32-bit",
+            "16-bit"
+          ],
+          "default": 1,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "OpenGLDepthBufferSetting",
+          "label": "Depth Buffer",
+          "description": "Z-buffer depth",
+          "type": "cycle",
+          "values": [
+            16,
+            32
+          ],
+          "labels": [
+            "16-bit",
+            "32-bit"
+          ],
+          "default": 16,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "FogMethod",
+          "label": "Fog",
+          "description": "Fog generation",
+          "type": "cycle",
+          "values": [
+            0,
+            1
+          ],
+          "labels": [
+            "Off",
+            "On"
+          ],
+          "default": 1,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
         }
       ]
     },
@@ -376,8 +809,32 @@
           "label": "Toggle Fast Forward",
           "description": "Button to toggle fast forward on/off",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -385,8 +842,32 @@
           "label": "Hold Fast Forward",
           "description": "Button to fast forward while held",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -394,8 +875,32 @@
           "label": "Reset Game",
           "description": "Button to reset the emulated console",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -403,8 +908,32 @@
           "label": "Quick Save",
           "description": "Button to save state to current slot",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -412,8 +941,32 @@
           "label": "Quick Load",
           "description": "Button to load state from current slot",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -421,8 +974,32 @@
           "label": "Screenshot",
           "description": "Button to capture a screenshot",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -430,8 +1007,32 @@
           "label": "Game Switcher",
           "description": "Button to save and switch to another game",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -439,8 +1040,32 @@
           "label": "Toggle Turbo A",
           "description": "Toggle rapid-fire for A button",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -448,8 +1073,32 @@
           "label": "Toggle Turbo B",
           "description": "Toggle rapid-fire for B button",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -457,8 +1106,32 @@
           "label": "Toggle Turbo X",
           "description": "Toggle rapid-fire for X button",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -466,8 +1139,32 @@
           "label": "Toggle Turbo Y",
           "description": "Toggle rapid-fire for Y button",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -475,8 +1172,32 @@
           "label": "Toggle Turbo L",
           "description": "Toggle rapid-fire for L1 button",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -484,8 +1205,32 @@
           "label": "Toggle Turbo L2",
           "description": "Toggle rapid-fire for L2 button",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -493,8 +1238,32 @@
           "label": "Toggle Turbo R",
           "description": "Toggle rapid-fire for R1 button",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -502,8 +1271,32 @@
           "label": "Toggle Turbo R2",
           "description": "Toggle rapid-fire for R2 button",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -511,8 +1304,32 @@
           "label": "Cycle Aspect Ratio",
           "description": "Button to cycle through aspect ratio modes",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -520,8 +1337,32 @@
           "label": "Toggle Rewind",
           "description": "Button to toggle rewind on/off",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         },
         {
@@ -529,8 +1370,32 @@
           "label": "Hold Rewind",
           "description": "Button to rewind while held",
           "type": "cycle",
-          "values": [-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10],
-          "labels": ["None", "B", "A", "Y", "X", "L1", "R1", "Select", "Start", "L3/F1", "R3/F2"],
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
           "default": -1
         }
       ]
@@ -543,32 +1408,162 @@
           "label": "Filter Mode",
           "description": "Native texture filter mode",
           "type": "cycle",
-          "values": [0, 1, 2, 3, 4, 5, 6],
-          "labels": ["None", "Smooth 1", "Smooth 2", "Smooth 3", "Smooth 4", "Sharp 1", "Sharp 2"],
-          "default": 0
+          "values": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "labels": [
+            "None",
+            "Smooth 1",
+            "Smooth 2",
+            "Smooth 3",
+            "Smooth 4",
+            "Sharp 1",
+            "Sharp 2"
+          ],
+          "default": 0,
+          "plugin": "gliden64"
         },
         {
           "key": "txEnhancementMode",
           "label": "Enhancement Mode",
           "description": "Texture enhancement algorithm",
           "type": "cycle",
-          "values": [0, 1, 2, 3, 4, 5, 6, 7],
-          "labels": ["None", "2xSaI", "HQ2x", "HQ2xS", "LQ2x", "LQ2xS", "HQ4x", "2xBRZ"],
-          "default": 0
+          "values": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "labels": [
+            "None",
+            "2xSaI",
+            "HQ2x",
+            "HQ2xS",
+            "LQ2x",
+            "LQ2xS",
+            "HQ4x",
+            "2xBRZ"
+          ],
+          "default": 0,
+          "plugin": "gliden64"
         },
         {
           "key": "txDeposterize",
           "label": "Deposterize",
           "description": "Reduce posterization in enhanced textures",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
         },
         {
           "key": "txFilterIgnoreBG",
           "label": "Ignore BG Textures",
           "description": "Skip enhancement for background textures",
           "type": "bool",
-          "default": false
+          "default": false,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "TextureEnhancement",
+          "label": "Texture Enhancement",
+          "description": "Primary texture enhancement filter",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "labels": [
+            "None",
+            "2X",
+            "2xSaI",
+            "HQ2X",
+            "LQ2X",
+            "HQ4X",
+            "Sharpen",
+            "Sharpen More",
+            "External",
+            "Mirrored"
+          ],
+          "default": 0,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "ForceTextureFilter",
+          "label": "Force Texture Filter",
+          "description": "Force texture filtering behavior",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "Auto",
+            "Off",
+            "On"
+          ],
+          "default": 0,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "Mipmapping",
+          "label": "Mipmapping",
+          "description": "Mipmap filtering quality",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Off",
+            "Nearest",
+            "Bilinear",
+            "Trilinear"
+          ],
+          "default": 2,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
+          "key": "TextureQuality",
+          "label": "Texture Quality",
+          "description": "Color bit depth for textures",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "Default",
+            "32-bit",
+            "16-bit"
+          ],
+          "default": 0,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
         }
       ]
     }

@@ -113,6 +113,10 @@ static void parse_item(const cJSON* json_item, EmuOvlItem* item) {
 	s = json_get_string(json_item, "description");
 	safe_strcpy(item->description, sizeof(item->description), s);
 
+	// optional per-item INI section override (otherwise inherits section's)
+	s = json_get_string(json_item, "ini_section");
+	safe_strcpy(item->ini_section, sizeof(item->ini_section), s);
+
 	// type
 	const char* type_str = json_get_string(json_item, "type");
 	if (type_str) {
@@ -175,7 +179,15 @@ static void parse_item(const cJSON* json_item, EmuOvlItem* item) {
 	item->dirty = false;
 }
 
-static void parse_section(const cJSON* json_sec, EmuOvlSection* sec) {
+// Returns true if an item/section tagged `plugin` should be visible for `active_plugin`.
+// Untagged items (plugin == NULL) are always visible.
+static bool plugin_visible(const char* plugin, const char* active_plugin) {
+	if (!plugin || plugin[0] == '\0')
+		return true;
+	return strcmp(plugin, active_plugin) == 0;
+}
+
+static void parse_section(const cJSON* json_sec, EmuOvlSection* sec, const char* active_plugin) {
 	memset(sec, 0, sizeof(*sec));
 
 	const char* name = json_get_string(json_sec, "name");
@@ -196,6 +208,9 @@ static void parse_section(const cJSON* json_sec, EmuOvlSection* sec) {
 	for (int i = 0; i < count; i++) {
 		const cJSON* json_item = cJSON_GetArrayItem(items_arr, i);
 		if (!json_item)
+			continue;
+		const char* item_plugin = json_get_string(json_item, "plugin");
+		if (!plugin_visible(item_plugin, active_plugin))
 			continue;
 		parse_item(json_item, &sec->items[sec->item_count]);
 		sec->item_count++;
@@ -238,6 +253,12 @@ int emu_ovl_cfg_load(EmuOvlConfig* cfg, const char* json_path) {
 	cfg->save_state = json_get_bool(root, "save_state", false);
 	cfg->load_state = json_get_bool(root, "load_state", false);
 
+	// Determine active video plugin for filtering. Defaults to "gliden64" if
+	// the env var is unset, preserving behavior for users pre-Rice.
+	const char* active_plugin = getenv("EMU_VIDEO_PLUGIN");
+	if (!active_plugin || active_plugin[0] == '\0')
+		active_plugin = "gliden64";
+
 	cfg->section_count = 0;
 	const cJSON* sections_arr = cJSON_GetObjectItemCaseSensitive(root, "sections");
 	if (cJSON_IsArray(sections_arr)) {
@@ -249,7 +270,14 @@ int emu_ovl_cfg_load(EmuOvlConfig* cfg, const char* json_path) {
 			const cJSON* json_sec = cJSON_GetArrayItem(sections_arr, i);
 			if (!json_sec)
 				continue;
-			parse_section(json_sec, &cfg->sections[cfg->section_count]);
+			// Section-level plugin tag (skip whole section if not applicable)
+			const char* sec_plugin = json_get_string(json_sec, "plugin");
+			if (!plugin_visible(sec_plugin, active_plugin))
+				continue;
+			parse_section(json_sec, &cfg->sections[cfg->section_count], active_plugin);
+			// Drop sections that ended up empty after per-item filtering
+			if (cfg->sections[cfg->section_count].item_count == 0)
+				continue;
 			cfg->section_count++;
 		}
 	}
@@ -314,9 +342,13 @@ static int parse_ini_int(const char* val) {
 	return atoi(val);
 }
 
-// Get the effective INI section name for a config section.
-// Uses per-section ini_section if set, otherwise falls back to global config_section.
-static const char* get_ini_section(const EmuOvlConfig* cfg, const EmuOvlSection* sec) {
+// Get the effective INI section name for a given item.
+// Precedence: item-level override → section-level override → global config_section.
+static const char* get_ini_section_for_item(const EmuOvlConfig* cfg,
+                                             const EmuOvlSection* sec,
+                                             const EmuOvlItem* item) {
+	if (item && item->ini_section[0] != '\0')
+		return item->ini_section;
 	if (sec->ini_section[0] != '\0')
 		return sec->ini_section;
 	return cfg->config_section;
@@ -367,15 +399,14 @@ int emu_ovl_cfg_read_ini(EmuOvlConfig* cfg, const char* ini_path) {
 		char* ini_key = strip(trimmed);
 		char* ini_val = strip(eq + 1);
 
-		// Match against items whose INI section matches the current section
+		// Match against items whose effective INI section matches the current section
 		for (int s = 0; s < cfg->section_count; s++) {
 			EmuOvlSection* sec = &cfg->sections[s];
-			const char* target_sec = get_ini_section(cfg, sec);
-			if (strcmp(target_sec, current_ini_section) != 0)
-				continue;
-
 			for (int i = 0; i < sec->item_count; i++) {
 				EmuOvlItem* item = &sec->items[i];
+				const char* target_sec = get_ini_section_for_item(cfg, sec, item);
+				if (strcmp(target_sec, current_ini_section) != 0)
+					continue;
 				if (strcmp(item->key, ini_key) != 0)
 					continue;
 
@@ -452,11 +483,10 @@ int emu_ovl_cfg_write_ini(EmuOvlConfig* cfg, const char* ini_path) {
 	int dirty_count = 0;
 	for (int s = 0; s < cfg->section_count; s++) {
 		EmuOvlSection* sec = &cfg->sections[s];
-		const char* target = get_ini_section(cfg, sec);
 		for (int i = 0; i < sec->item_count; i++) {
 			if (sec->items[i].dirty) {
 				dirty[dirty_count].item = &sec->items[i];
-				dirty[dirty_count].ini_section = target;
+				dirty[dirty_count].ini_section = get_ini_section_for_item(cfg, sec, &sec->items[i]);
 				dirty[dirty_count].written = false;
 				dirty_count++;
 			}
@@ -590,6 +620,21 @@ int emu_ovl_cfg_write_ini(EmuOvlConfig* cfg, const char* ini_path) {
 		for (int d = 0; d < dirty_count; d++) {
 			if (!dirty[d].written && strcmp(dirty[d].ini_section, current_ini_section) == 0)
 				write_item_value(out, dirty[d].item);
+		}
+	}
+
+	// Any still-unwritten items target sections that don't exist in the file yet.
+	// Create each missing section and append its items.
+	for (int d = 0; d < dirty_count; d++) {
+		if (dirty[d].written)
+			continue;
+		const char* new_sec = dirty[d].ini_section;
+		fprintf(out, "\n[%s]\n", new_sec);
+		for (int d2 = d; d2 < dirty_count; d2++) {
+			if (!dirty[d2].written && strcmp(dirty[d2].ini_section, new_sec) == 0) {
+				write_item_value(out, dirty[d2].item);
+				dirty[d2].written = true;
+			}
 		}
 	}
 
