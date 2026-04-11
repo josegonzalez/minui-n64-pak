@@ -14,8 +14,7 @@ typedef enum {
 	EMU_OVL_STATE_SECTION_ITEMS,
 	EMU_OVL_STATE_SAVE_SELECT,
 	EMU_OVL_STATE_LOAD_SELECT,
-	EMU_OVL_STATE_CHEATS,
-	EMU_OVL_STATE_CHEAT_DESC
+	EMU_OVL_STATE_CHEATS
 } EmuOvlState;
 
 typedef enum {
@@ -94,10 +93,8 @@ typedef struct {
 	char rom_file[256];				   // e.g. "Super Mario 64.z64"
 	int slot_icons[EMU_OVL_MAX_SLOTS]; // icon_id per slot, -1 = none
 
-	// Cheats menu
+	// Cheats menu (shares `selected`/`scroll_offset` with regular settings items)
 	EmuOvlCheatCallbacks cheat_cb;
-	int cheat_cursor;
-	int cheat_scroll;
 } EmuOvl;
 
 int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,

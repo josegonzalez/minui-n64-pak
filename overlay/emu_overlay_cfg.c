@@ -255,6 +255,38 @@ int emu_ovl_cfg_load(EmuOvlConfig* cfg, const char* json_path) {
 	}
 
 	cJSON_Delete(root);
+
+	// Sort sections alphabetically by name
+	if (cfg->section_count > 1) {
+		for (int i = 1; i < cfg->section_count; i++) {
+			EmuOvlSection key = cfg->sections[i];
+			int j = i - 1;
+			while (j >= 0 && strcmp(cfg->sections[j].name, key.name) > 0) {
+				cfg->sections[j + 1] = cfg->sections[j];
+				j--;
+			}
+			cfg->sections[j + 1] = key;
+		}
+	}
+
+	// Insert synthetic "Cheats" section in alphabetical position (item_count=0
+	// marks it as a synthetic entry; overlay code detects it by name).
+	if (cfg->section_count < EMU_OVL_MAX_SECTIONS) {
+		int pos = cfg->section_count;
+		for (int i = 0; i < cfg->section_count; i++) {
+			if (strcmp("Cheats", cfg->sections[i].name) < 0) {
+				pos = i;
+				break;
+			}
+		}
+		for (int i = cfg->section_count; i > pos; i--)
+			cfg->sections[i] = cfg->sections[i - 1];
+		memset(&cfg->sections[pos], 0, sizeof(EmuOvlSection));
+		safe_strcpy(cfg->sections[pos].name, sizeof(cfg->sections[pos].name), "Cheats");
+		cfg->sections[pos].item_count = 0;
+		cfg->section_count++;
+	}
+
 	return 0;
 }
 

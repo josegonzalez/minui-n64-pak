@@ -384,6 +384,29 @@ typedef struct {
 static CheatEntry s_cheats[MAX_CHEATS];
 static int s_cheatCount = 0;
 
+// Expand any `\` character in src into ` - ` when writing into dst (clamped to dst_size).
+// mupencheat.txt uses `\` as a hierarchy separator (e.g. "No Damage\Player 1").
+static void expand_backslashes(char* dst, size_t dst_size, const char* src) {
+	if (dst_size == 0) return;
+	size_t di = 0;
+	for (size_t si = 0; src[si] != '\0' && di + 1 < dst_size; si++) {
+		if (src[si] == '\\') {
+			const char* sep = " - ";
+			for (int k = 0; sep[k] != '\0' && di + 1 < dst_size; k++)
+				dst[di++] = sep[k];
+		} else {
+			dst[di++] = src[si];
+		}
+	}
+	dst[di] = '\0';
+}
+
+static int cheat_compare(const void* a, const void* b) {
+	const CheatEntry* ea = (const CheatEntry*)a;
+	const CheatEntry* eb = (const CheatEntry*)b;
+	return strcmp(ea->name, eb->name);
+}
+
 void emu_frontend_load_cheats(void) {
 	if (!s_coreAPI.core_cmd) return;
 
@@ -496,6 +519,27 @@ void emu_frontend_load_cheats(void) {
 		}
 	}
 	fclose(f);
+
+	// Replace `\` hierarchy separators with ` - ` for all user-visible strings
+	char buf[512];
+	for (int i = 0; i < s_cheatCount; i++) {
+		expand_backslashes(buf, sizeof(buf), s_cheats[i].name);
+		strncpy(s_cheats[i].name, buf, sizeof(s_cheats[i].name) - 1);
+		s_cheats[i].name[sizeof(s_cheats[i].name) - 1] = '\0';
+
+		expand_backslashes(buf, sizeof(buf), s_cheats[i].description);
+		strncpy(s_cheats[i].description, buf, sizeof(s_cheats[i].description) - 1);
+		s_cheats[i].description[sizeof(s_cheats[i].description) - 1] = '\0';
+
+		for (int v = 0; v < s_cheats[i].variant_count; v++) {
+			expand_backslashes(buf, sizeof(buf), s_cheats[i].variants[v].label);
+			strncpy(s_cheats[i].variants[v].label, buf, sizeof(s_cheats[i].variants[v].label) - 1);
+			s_cheats[i].variants[v].label[sizeof(s_cheats[i].variants[v].label) - 1] = '\0';
+		}
+	}
+
+	// Sort alphabetically by name so hierarchical cheats cluster together
+	qsort(s_cheats, s_cheatCount, sizeof(CheatEntry), cheat_compare);
 }
 
 // Cheat overlay callbacks
