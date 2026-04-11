@@ -179,6 +179,148 @@ static void apply_audio_quality_if_dirty(EmuOvlConfig* cfg) {
 }
 
 // ---------------------------------------------------------------------------
+// Input mode (d-pad vs joystick) — persisted to a per-ROM file written to
+// $EMU_INPUT_MODE_FILE. The input-sdl plugin polls this file each frame and
+// applies the d-pad → joystick remap when the value is "dpad". The default
+// for a fresh ROM is chosen here by matching the core's GoodName (from the
+// mupen64plus.ini ROM database) against the list below.
+// ---------------------------------------------------------------------------
+
+// Games that default to d-pad input on first run. Matched as a case-insensitive
+// substring against the GoodName resolved by mupen64plus-core's ROM database
+// (src/mupen64plus-core/data/mupen64plus.ini). Substrings chosen to catch all
+// regional/revision variants ((U)/(E)/(J) and [!], [b1], [t1], etc.) while
+// staying distinctive enough to avoid false positives.
+static const char* const INPUT_DPAD_DEFAULT_GAMES[] = {
+	"Kirby 64 - The Crystal Shards",
+	"Hoshi no Kirby 64",
+	"Mischief Makers",
+	"Tetris 64",
+	"Tetrisphere",
+	"Ms. Pac-Man - Maze Madness",
+	"Mortal Kombat 4",
+	"Mortal Kombat Trilogy",
+	"Killer Instinct Gold",
+	"Pokemon Puzzle League",
+	"WWF No Mercy",
+	"Clay Fighter 63 1-3",
+	"Clay Fighter - Sculptor's Cut",
+	"WWF - War Zone",
+};
+
+static bool strcasestr_match(const char* hay, const char* needle) {
+	if (!hay || !needle) return false;
+	size_t nlen = strlen(needle);
+	for (; *hay; hay++) {
+		if (strncasecmp(hay, needle, nlen) == 0)
+			return true;
+	}
+	return false;
+}
+
+// Returns 1 if the current ROM's GoodName matches the d-pad default list.
+// Retrieves the GoodName via M64CMD_ROM_GET_SETTINGS, which queries the
+// mupen64plus-core ROM database by CRC/MD5 (see core/src/main/rom.c).
+static int dpad_default_for_current_rom(void) {
+	if (!s_coreAPI.core_cmd) return 0;
+	m64p_rom_settings settings;
+	memset(&settings, 0, sizeof(settings));
+	if (s_coreAPI.core_cmd(M64CMD_ROM_GET_SETTINGS, sizeof(settings), &settings) != 0)
+		return 0;
+	for (size_t i = 0; i < sizeof(INPUT_DPAD_DEFAULT_GAMES) / sizeof(INPUT_DPAD_DEFAULT_GAMES[0]); i++) {
+		if (strcasestr_match(settings.goodname, INPUT_DPAD_DEFAULT_GAMES[i]))
+			return 1;
+	}
+	return 0;
+}
+
+// Read the per-game input_mode file; returns 1 for dpad, 0 for joystick.
+// Returns -1 if the file does not exist.
+static int read_input_mode_file(void) {
+	const char* path = getenv("EMU_INPUT_MODE_FILE");
+	if (!path || path[0] == '\0') return -1;
+	FILE* f = fopen(path, "r");
+	if (!f) return -1;
+	char line[128];
+	int value = 0;
+	while (fgets(line, sizeof(line), f)) {
+		if (strncmp(line, "input_mode=", 11) == 0) {
+			value = (strncmp(line + 11, "dpad", 4) == 0) ? 1 : 0;
+			break;
+		}
+	}
+	fclose(f);
+	return value;
+}
+
+// Write the per-game input_mode file. input-sdl picks up the change via
+// stat() mtime polling in GetKeys.
+static void write_input_mode_file(int value) {
+	const char* path = getenv("EMU_INPUT_MODE_FILE");
+	if (!path || path[0] == '\0') return;
+	FILE* f = fopen(path, "w");
+	if (!f) return;
+	fprintf(f, "input_mode=%s\n", value ? "dpad" : "joystick");
+	fclose(f);
+}
+
+// Find the input_mode item in the config (returns NULL if not present).
+static EmuOvlItem* find_input_mode_item(EmuOvlConfig* cfg) {
+	for (int s = 0; s < cfg->section_count; s++)
+		for (int i = 0; i < cfg->sections[s].item_count; i++)
+			if (strcmp(cfg->sections[s].items[i].key, "input_mode") == 0)
+				return &cfg->sections[s].items[i];
+	return NULL;
+}
+
+// Load the per-game input mode into the overlay item (called after the
+// config is parsed from JSON, since per-game items are skipped by the INI
+// reader). If the per-game file does not yet exist, pick a default based on
+// the ROM's GoodName and write it.
+static void load_input_mode_from_file(EmuOvlConfig* cfg) {
+	EmuOvlItem* item = find_input_mode_item(cfg);
+	if (!item) return;
+	int v = read_input_mode_file();
+	if (v < 0) {
+		v = dpad_default_for_current_rom();
+		write_input_mode_file(v);
+	}
+	item->current_value = v;
+	item->staged_value = v;
+	item->dirty = false;
+}
+
+// If the input_mode item is dirty (user changed it in the overlay menu),
+// persist the new value to the per-game file.
+static void apply_input_mode_if_dirty(EmuOvlConfig* cfg) {
+	EmuOvlItem* item = find_input_mode_item(cfg);
+	if (!item || !item->dirty) return;
+	write_input_mode_file(item->staged_value);
+	item->current_value = item->staged_value;
+	item->dirty = false;
+}
+
+// Shortcut: toggle input mode and persist to the per-game file. Also updates
+// the overlay item's current_value so the menu reflects the new state.
+static void process_input_mode_shortcut(void) {
+	int btn = emu_frontend_get_shortcut("shortcut_toggle_input_mode");
+	if (!emu_frontend_btn_just_pressed(btn))
+		return;
+	int cur = read_input_mode_file();
+	if (cur < 0) cur = 0;
+	int new_value = cur ? 0 : 1;
+	write_input_mode_file(new_value);
+	if (s_overlayConfigLoaded) {
+		EmuOvlItem* item = find_input_mode_item(&s_overlayConfig);
+		if (item) {
+			item->current_value = new_value;
+			item->staged_value = new_value;
+			item->dirty = false;
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Turbo buttons (via platform trimui_inputd daemon)
 // ---------------------------------------------------------------------------
 
@@ -925,6 +1067,10 @@ static void overlay_ensure_init(int w, int h) {
 
 		// Load cheats from mupencheat.txt for the current ROM
 		load_cheats();
+
+		// Load the per-game input mode into the overlay config (this item is
+		// flagged per_game so the INI reader skipped it).
+		load_input_mode_from_file(&s_overlayConfig);
 	}
 
 	// Try GL init on the video thread (retries each frame until GL context is available)
@@ -1069,6 +1215,7 @@ static EmuOvlAction run_overlay_loop(void) {
 		// Apply runtime settings before clearing dirty flags
 		apply_cpu_mode_if_dirty(&s_overlayConfig);
 		apply_frame_skip_if_dirty(&s_overlayConfig);
+		apply_input_mode_if_dirty(&s_overlayConfig);
 		if (s_overlayIniPath[0] != '\0') {
 			emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
 		}
@@ -1144,6 +1291,7 @@ void emu_frontend_frame(int w, int h) {
 		process_state_shortcuts();
 		process_rewind();
 		process_turbo_and_aspect_shortcuts();
+		process_input_mode_shortcut();
 	}
 
 	// Overlay menu: ensure loaded, then handle menu button press

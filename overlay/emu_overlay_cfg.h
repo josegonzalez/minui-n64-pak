@@ -29,6 +29,7 @@ typedef struct {
 	int current_value;
 	int staged_value;
 	bool dirty;
+	bool per_game; // if true, value is persisted to a per-game file by emu_frontend, not mupen64plus.cfg
 } EmuOvlItem;
 
 typedef struct {

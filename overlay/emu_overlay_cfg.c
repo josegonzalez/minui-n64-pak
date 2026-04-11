@@ -117,6 +117,9 @@ static void parse_item(const cJSON* json_item, EmuOvlItem* item) {
 	s = json_get_string(json_item, "ini_section");
 	safe_strcpy(item->ini_section, sizeof(item->ini_section), s);
 
+	// if true, emu_frontend owns persistence (per-ROM file); skip INI read/write
+	item->per_game = json_get_bool(json_item, "per_game", false);
+
 	// type
 	const char* type_str = json_get_string(json_item, "type");
 	if (type_str) {
@@ -404,6 +407,8 @@ int emu_ovl_cfg_read_ini(EmuOvlConfig* cfg, const char* ini_path) {
 			EmuOvlSection* sec = &cfg->sections[s];
 			for (int i = 0; i < sec->item_count; i++) {
 				EmuOvlItem* item = &sec->items[i];
+				if (item->per_game)
+					continue; // persistence handled by emu_frontend
 				const char* target_sec = get_ini_section_for_item(cfg, sec, item);
 				if (strcmp(target_sec, current_ini_section) != 0)
 					continue;
@@ -478,13 +483,14 @@ int emu_ovl_cfg_write_ini(EmuOvlConfig* cfg, const char* ini_path) {
 		return -1;
 	}
 
-	// Build a flat list of dirty items with their target INI sections
+	// Build a flat list of dirty items with their target INI sections.
+	// Items flagged per_game are handled by emu_frontend and excluded here.
 	DirtyEntry dirty[EMU_OVL_MAX_SECTIONS * EMU_OVL_MAX_ITEMS];
 	int dirty_count = 0;
 	for (int s = 0; s < cfg->section_count; s++) {
 		EmuOvlSection* sec = &cfg->sections[s];
 		for (int i = 0; i < sec->item_count; i++) {
-			if (sec->items[i].dirty) {
+			if (sec->items[i].dirty && !sec->items[i].per_game) {
 				dirty[dirty_count].item = &sec->items[i];
 				dirty[dirty_count].ini_section = get_ini_section_for_item(cfg, sec, &sec->items[i]);
 				dirty[dirty_count].written = false;

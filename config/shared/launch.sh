@@ -172,6 +172,14 @@ mkdir -p "$MINUI_DIR"
 export EMU_OVERLAY_SCREENSHOT_DIR="$MINUI_DIR"
 export EMU_OVERLAY_ROMFILE="$(basename "$ROM")"
 
+# ── Per-game input mode (d-pad vs joystick) ──────────────────────────────────
+# The file path is computed here; emu_frontend seeds the default on first run
+# using the GoodName resolved from mupen64plus-core's ROM database (keyed by
+# CRC/MD5), and subsequent runs respect whatever value is already in the file.
+PER_GAME_DIR="$DEVICE_CONFIG_DIR/per-game"
+mkdir -p "$PER_GAME_DIR"
+export EMU_INPUT_MODE_FILE="$PER_GAME_DIR/$(basename "$ROM").cfg"
+
 # ── Launch ────────────────────────────────────────────────────────────────────
 # Mute speaker before launch to prevent audio pop, then unmute after init
 echo 1 > /sys/class/speaker/mute 2>/dev/null || true

@@ -71,6 +71,27 @@
       ]
     },
     {
+      "name": "Input",
+      "items": [
+        {
+          "key": "input_mode",
+          "label": "Input Mode",
+          "description": "Route the physical d-pad through the N64 analog stick",
+          "type": "cycle",
+          "values": [
+            0,
+            1
+          ],
+          "labels": [
+            "Joystick",
+            "D-Pad"
+          ],
+          "default": 0,
+          "per_game": true
+        }
+      ]
+    },
+    {
       "name": "Debug",
       "items": [
         {
@@ -1369,6 +1390,39 @@
           "key": "shortcut_hold_rewind",
           "label": "Hold Rewind",
           "description": "Button to rewind while held",
+          "type": "cycle",
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            9,
+            10
+          ],
+          "labels": [
+            "None",
+            "B",
+            "A",
+            "Y",
+            "X",
+            "L1",
+            "R1",
+            "Select",
+            "Start",
+            "L3/F1",
+            "R3/F2"
+          ],
+          "default": -1
+        },
+        {
+          "key": "shortcut_toggle_input_mode",
+          "label": "Toggle Input Mode",
+          "description": "Button to switch between joystick and d-pad",
           "type": "cycle",
           "values": [
             -1,
