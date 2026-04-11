@@ -360,6 +360,209 @@ static void process_rewind(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Cheat system (parses mupencheat.txt, registers cheats with the core)
+// ---------------------------------------------------------------------------
+
+#define MAX_CHEATS 64
+#define MAX_CHEAT_CODES_PER 32
+#define MAX_CHEAT_VARIANTS 16
+
+typedef struct { uint32_t address; int value; } CheatCode;
+typedef struct { int value; char label[64]; } CheatVariant;
+typedef struct {
+	char name[128];
+	char description[256];
+	CheatCode codes[MAX_CHEAT_CODES_PER];
+	int num_codes;
+	bool enabled;
+	int variable_code_index;
+	CheatVariant variants[MAX_CHEAT_VARIANTS];
+	int variant_count;
+	int selected_variant;
+} CheatEntry;
+
+static CheatEntry s_cheats[MAX_CHEATS];
+static int s_cheatCount = 0;
+
+void emu_frontend_load_cheats(void) {
+	if (!s_coreAPI.core_cmd) return;
+
+	m64p_rom_header header;
+	memset(&header, 0, sizeof(header));
+	if (s_coreAPI.core_cmd(M64CMD_ROM_GET_HEADER, sizeof(header), &header) != M64ERR_SUCCESS)
+		return;
+
+	char romCrc[32];
+	uint32_t crc1 = __builtin_bswap32(header.CRC1);
+	uint32_t crc2 = __builtin_bswap32(header.CRC2);
+	snprintf(romCrc, sizeof(romCrc), "%08X-%08X-C:%X", crc1, crc2, header.Country_code & 0xff);
+
+	const char* jsonPath = getenv("EMU_OVERLAY_JSON");
+	if (!jsonPath) return;
+	char cheatPath[512];
+	snprintf(cheatPath, sizeof(cheatPath), "%s", jsonPath);
+	char* lastSlash = strrchr(cheatPath, '/');
+	if (lastSlash) *lastSlash = '\0';
+	strncat(cheatPath, "/mupencheat.txt", sizeof(cheatPath) - strlen(cheatPath) - 1);
+
+	FILE* f = fopen(cheatPath, "r");
+	if (!f) return;
+
+	char line[1024];
+	bool romFound = false;
+	int curCheat = -1;
+	s_cheatCount = 0;
+
+	while (fgets(line, sizeof(line), f) && s_cheatCount < MAX_CHEATS) {
+		int len = strlen(line);
+		while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' '))
+			line[--len] = '\0';
+		char* p = line;
+		while (*p == ' ' || *p == '\t') p++;
+		if (*p == '\0' || *p == '#' || (p[0] == '/' && p[1] == '/'))
+			continue;
+
+		if (strncmp(p, "crc ", 4) == 0) {
+			if (romFound) break;
+			if (strcmp(p + 4, romCrc) == 0) romFound = true;
+			continue;
+		}
+		if (!romFound) continue;
+		if (strncmp(p, "gn ", 3) == 0) continue;
+
+		if (strncmp(p, "cd ", 3) == 0) {
+			if (curCheat >= 0) {
+				strncpy(s_cheats[curCheat].description, p + 3, 255);
+				s_cheats[curCheat].description[255] = '\0';
+			}
+			continue;
+		}
+
+		if (strncmp(p, "cn ", 3) == 0) {
+			curCheat = s_cheatCount++;
+			strncpy(s_cheats[curCheat].name, p + 3, 127);
+			s_cheats[curCheat].name[127] = '\0';
+			s_cheats[curCheat].description[0] = '\0';
+			s_cheats[curCheat].num_codes = 0;
+			s_cheats[curCheat].enabled = false;
+			s_cheats[curCheat].variable_code_index = -1;
+			s_cheats[curCheat].variant_count = 0;
+			s_cheats[curCheat].selected_variant = 0;
+			continue;
+		}
+
+		if (curCheat >= 0 && s_cheats[curCheat].num_codes < MAX_CHEAT_CODES_PER) {
+			uint32_t addr;
+			if (sscanf(p, "%8X", &addr) == 1) {
+				int ci = s_cheats[curCheat].num_codes;
+				s_cheats[curCheat].codes[ci].address = addr;
+				if (strlen(p) > 13 && strncmp(p + 9, "????", 4) == 0) {
+					s_cheats[curCheat].variable_code_index = ci;
+					s_cheats[curCheat].variant_count = 0;
+					s_cheats[curCheat].selected_variant = 0;
+					char* vp = p + 14;
+					while (*vp == ' ') vp++;
+					while (*vp && s_cheats[curCheat].variant_count < MAX_CHEAT_VARIANTS) {
+						unsigned int vval;
+						if (sscanf(vp, "%4X", &vval) != 1) break;
+						vp += 4;
+						int vi = s_cheats[curCheat].variant_count;
+						s_cheats[curCheat].variants[vi].value = (int)vval;
+						s_cheats[curCheat].variants[vi].label[0] = '\0';
+						if (*vp == ':' && *(vp+1) == '"') {
+							vp += 2;
+							char* end = strchr(vp, '"');
+							if (end) {
+								int vlen = end - vp;
+								if (vlen > 63) vlen = 63;
+								strncpy(s_cheats[curCheat].variants[vi].label, vp, vlen);
+								s_cheats[curCheat].variants[vi].label[vlen] = '\0';
+								vp = end + 1;
+							}
+						}
+						s_cheats[curCheat].variant_count++;
+						if (*vp == ',') vp++;
+						while (*vp == ' ') vp++;
+					}
+					s_cheats[curCheat].codes[ci].value =
+						s_cheats[curCheat].variant_count > 0 ? s_cheats[curCheat].variants[0].value : 0;
+				} else {
+					unsigned int val = 0;
+					sscanf(p + 9, "%4X", &val);
+					s_cheats[curCheat].codes[ci].value = (int)val;
+				}
+				s_cheats[curCheat].num_codes++;
+			}
+		}
+	}
+	fclose(f);
+}
+
+// Cheat overlay callbacks
+static const char* cheat_get_name(int idx) {
+	return (idx >= 0 && idx < s_cheatCount) ? s_cheats[idx].name : "";
+}
+static const char* cheat_get_description(int idx) {
+	return (idx >= 0 && idx < s_cheatCount) ? s_cheats[idx].description : "";
+}
+static const char* cheat_get_value_label(int idx) {
+	if (idx < 0 || idx >= s_cheatCount) return "OFF";
+	CheatEntry* c = &s_cheats[idx];
+	if (!c->enabled) return "OFF";
+	if (c->variant_count > 0 && c->selected_variant >= 0 && c->selected_variant < c->variant_count)
+		return c->variants[c->selected_variant].label;
+	return "ON";
+}
+static int cheat_get_count(void) { return s_cheatCount; }
+static bool cheat_is_enabled(int idx) {
+	return (idx >= 0 && idx < s_cheatCount) ? s_cheats[idx].enabled : false;
+}
+static void cheat_toggle(int idx) {
+	if (idx < 0 || idx >= s_cheatCount) return;
+	s_cheats[idx].enabled = !s_cheats[idx].enabled;
+	if (s_cheats[idx].enabled) {
+		if (s_coreAPI.add_cheat && s_coreAPI.cheat_enabled) {
+			m64p_cheat_code codes[MAX_CHEAT_CODES_PER];
+			for (int j = 0; j < s_cheats[idx].num_codes; j++) {
+				codes[j].address = s_cheats[idx].codes[j].address;
+				codes[j].value = s_cheats[idx].codes[j].value;
+			}
+			s_coreAPI.add_cheat(s_cheats[idx].name, codes, s_cheats[idx].num_codes);
+			s_coreAPI.cheat_enabled(s_cheats[idx].name, 1);
+		}
+	} else {
+		if (s_coreAPI.cheat_enabled)
+			s_coreAPI.cheat_enabled(s_cheats[idx].name, 0);
+	}
+}
+static void cheat_cycle_variant(int idx, int dir) {
+	if (idx < 0 || idx >= s_cheatCount) return;
+	CheatEntry* c = &s_cheats[idx];
+	if (c->variant_count <= 0) { cheat_toggle(idx); return; }
+	int pos = c->enabled ? c->selected_variant : -1;
+	pos += dir;
+	if (pos >= c->variant_count) pos = -1;
+	if (pos < -1) pos = c->variant_count - 1;
+	if (pos < 0) {
+		c->enabled = false;
+		if (s_coreAPI.cheat_enabled) s_coreAPI.cheat_enabled(c->name, 0);
+	} else {
+		c->selected_variant = pos;
+		c->codes[c->variable_code_index].value = c->variants[pos].value;
+		c->enabled = true;
+		if (s_coreAPI.add_cheat && s_coreAPI.cheat_enabled) {
+			m64p_cheat_code codes[MAX_CHEAT_CODES_PER];
+			for (int j = 0; j < c->num_codes; j++) {
+				codes[j].address = c->codes[j].address;
+				codes[j].value = c->codes[j].value;
+			}
+			s_coreAPI.add_cheat(c->name, codes, c->num_codes);
+			s_coreAPI.cheat_enabled(c->name, 1);
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Shortcut handlers for reset / save / load / screenshot / game switcher
 // ---------------------------------------------------------------------------
 
@@ -417,6 +620,17 @@ void emu_frontend_set_config(EmuOvlConfig* cfg) {
 void emu_frontend_set_overlay(EmuOvl* ovl, bool* initialized) {
 	s_ovl = ovl;
 	s_ovlInitialized = initialized;
+
+	// Wire cheat callbacks for the overlay's Cheats menu
+	if (ovl) {
+		ovl->cheat_cb.get_name = cheat_get_name;
+		ovl->cheat_cb.get_description = cheat_get_description;
+		ovl->cheat_cb.get_value_label = cheat_get_value_label;
+		ovl->cheat_cb.get_count = cheat_get_count;
+		ovl->cheat_cb.is_enabled = cheat_is_enabled;
+		ovl->cheat_cb.toggle = cheat_toggle;
+		ovl->cheat_cb.cycle_variant = cheat_cycle_variant;
+	}
 }
 
 int emu_frontend_get_current_slot(void) {

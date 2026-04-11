@@ -46,8 +46,12 @@ SDL_Joystick* emu_frontend_get_joystick(void);
 // Set overlay config pointer (called by plugin after loading config)
 void emu_frontend_set_config(EmuOvlConfig* cfg);
 
-// Set overlay reference for save-slot screenshots (called by plugin after overlay init)
+// Set overlay reference for save-slot screenshots + auto-wires cheat callbacks.
+// Called by plugin after overlay init.
 void emu_frontend_set_overlay(EmuOvl* ovl, bool* initialized);
+
+// Load cheats from mupencheat.txt for the current ROM (called after config load)
+void emu_frontend_load_cheats(void);
 
 // Current save/load slot (shared with DisplayWindow overlay menu action handler)
 int emu_frontend_get_current_slot(void);
