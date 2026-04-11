@@ -161,8 +161,8 @@ if [ ! -f "$SRAM_STAMP" ]; then
         if [ -d "$legacy_root" ]; then
             find "$legacy_root" -type f \
                 \( -name '*.sra' -o -name '*.eep' -o -name '*.fla' \
-                -o -name '*.mpk' -o -name '*.srm' \) \
-                -not -path "$BATTERY_SAVE_DIR/*" \
+                   -o -name '*.mpk' -o -name '*.srm' \) \
+                ! -path "$BATTERY_SAVE_DIR/*" \
                 -exec mv -n {} "$BATTERY_SAVE_DIR/" \; 2>/dev/null
         fi
     done
@@ -324,7 +324,7 @@ cd "$BIN_DIR"
     --audio mupen64plus-audio-sdl.so \
     --input mupen64plus-input-sdl.so \
     --rsp mupen64plus-rsp-hle.so \
-    "$ROM" &> "$LOGS_PATH/$EMU_TAG.mupen64plus.txt" &
+    "$ROM" > "$LOGS_PATH/$EMU_TAG.mupen64plus.txt" 2>&1 &
 EMU_PID=$!
 sleep 4
 
