@@ -1,4 +1,5 @@
 #include "emu_frontend.h"
+#include "m64p_types.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -77,8 +78,8 @@ static int check_power_button(void) {
 static void handle_sleep(void) {
 	// Auto-save state to slot 9 for NextUI game switcher resume
 	if (s_coreAPI.core_cmd) {
-		s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SET_SLOT, 9, NULL);
-		s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SAVE, 0, NULL);
+		s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, 9, NULL);
+		s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 0, NULL);
 	}
 	// Write auto_resume.txt with relative ROM path so game switcher can resume
 	const char* rom_path = getenv("EMU_ROM_PATH");
@@ -198,7 +199,7 @@ static void set_fast_forward(bool enable) {
 	s_fastForward = enable;
 	if (s_coreAPI.core_cmd) {
 		int speed = enable ? 400 : 100;
-		s_coreAPI.core_cmd(EMU_FE_CMD_CORE_STATE_SET, EMU_FE_CORE_SPEED_FACTOR, &speed);
+		s_coreAPI.core_cmd(M64CMD_CORE_STATE_SET, M64CORE_SPEED_FACTOR, &speed);
 	}
 }
 
@@ -230,7 +231,7 @@ static void request_stop(void) {
 		s_pluginOps.on_pre_stop();
 	emu_frontend_cleanup();
 	if (s_coreAPI.core_cmd)
-		s_coreAPI.core_cmd(EMU_FE_CMD_STOP, 0, NULL);
+		s_coreAPI.core_cmd(M64CMD_STOP, 0, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -239,8 +240,8 @@ static void request_stop(void) {
 
 static void trigger_game_switcher(void) {
 	if (s_coreAPI.core_cmd) {
-		s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SET_SLOT, s_currentSlot, NULL);
-		s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SAVE, 0, NULL);
+		s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, s_currentSlot, NULL);
+		s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 0, NULL);
 	}
 	if (s_ovl && s_ovlInitialized && *s_ovlInitialized)
 		emu_ovl_save_slot_screenshot(s_ovl, s_currentSlot);
@@ -309,7 +310,7 @@ static void rewind_capture(void) {
 
 	char path[64];
 	snprintf(path, sizeof(path), "/tmp/m64p_rewind/%03d.st", s_rewindHead);
-	s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SAVE, 1, (void*)path);
+	s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 1, (void*)path);
 	s_rewindHead = (s_rewindHead + 1) % s_rewindSlots;
 	if (s_rewindCount < s_rewindSlots) s_rewindCount++;
 }
@@ -321,7 +322,7 @@ static void rewind_step_back(void) {
 
 	char path[64];
 	snprintf(path, sizeof(path), "/tmp/m64p_rewind/%03d.st", s_rewindHead);
-	s_coreAPI.core_cmd(EMU_FE_CMD_STATE_LOAD, 0, (void*)path);
+	s_coreAPI.core_cmd(M64CMD_STATE_LOAD, 0, (void*)path);
 }
 
 static void process_rewind(void) {
@@ -366,14 +367,14 @@ static void process_state_shortcuts(void) {
 	int resetBtn = emu_frontend_get_shortcut("shortcut_reset");
 	if (emu_frontend_btn_just_pressed(resetBtn)) {
 		if (s_coreAPI.core_cmd)
-			s_coreAPI.core_cmd(EMU_FE_CMD_RESET, 0, NULL);
+			s_coreAPI.core_cmd(M64CMD_RESET, 0, NULL);
 	}
 
 	int saveBtn = emu_frontend_get_shortcut("shortcut_save_state");
 	if (emu_frontend_btn_just_pressed(saveBtn)) {
 		if (s_coreAPI.core_cmd) {
-			s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SET_SLOT, s_currentSlot, NULL);
-			s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SAVE, 0, NULL);
+			s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, s_currentSlot, NULL);
+			s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 0, NULL);
 		}
 		if (s_ovl && s_ovlInitialized && *s_ovlInitialized)
 			emu_ovl_save_slot_screenshot(s_ovl, s_currentSlot);
@@ -382,15 +383,15 @@ static void process_state_shortcuts(void) {
 	int loadBtn = emu_frontend_get_shortcut("shortcut_load_state");
 	if (emu_frontend_btn_just_pressed(loadBtn)) {
 		if (s_coreAPI.core_cmd) {
-			s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SET_SLOT, s_currentSlot, NULL);
-			s_coreAPI.core_cmd(EMU_FE_CMD_STATE_LOAD, 0, NULL);
+			s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, s_currentSlot, NULL);
+			s_coreAPI.core_cmd(M64CMD_STATE_LOAD, 0, NULL);
 		}
 	}
 
 	int screenshotBtn = emu_frontend_get_shortcut("shortcut_screenshot");
 	if (emu_frontend_btn_just_pressed(screenshotBtn)) {
 		if (s_coreAPI.core_cmd)
-			s_coreAPI.core_cmd(EMU_FE_CMD_TAKE_SCREENSHOT, 0, NULL);
+			s_coreAPI.core_cmd(M64CMD_TAKE_NEXT_SCREENSHOT, 0, NULL);
 	}
 
 	int gsBtn = emu_frontend_get_shortcut("shortcut_game_switcher");

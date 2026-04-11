@@ -7,19 +7,8 @@
 #include "emu_overlay_cfg.h"
 #include "emu_overlay_render.h"
 
-// mupen64plus command constants (stable API — avoids m64p_types.h dependency)
-#define EMU_FE_CMD_STOP              1
-#define EMU_FE_CMD_STATE_SAVE        5
-#define EMU_FE_CMD_STATE_LOAD        6
-#define EMU_FE_CMD_STATE_SET_SLOT   11
-#define EMU_FE_CMD_RESET             9
-#define EMU_FE_CMD_TAKE_SCREENSHOT  12
-#define EMU_FE_CMD_CORE_STATE_SET   13
-#define EMU_FE_CMD_ROM_GET_HEADER   14
-
-#define EMU_FE_CORE_SPEED_FACTOR     1
-
 // Generic function pointer types matching mupen64plus core API
+// (command constants live in emu_frontend.c via m64p_types.h)
 typedef int (*emu_fe_core_cmd_fn)(int cmd, int param1, void* param2);
 typedef int (*emu_fe_add_cheat_fn)(const char* name, void* codes, int count);
 typedef int (*emu_fe_cheat_enabled_fn)(const char* name, int enabled);
