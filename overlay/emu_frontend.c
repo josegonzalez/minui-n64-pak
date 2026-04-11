@@ -251,6 +251,114 @@ static void trigger_game_switcher(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Rewind (tmpfs ring buffer of save states)
+// ---------------------------------------------------------------------------
+
+#define REWIND_INTERVAL 30 // capture every 30 frames (~2/sec at 60fps)
+// Slot counts per buffer size setting: Off=0, Small=10, Medium=30, Large=60
+static const int REWIND_SLOT_COUNTS[] = {0, 10, 30, 60};
+
+static int s_rewindSlots = 0;      // max slots (0 = disabled)
+static int s_rewindHead = 0;       // next slot to write
+static int s_rewindCount = 0;      // number of valid slots in ring
+static int s_rewindFrame = 0;      // frame counter
+static bool s_rewinding = false;
+static bool s_rewindToggledOn = false;
+static bool s_rewindHoldActive = false;
+static bool s_rewindInitialized = false;
+
+static void rewind_init(void) {
+	if (s_rewindInitialized) return;
+	system("mkdir -p /tmp/m64p_rewind");
+	s_rewindInitialized = true;
+}
+
+static void rewind_cleanup(void) {
+	system("rm -rf /tmp/m64p_rewind");
+	s_rewindSlots = 0;
+	s_rewindHead = 0;
+	s_rewindCount = 0;
+	s_rewindFrame = 0;
+	s_rewinding = false;
+	s_rewindToggledOn = false;
+	s_rewindHoldActive = false;
+	s_rewindInitialized = false;
+}
+
+static void rewind_update_config(void) {
+	if (!s_config) return;
+	int bufSetting = 0;
+	for (int s = 0; s < s_config->section_count; s++)
+		for (int i = 0; i < s_config->sections[s].item_count; i++)
+			if (strcmp(s_config->sections[s].items[i].key, "rewind_buffer") == 0)
+				bufSetting = s_config->sections[s].items[i].current_value;
+	if (bufSetting < 0 || bufSetting > 3) bufSetting = 0;
+	int newSlots = REWIND_SLOT_COUNTS[bufSetting];
+	if (newSlots != s_rewindSlots) {
+		s_rewindSlots = newSlots;
+		s_rewindHead = 0;
+		s_rewindCount = 0;
+		if (newSlots > 0) rewind_init();
+	}
+}
+
+static void rewind_capture(void) {
+	if (s_rewindSlots <= 0 || s_rewinding || !s_coreAPI.core_cmd) return;
+	if (++s_rewindFrame < REWIND_INTERVAL) return;
+	s_rewindFrame = 0;
+
+	char path[64];
+	snprintf(path, sizeof(path), "/tmp/m64p_rewind/%03d.st", s_rewindHead);
+	s_coreAPI.core_cmd(EMU_FE_CMD_STATE_SAVE, 1, (void*)path);
+	s_rewindHead = (s_rewindHead + 1) % s_rewindSlots;
+	if (s_rewindCount < s_rewindSlots) s_rewindCount++;
+}
+
+static void rewind_step_back(void) {
+	if (s_rewindSlots <= 0 || s_rewindCount <= 0 || !s_coreAPI.core_cmd) return;
+	s_rewindHead = (s_rewindHead - 1 + s_rewindSlots) % s_rewindSlots;
+	s_rewindCount--;
+
+	char path[64];
+	snprintf(path, sizeof(path), "/tmp/m64p_rewind/%03d.st", s_rewindHead);
+	s_coreAPI.core_cmd(EMU_FE_CMD_STATE_LOAD, 0, (void*)path);
+}
+
+static void process_rewind(void) {
+	rewind_update_config();
+	int toggleBtn = emu_frontend_get_shortcut("shortcut_toggle_rewind");
+	int holdBtn = emu_frontend_get_shortcut("shortcut_hold_rewind");
+
+	if (emu_frontend_btn_just_pressed(toggleBtn)) {
+		s_rewindToggledOn = !s_rewindToggledOn;
+		s_rewinding = s_rewindToggledOn;
+		if (s_rewinding && s_fastForward) set_fast_forward(false);
+	}
+
+	if (holdBtn >= 0) {
+		if (emu_frontend_btn_is_held(holdBtn) && !s_rewindHoldActive) {
+			s_rewindHoldActive = true;
+			s_rewinding = true;
+			if (s_fastForward) set_fast_forward(false);
+		} else if (!emu_frontend_btn_is_held(holdBtn) && s_rewindHoldActive) {
+			s_rewindHoldActive = false;
+			s_rewinding = s_rewindToggledOn;
+			if (!s_rewinding && s_ffToggledOn) set_fast_forward(true);
+		}
+	}
+
+	// Restore FF when rewind not active
+	if (!s_rewinding && !s_rewindHoldActive && s_ffToggledOn && !s_fastForward)
+		set_fast_forward(true);
+
+	if (s_rewinding) {
+		rewind_step_back();
+	} else {
+		rewind_capture();
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Shortcut handlers for reset / save / load / screenshot / game switcher
 // ---------------------------------------------------------------------------
 
@@ -337,11 +445,13 @@ void emu_frontend_frame(void) {
 	if (s_config) {
 		process_fast_forward();
 		process_state_shortcuts();
+		process_rewind();
 	}
 }
 
 void emu_frontend_cleanup(void) {
-	// Placeholder: turbo + rewind cleanup will move here in later commits
+	rewind_cleanup();
+	// Turbo cleanup will move here in commit 5
 }
 
 SDL_Joystick* emu_frontend_get_joystick(void) {
