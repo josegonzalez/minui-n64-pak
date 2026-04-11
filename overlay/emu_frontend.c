@@ -1043,6 +1043,18 @@ static EmuOvlAction run_overlay_loop(void) {
 	// Menu loop: input polled here, update+render+swap dispatched to video thread
 	while (emu_ovl_is_active(&s_overlay)) {
 		EmuOvlInput input = poll_overlay_input();
+
+		// Power button: sleep on short press, poweroff on long press
+		int pwr = check_power_button();
+		if (pwr == 1) {
+			handle_sleep();
+		} else if (pwr == 2) {
+			system("touch /tmp/poweroff");
+			s_overlay.action = EMU_OVL_ACTION_QUIT;
+			s_overlay.state = EMU_OVL_STATE_CLOSED;
+			break;
+		}
+
 		s_pluginOps.exec_on_video_thread(overlay_frame_on_gl_thread, &input);
 		SDL_Delay(16);
 	}
