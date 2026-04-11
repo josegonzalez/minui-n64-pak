@@ -213,12 +213,17 @@ export EMU_OVERLAY_SCREENSHOT_DIR="$MINUI_DIR"
 export EMU_OVERLAY_ROMFILE="$(basename "$ROM")"
 
 # ── Per-game input mode (d-pad vs joystick) ──────────────────────────────────
-# The file path is computed here; emu_frontend seeds the default on first run
-# using the GoodName resolved from mupen64plus-core's ROM database (keyed by
-# CRC/MD5), and subsequent runs respect whatever value is already in the file.
-PER_GAME_DIR="$DEVICE_CONFIG_DIR/per-game"
-mkdir -p "$PER_GAME_DIR"
-export EMU_INPUT_MODE_FILE="$PER_GAME_DIR/$(basename "$ROM").cfg"
+# Brick-only. Smart Pro and Smart Pro S both have physical analog sticks
+# wired to SDL axes 0/1 via default.cfg, so there's nothing for the input
+# plugin to override — we leave $EMU_INPUT_MODE_FILE unset on those devices
+# and plugin.c's Brick gate skips the remap block entirely. emu_frontend's
+# input_mode helpers early-return when the env var is missing, so the
+# overlay menu's Input → Input Mode item is a visible no-op there.
+if [ "$DEVICE" = "brick" ]; then
+    PER_GAME_DIR="$DEVICE_CONFIG_DIR/per-game"
+    mkdir -p "$PER_GAME_DIR"
+    export EMU_INPUT_MODE_FILE="$PER_GAME_DIR/$(basename "$ROM").cfg"
+fi
 
 # ── Launch ────────────────────────────────────────────────────────────────────
 # Mute speaker before launch to prevent audio pop, then unmute after init

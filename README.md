@@ -123,14 +123,18 @@ dist/N64.pak/
 | C-Right | Right analog right | R2 + A (right) |
 | D-Pad | D-pad (hat) | D-pad (see Input Mode below) |
 
-### Per-game input mode
+On Smart Pro and Smart Pro S both the left analog stick *and* the d-pad work independently and simultaneously — the config maps SDL axis 0/1 to the N64 analog and SDL hat 0 to the N64 d-pad, and the Brick-specific remap below is gated on `$DEVICE=brick` so it never touches those devices.
+
+### Per-game input mode (Brick only)
 
 Because the Brick has no analog stick, the physical d-pad has to stand in for one of the two N64 directional inputs. The **Input Mode** setting decides which:
 
 - **Joystick** (default for most games) — the physical d-pad routes through the N64 analog stick. The N64 d-pad is inactive.
 - **D-Pad** — the physical d-pad passes through as the N64 d-pad (the config-mapped hat). The N64 analog stick is inactive.
 
-The setting is **per-ROM**: each game gets its own file at `$DEVICE_CONFIG_DIR/per-game/<rom>.cfg` containing `input_mode=joystick` or `input_mode=dpad`. On first launch the default is chosen by substring-matching the ROM's GoodName (resolved by mupen64plus-core from `mupen64plus.ini` by CRC/MD5) against a hardcoded list in `overlay/emu_frontend.c` — the following games default to **D-Pad**:
+Smart Pro and Smart Pro S both have a real left analog stick, so this remap is disabled on them — `launch.sh` leaves `$EMU_INPUT_MODE_FILE` unset and `plugin.c` gates the whole remap block on `$DEVICE=brick`. The **Input → Input Mode** overlay menu item is still visible on those devices but toggling it is a no-op.
+
+On the Brick, the setting is **per-ROM**: each game gets its own file at `$DEVICE_CONFIG_DIR/per-game/<rom>.cfg` containing `input_mode=joystick` or `input_mode=dpad`. On first launch the default is chosen by substring-matching the ROM's GoodName (resolved by mupen64plus-core from `mupen64plus.ini` by CRC/MD5) against a hardcoded list in `overlay/emu_frontend.c` — the following games default to **D-Pad**:
 
 Kirby 64: The Crystal Shards, Mischief Makers, Tetris 64, Tetrisphere, Ms. Pac-Man - Maze Madness, Mortal Kombat 4, Mortal Kombat Trilogy, Killer Instinct Gold, Pokémon Puzzle League, WWF No Mercy, ClayFighter 63⅓, ClayFighter - Sculptor's Cut, WWF WarZone.
 
@@ -138,7 +142,7 @@ All other games default to **Joystick**. Change it live via the overlay menu's *
 
 ### Brick-specific C-button remap
 
-The Brick has no right analog stick either, so C-buttons are accessed via **R2 + ABXY**: hold R2 and press a face button to send a C-button based on the physical position (A=right, B=bottom, X=top, Y=left). Without R2 held, X and Y still map to C-Left and C-Down as normal.
+The Brick has no right analog stick either, so C-buttons are accessed via **R2 + ABXY**: hold R2 and press a face button to send a C-button based on the physical position (A=right, B=bottom, X=top, Y=left). Without R2 held, X and Y still map to C-Left and C-Down as normal. This remap is also gated on `$DEVICE=brick`; Smart Pro / Smart Pro S use their real right analog stick for C-buttons via the `axis(3±,24000)` mappings in `default.cfg`.
 
 ### Overlay menu
 

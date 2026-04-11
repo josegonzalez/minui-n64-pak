@@ -1,5 +1,5 @@
 diff --git a/src/plugin.c b/src/plugin.c
-index 974b1db..5783007 100644
+index 974b1db..5d97832 100644
 --- a/src/plugin.c
 +++ b/src/plugin.c
 @@ -27,6 +27,7 @@
@@ -10,24 +10,32 @@ index 974b1db..5783007 100644
  
  #define M64P_PLUGIN_PROTOTYPES 1
  #include "config.h"
-@@ -614,6 +615,79 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
+@@ -614,6 +615,88 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
          controller[Control].buttons.Y_AXIS = iY;
      }
  
-+    /* Per-game D-pad-as-joystick override and Brick-specific C-button remap.
++    /* Brick-only input remap. The TrimUI Brick has no physical analog
++     * sticks, so the physical d-pad has to double as the N64 analog stick
++     * on games that use one, and the face buttons have to double as
++     * C-buttons. Smart Pro / Smart Pro S have real left + right analog
++     * sticks and get native mappings via default.cfg, so none of this
++     * applies — we gate everything on $DEVICE at first call.
 +     *
-+     * Driven by a per-game config file at $EMU_INPUT_MODE_FILE (managed by
-+     * emu_frontend). The file contains either `input_mode=joystick` — which
-+     * routes the physical d-pad through the N64 analog stick (the device has
-+     * no physical analog stick) — or `input_mode=dpad`, which leaves the
-+     * config-mapped d-pad→N64-d-pad behavior intact. We stat() the file on
-+     * every call and re-parse only when its mtime changes.
-+     *
-+     * R2 (axis 5) + ABXY still maps to C-buttons by physical position:
-+     *   A (right) → C-Right, B (bottom) → C-Down,
-+     *   X (top) → C-Up, Y (left) → C-Left. */
++     * - `input_mode=joystick` in $EMU_INPUT_MODE_FILE routes the physical
++     *   d-pad through the N64 analog stick (the config's hat→d-pad bits
++     *   are cleared for the frame).
++     * - `input_mode=dpad` leaves the default hat→d-pad mapping intact.
++     * - R2 (axis 5) + ABXY sends C-buttons by physical position:
++     *     A (right) → C-Right, B (bottom) → C-Down,
++     *     X (top) → C-Up, Y (left) → C-Left. */
 +    {
-+        static int dpad_as_joystick = 1; /* default when file is missing: joystick mode */
++        static int is_brick = -1;
++        if (is_brick < 0) {
++            const char* d = getenv("DEVICE");
++            is_brick = (d && strcmp(d, "brick") == 0) ? 1 : 0;
++        }
++      if (is_brick) {
++        static int dpad_as_joystick = 0; /* default when file is missing: no remap */
 +        static time_t cached_mtime = 0;
 +        static const char* cached_path = NULL;
 +        if (cached_path == NULL) {
@@ -85,6 +93,7 @@ index 974b1db..5783007 100644
 +                }
 +            }
 +        }
++      }
 +    }
 +
      // process mouse events

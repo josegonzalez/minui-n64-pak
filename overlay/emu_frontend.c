@@ -277,9 +277,15 @@ static EmuOvlItem* find_input_mode_item(EmuOvlConfig* cfg) {
 // config is parsed from JSON, since per-game items are skipped by the INI
 // reader). If the per-game file does not yet exist, pick a default based on
 // the ROM's GoodName and write it.
+//
+// On Smart Pro / Smart Pro S, launch.sh leaves $EMU_INPUT_MODE_FILE unset
+// (the feature is Brick-only since those devices have real analog sticks).
+// We early-return in that case, leaving the overlay item at its default.
 static void load_input_mode_from_file(EmuOvlConfig* cfg) {
 	EmuOvlItem* item = find_input_mode_item(cfg);
 	if (!item) return;
+	const char* path = getenv("EMU_INPUT_MODE_FILE");
+	if (!path || path[0] == '\0') return;
 	int v = read_input_mode_file();
 	if (v < 0) {
 		v = dpad_default_for_current_rom();
@@ -291,10 +297,16 @@ static void load_input_mode_from_file(EmuOvlConfig* cfg) {
 }
 
 // If the input_mode item is dirty (user changed it in the overlay menu),
-// persist the new value to the per-game file.
+// persist the new value to the per-game file. No-op on non-Brick devices
+// where launch.sh leaves $EMU_INPUT_MODE_FILE unset.
 static void apply_input_mode_if_dirty(EmuOvlConfig* cfg) {
 	EmuOvlItem* item = find_input_mode_item(cfg);
 	if (!item || !item->dirty) return;
+	const char* path = getenv("EMU_INPUT_MODE_FILE");
+	if (!path || path[0] == '\0') {
+		item->dirty = false; // clear the flag so we don't loop
+		return;
+	}
 	write_input_mode_file(item->staged_value);
 	item->current_value = item->staged_value;
 	item->dirty = false;
@@ -302,10 +314,13 @@ static void apply_input_mode_if_dirty(EmuOvlConfig* cfg) {
 
 // Shortcut: toggle input mode and persist to the per-game file. Also updates
 // the overlay item's current_value so the menu reflects the new state.
+// No-op on non-Brick devices.
 static void process_input_mode_shortcut(void) {
 	int btn = emu_frontend_get_shortcut("shortcut_toggle_input_mode");
 	if (!emu_frontend_btn_just_pressed(btn))
 		return;
+	const char* path = getenv("EMU_INPUT_MODE_FILE");
+	if (!path || path[0] == '\0') return;
 	int cur = read_input_mode_file();
 	if (cur < 0) cur = 0;
 	int new_value = cur ? 0 : 1;
