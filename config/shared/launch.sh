@@ -64,31 +64,63 @@ echo 200 >/proc/sys/vm/vfs_cache_pressure 2>/dev/null
 sync
 echo 3 >/proc/sys/vm/drop_caches 2>/dev/null
 
-# ── User data and device-specific config ──────────────────────────────────────
-USERDATA_DIR="$SHARED_USERDATA_PATH/N64-mupen64plus"
-mkdir -p "$USERDATA_DIR"
-
-# Device-specific config directory and display resolution
+# ── User data and device-specific config ─────────────────────────────────────
+# Config lives under per-platform userdata (NextUI canonical — `minarch.c`
+# uses `$USERDATA_PATH/<tag>-<name>/`). The tg5040 toolchain is shared between
+# the Brick and Smart Pro variants, so those two need a suffix within the
+# tg5040 platform dir. tg5050 has no variants.
+USERDATA_DIR="$USERDATA_PATH/$EMU_TAG-mupen64plus"
 case "$PLATFORM" in
     tg5040)
         if [ "$DEVICE" = "brick" ]; then
-            DEVICE_CONFIG_DIR="$USERDATA_DIR/config/tg5040-brick"
+            DEVICE_CONFIG_DIR="$USERDATA_DIR/brick"
             DEVICE_RESOLUTION="1024x768"
             DEVICE_ANISOTROPY=0
         else
-            DEVICE_CONFIG_DIR="$USERDATA_DIR/config/tg5040-smart-pro"
+            DEVICE_CONFIG_DIR="$USERDATA_DIR/smart-pro"
             DEVICE_RESOLUTION="1280x720"
             DEVICE_ANISOTROPY=0
         fi
         ;;
     tg5050)
-        DEVICE_CONFIG_DIR="$USERDATA_DIR/config/tg5050"
+        DEVICE_CONFIG_DIR="$USERDATA_DIR"
         DEVICE_RESOLUTION="1280x720"
         # Anisotropic filtering: sharpens textures viewed at oblique angles.
         # Mali-G57 (tg5050) can handle level 2; PowerVR GE8300 (tg5040) cannot.
         DEVICE_ANISOTROPY=2
         ;;
 esac
+
+# Migrate from the legacy shared-userdata path if present. This moves the
+# user's mupen64plus.cfg, .initialized marker, per-game/ overrides, and
+# anything else into the new per-platform location. Kept for one release;
+# can be removed afterwards.
+LEGACY_USERDATA_DIR="$SHARED_USERDATA_PATH/N64-mupen64plus"
+case "$PLATFORM" in
+    tg5040)
+        if [ "$DEVICE" = "brick" ]; then
+            LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5040-brick"
+        else
+            LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5040-smart-pro"
+        fi
+        ;;
+    tg5050)
+        LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5050"
+        ;;
+esac
+MIGRATION_STAMP="$DEVICE_CONFIG_DIR/.migrated-from-shared"
+if [ -d "$LEGACY_CONFIG_DIR" ] && [ ! -f "$MIGRATION_STAMP" ]; then
+    mkdir -p "$DEVICE_CONFIG_DIR"
+    # Preserve existing per-platform files; only move legacy items that don't
+    # already exist in the new location so the migration is idempotent even
+    # if a user has already hand-copied anything.
+    for item in mupen64plus.cfg .initialized per-game; do
+        if [ -e "$LEGACY_CONFIG_DIR/$item" ] && [ ! -e "$DEVICE_CONFIG_DIR/$item" ]; then
+            mv "$LEGACY_CONFIG_DIR/$item" "$DEVICE_CONFIG_DIR/$item"
+        fi
+    done
+    touch "$MIGRATION_STAMP"
+fi
 mkdir -p "$DEVICE_CONFIG_DIR"
 
 # First run: seed config from base defaults
@@ -112,8 +144,16 @@ STATE_SAVE_DIR="$SHARED_USERDATA_PATH/$EMU_TAG-mupen64plus"
 mkdir -p "$BATTERY_SAVE_DIR" "$STATE_SAVE_DIR"
 sed -i "s|^SaveSRAMPath = .*|SaveSRAMPath = \"$BATTERY_SAVE_DIR/\"|" "$DEVICE_CFG"
 sed -i "s|^SaveStatePath = .*|SaveStatePath = \"$STATE_SAVE_DIR/\"|" "$DEVICE_CFG"
-SCREENSHOT_DIR="/mnt/SDCARD/Screenshots/$EMU_TAG"
+# Screenshots go into the flat /mnt/SDCARD/Screenshots/ directory (NextUI
+# canonical — `minarch.c:8385` writes `SDCARD_PATH "/Screenshots/%s.%s.png"`).
+SCREENSHOT_DIR="/mnt/SDCARD/Screenshots"
 mkdir -p "$SCREENSHOT_DIR"
+# Migrate any screenshots left over from the legacy per-core subdirectory.
+LEGACY_SCREENSHOT_DIR="/mnt/SDCARD/Screenshots/$EMU_TAG"
+if [ -d "$LEGACY_SCREENSHOT_DIR" ]; then
+    find "$LEGACY_SCREENSHOT_DIR" -maxdepth 1 -type f -exec mv -n {} "$SCREENSHOT_DIR/" \;
+    rmdir "$LEGACY_SCREENSHOT_DIR" 2>/dev/null || true
+fi
 sed -i "s|^ScreenshotPath = .*|ScreenshotPath = \"$SCREENSHOT_DIR/\"|" "$DEVICE_CFG"
 
 # ── Auto-resume: check if NextUI game switcher requested a state load ─────────
