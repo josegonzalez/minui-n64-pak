@@ -426,7 +426,7 @@
           "label": "Inaccurate Tex Coords",
           "description": "Faster but less accurate texture coords",
           "type": "bool",
-          "default": false,
+          "default": true,
           "plugin": "gliden64"
         },
         {
@@ -579,7 +579,7 @@
             "3x",
             "4x"
           ],
-          "default": 2,
+          "default": 1,
           "plugin": "gliden64"
         },
         {
@@ -651,7 +651,7 @@
             "8x",
             "16x"
           ],
-          "default": 2,
+          "default": 0,
           "plugin": "gliden64"
         },
         {
