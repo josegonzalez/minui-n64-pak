@@ -897,9 +897,11 @@ static void render_main_menu(EmuOvl* ovl) {
 		}
 
 		// Pagination dots (centered horizontally in the window, below screenshot)
+		// Pagination dots — centered within the window using NextUI's exact
+		// formula: ox (= img_x) + (pw - SCALE1(15*SLOT_COUNT)) / 2
 		int dot_spacing = S(15);
 		int dots_total_w = dot_spacing * EMU_OVL_MAX_SLOTS;
-		int dots_x = img_x + (hw - dots_total_w) / 2;
+		int dots_x = img_x + (pw - dots_total_w) / 2;
 		int dots_y = img_y + hh + S(WINDOW_RADIUS);
 		for (int i = 0; i < EMU_OVL_MAX_SLOTS; i++) {
 			int dx = dots_x + i * dot_spacing;
@@ -907,8 +909,9 @@ static void render_main_menu(EmuOvl* ovl) {
 				// Current slot: larger BLACK circle (6×6 unscaled)
 				draw_pill(r, dx, dots_y, S(6), S(6), EMU_OVL_COLOR_BLACK);
 			} else {
-				// Other slots: smaller LIGHT GRAY circle (2×2 unscaled), offset
-				draw_pill(r, dx + 4, dots_y + S(2), S(2), S(2), 0xFFBBBBBB);
+				// Other slots: smaller circle (2×2 unscaled), offset +4px/+S(2)
+				// NextUI TRIAD_LIGHT_GRAY = 0x7F,0x7F,0x7F
+				draw_pill(r, dx + 4, dots_y + S(2), S(2), S(2), 0xFF7F7F7F);
 			}
 		}
 	}
