@@ -1097,9 +1097,6 @@ static void overlay_ensure_init(int w, int h) {
 
 		// Load the per-game input mode (Brick-only; no-op on other devices)
 		load_input_mode_from_file(&s_overlayConfig);
-
-		// Compute initial scope for the Save Changes UI
-		s_overlay.scope = compute_scope();
 	}
 
 	// Try GL init on the video thread (retries each frame until GL context is available)
@@ -1119,6 +1116,10 @@ static void overlay_ensure_init(int w, int h) {
 		return; // GL not ready yet, will retry next frame
 
 	s_overlayInitialized = true;
+
+	// Compute scope AFTER emu_ovl_init (which memset's s_overlay to zero).
+	// Placing it before would get wiped by the memset.
+	s_overlay.scope = compute_scope();
 
 	// Wire cheat callbacks for the overlay's Cheats menu
 	s_overlay.cheat_cb.get_name = cheat_get_name;
