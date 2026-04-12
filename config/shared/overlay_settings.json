@@ -1558,6 +1558,17 @@
           "plugin": "gliden64"
         },
         {
+          "key": "txCacheSize",
+          "label": "Texture Cache Size",
+          "description": "Memory cache for enhanced textures (MB)",
+          "type": "int",
+          "min": 0,
+          "max": 500,
+          "step": 50,
+          "default": 100,
+          "plugin": "gliden64"
+        },
+        {
           "key": "TextureEnhancement",
           "label": "Texture Enhancement",
           "description": "Primary texture enhancement filter",
