@@ -86,7 +86,8 @@
             "Joystick",
             "D-Pad"
           ],
-          "default": 0
+          "default": 0,
+          "ini_section": "NextUI-Input"
         }
       ]
     },
@@ -515,7 +516,8 @@
             "Performance",
             "Auto"
           ],
-          "default": 1
+          "default": 1,
+          "ini_section": "NextUI"
         },
         {
           "key": "rewind_buffer",
@@ -534,7 +536,8 @@
             "Medium (15s)",
             "Large (30s)"
           ],
-          "default": 0
+          "default": 0,
+          "ini_section": "NextUI"
         },
         {
           "key": "frame_skip",
@@ -553,7 +556,8 @@
             "25fps",
             "30fps"
           ],
-          "default": 0
+          "default": 0,
+          "ini_section": "NextUI"
         }
       ]
     },
@@ -855,7 +859,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_hold_ff",
@@ -888,7 +893,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_reset",
@@ -921,7 +927,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_save_state",
@@ -954,7 +961,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_load_state",
@@ -987,7 +995,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_screenshot",
@@ -1020,7 +1029,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_game_switcher",
@@ -1053,7 +1063,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_turbo_a",
@@ -1086,7 +1097,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_turbo_b",
@@ -1119,7 +1131,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_turbo_x",
@@ -1152,7 +1165,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_turbo_y",
@@ -1185,7 +1199,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_turbo_l",
@@ -1218,7 +1233,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_turbo_l2",
@@ -1251,7 +1267,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_turbo_r",
@@ -1284,7 +1301,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_turbo_r2",
@@ -1317,7 +1335,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_cycle_aspect",
@@ -1350,7 +1369,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_toggle_rewind",
@@ -1383,7 +1403,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_hold_rewind",
@@ -1416,7 +1437,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         },
         {
           "key": "shortcut_toggle_input_mode",
@@ -1449,7 +1471,8 @@
             "L3/F1",
             "R3/F2"
           ],
-          "default": -1
+          "default": -1,
+          "ini_section": "NextUI"
         }
       ]
     },
