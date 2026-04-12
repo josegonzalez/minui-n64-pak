@@ -200,8 +200,8 @@ static void load_slot_screenshots(EmuOvl* ovl) {
 		ovl->screenshot_dir[0] == '\0' || ovl->rom_file[0] == '\0')
 		return;
 
-	// Target height: ~40% of screen height
-	int target_h = ovl->screen_h * 2 / 5;
+	// Target height: half screen (matches the preview area in render_main_menu)
+	int target_h = ovl->screen_h / 2;
 
 	for (int i = 0; i < EMU_OVL_MAX_SLOTS; i++) {
 		// Free old icon if loaded
@@ -899,18 +899,16 @@ static void render_main_menu(EmuOvl* ovl) {
 		// Pagination dots (centered horizontally in the window, below screenshot)
 		int dot_spacing = S(15);
 		int dots_total_w = dot_spacing * EMU_OVL_MAX_SLOTS;
-		int dots_x = win_x + (pw - dots_total_w) / 2;
+		int dots_x = img_x + (hw - dots_total_w) / 2;
 		int dots_y = img_y + hh + S(WINDOW_RADIUS);
 		for (int i = 0; i < EMU_OVL_MAX_SLOTS; i++) {
 			int dx = dots_x + i * dot_spacing;
 			if (i == ovl->save_slot) {
-				// Current slot: larger BLACK indicator (6×6 unscaled)
-				// NextUI's ASSET_PAGE rgb = RGB_BLACK
+				// Current slot: larger BLACK circle (6×6 unscaled)
 				draw_pill(r, dx, dots_y, S(6), S(6), EMU_OVL_COLOR_BLACK);
 			} else {
-				// Other slots: smaller LIGHT GRAY dot (2×2 unscaled), offset right+down
-				// NextUI's ASSET_DOT rgb = RGB_LIGHT_GRAY
-				r->draw_rect(dx + 4, dots_y + S(2), S(2), S(2), 0xFFBBBBBB);
+				// Other slots: smaller LIGHT GRAY circle (2×2 unscaled), offset
+				draw_pill(r, dx + 4, dots_y + S(2), S(2), S(2), 0xFFBBBBBB);
 			}
 		}
 	}
