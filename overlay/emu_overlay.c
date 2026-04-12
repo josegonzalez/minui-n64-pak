@@ -46,10 +46,6 @@ static void build_main_menu(EmuOvl* ovl) {
 		n++;
 	}
 
-	snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Save Changes");
-	ovl->main_items[n].type = EMU_OVL_MAIN_SAVE_CHANGES;
-	n++;
-
 	snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Quit");
 	ovl->main_items[n].type = EMU_OVL_MAIN_QUIT;
 	n++;
@@ -350,11 +346,6 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 				ovl->scroll_offset = 0;
 				ovl->current_section = 0;
 				break;
-			case EMU_OVL_MAIN_SAVE_CHANGES:
-				ovl->state = EMU_OVL_STATE_SAVE_CHANGES;
-				ovl->selected = 0;
-				ovl->scroll_offset = 0;
-				break;
 			case EMU_OVL_MAIN_QUIT:
 				ovl->action = EMU_OVL_ACTION_QUIT;
 				ovl->state = EMU_OVL_STATE_CLOSED;
@@ -405,29 +396,38 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 	// ----- SECTION LIST -----
 	case EMU_OVL_STATE_SECTION_LIST:
 		{
-		int total_sections = ovl->config->section_count;
+		// +1 for "Save Changes" row at the bottom (matching NextUI's minarch
+		// which puts Save Changes as the last entry in its Options menu).
+		int total_entries = ovl->config->section_count + 1;
 		if (input->up) {
-			ovl->selected = (ovl->selected - 1 + total_sections) % total_sections;
-			ensure_scroll(ovl, total_sections);
+			ovl->selected = (ovl->selected - 1 + total_entries) % total_entries;
+			ensure_scroll(ovl, total_entries);
 		} else if (input->down) {
-			ovl->selected = (ovl->selected + 1) % total_sections;
-			ensure_scroll(ovl, total_sections);
+			ovl->selected = (ovl->selected + 1) % total_entries;
+			ensure_scroll(ovl, total_entries);
 		} else if (input->l1) {
-			ovl->selected = page_jump(ovl->selected, total_sections, ovl->items_per_page, -1);
-			ensure_scroll(ovl, total_sections);
+			ovl->selected = page_jump(ovl->selected, total_entries, ovl->items_per_page, -1);
+			ensure_scroll(ovl, total_entries);
 		} else if (input->r1) {
-			ovl->selected = page_jump(ovl->selected, total_sections, ovl->items_per_page, +1);
-			ensure_scroll(ovl, total_sections);
+			ovl->selected = page_jump(ovl->selected, total_entries, ovl->items_per_page, +1);
+			ensure_scroll(ovl, total_entries);
 		} else if (input->a) {
-			EmuOvlSection* sec = &ovl->config->sections[ovl->selected];
-			if (strcmp(sec->name, "Cheats") == 0) {
-				ovl->state = EMU_OVL_STATE_CHEATS;
+			if (ovl->selected == ovl->config->section_count) {
+				// "Save Changes" row
+				ovl->state = EMU_OVL_STATE_SAVE_CHANGES;
+				ovl->selected = 0;
+				ovl->scroll_offset = 0;
 			} else {
-				ovl->current_section = ovl->selected;
-				ovl->state = EMU_OVL_STATE_SECTION_ITEMS;
+				EmuOvlSection* sec = &ovl->config->sections[ovl->selected];
+				if (strcmp(sec->name, "Cheats") == 0) {
+					ovl->state = EMU_OVL_STATE_CHEATS;
+				} else {
+					ovl->current_section = ovl->selected;
+					ovl->state = EMU_OVL_STATE_SECTION_ITEMS;
+				}
+				ovl->selected = 0;
+				ovl->scroll_offset = 0;
 			}
-			ovl->selected = 0;
-			ovl->scroll_offset = 0;
 		} else if (input->b) {
 			ovl->state = EMU_OVL_STATE_MAIN_MENU;
 			ovl->selected = find_options_index(ovl);
@@ -969,7 +969,8 @@ static void render_section_list(EmuOvl* ovl) {
 	int content_x = PADDING_PX;
 	int content_w = ovl->screen_w - PADDING_PX * 2;
 
-	int total_count = ovl->config->section_count;
+	// +1 for "Save Changes" row at the bottom
+	int total_count = ovl->config->section_count + 1;
 
 	// Scroll
 	ensure_scroll(ovl, total_count);
@@ -986,7 +987,11 @@ static void render_section_list(EmuOvl* ovl) {
 
 		int iy = list_y + vi * row_h;
 		bool sel = (idx == ovl->selected);
-		const char* name = ovl->config->sections[idx].name;
+		const char* name;
+		if (idx < ovl->config->section_count)
+			name = ovl->config->sections[idx].name;
+		else
+			name = "Save Changes";
 		draw_settings_row(ovl, content_x, iy, content_w, row_h,
 						  name, NULL, sel, false, EMU_OVL_FONT_LARGE);
 	}
