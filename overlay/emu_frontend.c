@@ -16,6 +16,9 @@ int g_frameSkip = 0;
 // Forward declarations for scope-aware save system
 static const char* get_per_game_path(void);
 static EmuConfigScope compute_scope(void);
+static void handle_save_for_console(void);
+static void handle_save_for_game(void);
+static void handle_restore_defaults(void);
 
 // Core API and plugin ops (set by emu_frontend_init)
 static EmuFrontendCoreAPI s_coreAPI;
@@ -1228,6 +1231,30 @@ static EmuOvlAction run_overlay_loop(void) {
 		}
 
 		s_pluginOps.exec_on_video_thread(overlay_frame_on_gl_thread, &input);
+
+		// Dispatch save-scope actions inline (menu stays open, matching
+		// NextUI's OptionSaveChanges_onConfirm which calls Config_write
+		// synchronously and then returns to the menu). Without this, the
+		// save action set by the Save Changes submenu would be overwritten
+		// by EMU_OVL_ACTION_CONTINUE when the user eventually closes the
+		// menu via B.
+		switch (emu_ovl_get_action(&s_overlay)) {
+		case EMU_OVL_ACTION_SAVE_CONSOLE:
+			handle_save_for_console();
+			s_overlay.action = EMU_OVL_ACTION_NONE;
+			break;
+		case EMU_OVL_ACTION_SAVE_GAME:
+			handle_save_for_game();
+			s_overlay.action = EMU_OVL_ACTION_NONE;
+			break;
+		case EMU_OVL_ACTION_RESTORE_DEFAULTS:
+			handle_restore_defaults();
+			s_overlay.action = EMU_OVL_ACTION_NONE;
+			break;
+		default:
+			break;
+		}
+
 		SDL_Delay(16);
 	}
 
