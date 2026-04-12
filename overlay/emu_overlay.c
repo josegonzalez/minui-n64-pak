@@ -873,12 +873,12 @@ static void render_main_menu(EmuOvl* ovl) {
 		int win_x = ovl->screen_w - pw - PADDING_PX;
 		int win_y = (ovl->screen_h - ph) / 2;
 
-		// Dark rounded window background
+		// White rounded window background (NextUI's ASSET_STATE_BG = RGB_WHITE)
 		if (r->draw_rounded_rect)
 			r->draw_rounded_rect(win_x, win_y, pw, ph, S(WINDOW_RADIUS),
-								 EMU_OVL_COLOR_ROW_BG);
+								 EMU_OVL_COLOR_WHITE);
 		else
-			r->draw_rect(win_x, win_y, pw, ph, EMU_OVL_COLOR_ROW_BG);
+			r->draw_rect(win_x, win_y, pw, ph, EMU_OVL_COLOR_WHITE);
 
 		int img_x = win_x + S(WINDOW_RADIUS);
 		int img_y = win_y + S(WINDOW_RADIUS);
@@ -904,11 +904,13 @@ static void render_main_menu(EmuOvl* ovl) {
 		for (int i = 0; i < EMU_OVL_MAX_SLOTS; i++) {
 			int dx = dots_x + i * dot_spacing;
 			if (i == ovl->save_slot) {
-				// Current slot: larger white indicator (6×6 unscaled)
-				draw_pill(r, dx, dots_y, S(6), S(6), EMU_OVL_COLOR_WHITE);
+				// Current slot: larger BLACK indicator (6×6 unscaled)
+				// NextUI's ASSET_PAGE rgb = RGB_BLACK
+				draw_pill(r, dx, dots_y, S(6), S(6), EMU_OVL_COLOR_BLACK);
 			} else {
-				// Other slots: smaller gray dot (2×2 unscaled), offset right+down
-				draw_pill(r, dx + 4, dots_y + S(2), S(2), S(2), EMU_OVL_COLOR_GRAY);
+				// Other slots: smaller LIGHT GRAY dot (2×2 unscaled), offset right+down
+				// NextUI's ASSET_DOT rgb = RGB_LIGHT_GRAY
+				r->draw_rect(dx + 4, dots_y + S(2), S(2), S(2), 0xFFBBBBBB);
 			}
 		}
 	}
