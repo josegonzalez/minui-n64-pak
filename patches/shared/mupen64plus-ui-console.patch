@@ -1,8 +1,66 @@
+diff --git a/src/core_interface.c b/src/core_interface.c
+index 3f9d1a8..3565b53 100644
+--- a/src/core_interface.c
++++ b/src/core_interface.c
+@@ -75,6 +75,7 @@ ptr_ConfigSetDefaultString ConfigSetDefaultString = NULL;
+ ptr_ConfigGetParamInt      ConfigGetParamInt = NULL;
+ ptr_ConfigGetParamFloat    ConfigGetParamFloat = NULL;
+ ptr_ConfigGetParamBool     ConfigGetParamBool = NULL;
++ptr_ConfigOverrideUserPaths ConfigOverrideUserPaths = NULL;
+ ptr_ConfigGetParamString   ConfigGetParamString = NULL;
+ 
+ ptr_ConfigExternalOpen         ConfigExternalOpen = NULL;
+@@ -278,6 +279,7 @@ m64p_error AttachCoreLib(const char *CoreLibFilepath)
+     ConfigGetUserConfigPath = (ptr_ConfigGetUserConfigPath) osal_dynlib_getproc(CoreHandle, "ConfigGetUserConfigPath");
+     ConfigGetUserDataPath = (ptr_ConfigGetUserDataPath) osal_dynlib_getproc(CoreHandle, "ConfigGetUserDataPath");
+     ConfigGetUserCachePath = (ptr_ConfigGetUserCachePath) osal_dynlib_getproc(CoreHandle, "ConfigGetUserCachePath");
++    ConfigOverrideUserPaths = (ptr_ConfigOverrideUserPaths) osal_dynlib_getproc(CoreHandle, "ConfigOverrideUserPaths");
+ 
+     /* get function pointers to the debugger functions */
+     DebugSetCallbacks = (ptr_DebugSetCallbacks) osal_dynlib_getproc(CoreHandle, "DebugSetCallbacks");
+diff --git a/src/core_interface.h b/src/core_interface.h
+index 4343d81..fe0013a 100644
+--- a/src/core_interface.h
++++ b/src/core_interface.h
+@@ -75,10 +75,11 @@ extern ptr_ConfigExternalClose        ConfigExternalClose;
+ extern ptr_ConfigExternalGetParameter ConfigExternalGetParameter;
+ extern ptr_ConfigHasUnsavedChanges    ConfigHasUnsavedChanges;
+ 
+-extern ptr_ConfigGetSharedDataFilepath ConfigGetSharedDataFilepath;
++extern ptr_ConfigGetSharedDataFilepath  ConfigGetSharedDataFilepath;
+ extern ptr_ConfigGetUserConfigPath     ConfigGetUserConfigPath;
+ extern ptr_ConfigGetUserDataPath       ConfigGetUserDataPath;
+ extern ptr_ConfigGetUserCachePath      ConfigGetUserCachePath;
++extern ptr_ConfigOverrideUserPaths     ConfigOverrideUserPaths;
+ 
+ /* declarations of pointers to Core debugger functions */
+ extern ptr_DebugSetCallbacks      DebugSetCallbacks;
 diff --git a/src/main.c b/src/main.c
-index 829fcc9..5044e18 100644
+index 829fcc9..5ba659f 100644
 --- a/src/main.c
 +++ b/src/main.c
-@@ -1037,6 +1037,18 @@ int main(int argc, char *argv[])
+@@ -375,6 +375,7 @@ static void printUsage(const char *progname)
+            "    --debug                : launch console-based debugger (requires core lib built for debugging)\n"
+            "    --plugindir (dir)      : search for plugins in (dir)\n"
+            "    --sshotdir (dir)       : set screenshot directory to (dir)\n"
++           "    --cachedir (dir)       : set user cache directory to (dir)\n"
+            "    --gfx (plugin-spec)    : use gfx plugin given by (plugin-spec)\n"
+            "    --audio (plugin-spec)  : use audio plugin given by (plugin-spec)\n"
+            "    --input (plugin-spec)  : use input plugin given by (plugin-spec)\n"
+@@ -648,6 +649,12 @@ static m64p_error ParseCommandLineMain(int argc, const char **argv)
+             (*ConfigSetParameter)(l_ConfigCore, "ScreenshotPath", M64TYPE_STRING, argv[i+1]);
+             i++;
+         }
++        else if (strcmp(argv[i], "--cachedir") == 0 && ArgsLeft >= 1)
++        {
++            if (ConfigOverrideUserPaths)
++                (*ConfigOverrideUserPaths)(NULL, argv[i+1]);
++            i++;
++        }
+         else if (strcmp(argv[i], "--gfx") == 0 && ArgsLeft >= 1)
+         {
+             g_GfxPlugin = argv[i+1];
+@@ -1037,6 +1044,18 @@ int main(int argc, char *argv[])
      }
      free(ROM_buffer); /* the core copies the ROM image, so we can release this buffer immediately */
  

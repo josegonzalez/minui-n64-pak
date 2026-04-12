@@ -142,8 +142,8 @@ sed -i "s/^anisotropy = .*/anisotropy = $DEVICE_ANISOTROPY/" "$DEVICE_CFG"
 BATTERY_SAVE_DIR="$SAVES_PATH/$EMU_TAG"
 STATE_SAVE_DIR="$SHARED_USERDATA_PATH/$EMU_TAG-mupen64plus"
 mkdir -p "$BATTERY_SAVE_DIR" "$STATE_SAVE_DIR"
-sed -i "s|^SaveSRAMPath = .*|SaveSRAMPath = \"$BATTERY_SAVE_DIR/\"|" "$DEVICE_CFG"
-sed -i "s|^SaveStatePath = .*|SaveStatePath = \"$STATE_SAVE_DIR/\"|" "$DEVICE_CFG"
+# SaveSRAMPath and SaveStatePath are set via --set flags on the mupen64plus
+# command line instead of sed-patching mupen64plus.cfg.
 
 # Migrate legacy battery saves from other N64 paks into our canonical
 # $SAVES_PATH/N64/. Mupen64plus-core uses four separate files per game
@@ -178,7 +178,7 @@ if [ -d "$LEGACY_SCREENSHOT_DIR" ]; then
     find "$LEGACY_SCREENSHOT_DIR" -maxdepth 1 -type f -exec mv -n {} "$SCREENSHOT_DIR/" \;
     rmdir "$LEGACY_SCREENSHOT_DIR" 2>/dev/null || true
 fi
-sed -i "s|^ScreenshotPath = .*|ScreenshotPath = \"$SCREENSHOT_DIR/\"|" "$DEVICE_CFG"
+# ScreenshotPath is set via --sshotdir on the mupen64plus command line.
 
 # ── Auto-resume: check if NextUI game switcher requested a state load ─────────
 RESUME_SLOT=""
@@ -366,6 +366,10 @@ cd "$BIN_DIR"
     --configdir "$DEVICE_CONFIG_DIR" \
     --datadir "$BIN_DIR" \
     --plugindir "$BIN_DIR" \
+    --sshotdir "$SCREENSHOT_DIR" \
+    --cachedir "$DEVICE_CONFIG_DIR/cache" \
+    --set "Core[SaveSRAMPath]=$BATTERY_SAVE_DIR/" \
+    --set "Core[SaveStatePath]=$STATE_SAVE_DIR/" \
     --gfx "$BIN_DIR/$GFX_PLUGIN" \
     --audio mupen64plus-audio-sdl.so \
     --input mupen64plus-input-sdl.so \
