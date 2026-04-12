@@ -189,6 +189,7 @@ fi
 
 # ── Environment ───────────────────────────────────────────────────────────────
 export HOME="$USERDATA_PATH"
+export XDG_DATA_HOME="$DEVICE_CONFIG_DIR"
 export LD_LIBRARY_PATH="$BIN_DIR:$SDCARD_PATH/.system/$PLATFORM/lib:/usr/trimui/lib:$LD_LIBRARY_PATH"
 export LD_PRELOAD="libEGL.so"
 # Relative ROM path for auto_resume.txt (strip /mnt/SDCARD prefix)
