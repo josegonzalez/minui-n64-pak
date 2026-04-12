@@ -29,13 +29,13 @@ static void build_main_menu(EmuOvl* ovl) {
 	n++;
 
 	if (ovl->config->save_state) {
-		snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Save State");
+		snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Save");
 		ovl->main_items[n].type = EMU_OVL_MAIN_SAVE;
 		n++;
 	}
 
 	if (ovl->config->load_state) {
-		snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Load State");
+		snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Load");
 		ovl->main_items[n].type = EMU_OVL_MAIN_LOAD;
 		n++;
 	}
@@ -306,6 +306,10 @@ void emu_ovl_open(EmuOvl* ovl) {
 
 	if (ovl->render && ovl->render->capture_frame)
 		ovl->render->capture_frame();
+
+	// Pre-load all slot preview screenshots so they're ready before the
+	// user even highlights Save/Load (matches NextUI which loads on menu open).
+	load_slot_screenshots(ovl);
 }
 
 bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
@@ -314,7 +318,17 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 
 	switch (ovl->state) {
 	// ----- MAIN MENU -----
-	case EMU_OVL_STATE_MAIN_MENU:
+	case EMU_OVL_STATE_MAIN_MENU: {
+		// Inline slot cycling when Save or Load is highlighted (d-pad
+		// left/right, matching NextUI's minarch.c:8563-8587)
+		EmuOvlMainItemType sel_type = ovl->main_items[ovl->selected].type;
+		if (sel_type == EMU_OVL_MAIN_SAVE || sel_type == EMU_OVL_MAIN_LOAD) {
+			if (input->left) {
+				ovl->save_slot = (ovl->save_slot - 1 + EMU_OVL_MAX_SLOTS) % EMU_OVL_MAX_SLOTS;
+			} else if (input->right) {
+				ovl->save_slot = (ovl->save_slot + 1) % EMU_OVL_MAX_SLOTS;
+			}
+		}
 		if (input->up) {
 			ovl->selected = (ovl->selected - 1 + ovl->main_item_count) % ovl->main_item_count;
 		} else if (input->down) {
@@ -327,19 +341,22 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 			EmuOvlMainItemType t = ovl->main_items[ovl->selected].type;
 			switch (t) {
 			case EMU_OVL_MAIN_CONTINUE:
+				free_slot_screenshots(ovl);
 				ovl->action = EMU_OVL_ACTION_CONTINUE;
 				ovl->state = EMU_OVL_STATE_CLOSED;
 				return false;
 			case EMU_OVL_MAIN_SAVE:
-				ovl->state = EMU_OVL_STATE_SAVE_SELECT;
-				ovl->save_slot = 0;
-				load_slot_screenshots(ovl);
-				break;
+				free_slot_screenshots(ovl);
+				ovl->action = EMU_OVL_ACTION_SAVE_STATE;
+				ovl->action_param = ovl->save_slot;
+				ovl->state = EMU_OVL_STATE_CLOSED;
+				return false;
 			case EMU_OVL_MAIN_LOAD:
-				ovl->state = EMU_OVL_STATE_LOAD_SELECT;
-				ovl->save_slot = 0;
-				load_slot_screenshots(ovl);
-				break;
+				free_slot_screenshots(ovl);
+				ovl->action = EMU_OVL_ACTION_LOAD_STATE;
+				ovl->action_param = ovl->save_slot;
+				ovl->state = EMU_OVL_STATE_CLOSED;
+				return false;
 			case EMU_OVL_MAIN_OPTIONS:
 				ovl->state = EMU_OVL_STATE_SECTION_LIST;
 				ovl->selected = 0;
@@ -347,51 +364,19 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 				ovl->current_section = 0;
 				break;
 			case EMU_OVL_MAIN_QUIT:
+				free_slot_screenshots(ovl);
 				ovl->action = EMU_OVL_ACTION_QUIT;
 				ovl->state = EMU_OVL_STATE_CLOSED;
 				return false;
 			}
 		} else if (input->b || input->menu) {
+			free_slot_screenshots(ovl);
 			ovl->action = EMU_OVL_ACTION_CONTINUE;
 			ovl->state = EMU_OVL_STATE_CLOSED;
 			return false;
 		}
 		break;
-
-	// ----- SAVE / LOAD SELECT -----
-	case EMU_OVL_STATE_SAVE_SELECT:
-	case EMU_OVL_STATE_LOAD_SELECT:
-		if (input->left) {
-			ovl->save_slot = (ovl->save_slot - 1 + EMU_OVL_MAX_SLOTS) % EMU_OVL_MAX_SLOTS;
-		} else if (input->right) {
-			ovl->save_slot = (ovl->save_slot + 1) % EMU_OVL_MAX_SLOTS;
-		} else if (input->l1) {
-			ovl->save_slot = 0;
-		} else if (input->r1) {
-			ovl->save_slot = EMU_OVL_MAX_SLOTS - 1;
-		} else if (input->a) {
-			ovl->action = (ovl->state == EMU_OVL_STATE_SAVE_SELECT)
-							  ? EMU_OVL_ACTION_SAVE_STATE
-							  : EMU_OVL_ACTION_LOAD_STATE;
-			ovl->action_param = ovl->save_slot;
-			ovl->state = EMU_OVL_STATE_CLOSED;
-			return false;
-		} else if (input->b) {
-			EmuOvlState prev_state = ovl->state;
-			ovl->state = EMU_OVL_STATE_MAIN_MENU;
-			free_slot_screenshots(ovl);
-			// Restore selected to the correct Save/Load entry
-			EmuOvlMainItemType target = (prev_state == EMU_OVL_STATE_SAVE_SELECT)
-											? EMU_OVL_MAIN_SAVE
-											: EMU_OVL_MAIN_LOAD;
-			for (int i = 0; i < ovl->main_item_count; i++) {
-				if (ovl->main_items[i].type == target) {
-					ovl->selected = i;
-					break;
-				}
-			}
-		}
-		break;
+	}
 
 	// ----- SECTION LIST -----
 	case EMU_OVL_STATE_SECTION_LIST:
@@ -874,90 +859,62 @@ static void render_main_menu(EmuOvl* ovl) {
 						  EMU_OVL_FONT_LARGE);
 	}
 
-	// Show save slot preview on the right when Save or Load is highlighted
+	// Save state preview panel on the right when Save or Load is highlighted.
+	// Layout matches NextUI's minarch.c:8743-8788 exactly.
 	EmuOvlMainItemType sel_type = ovl->main_items[ovl->selected].type;
 	if (sel_type == EMU_OVL_MAIN_SAVE || sel_type == EMU_OVL_MAIN_LOAD) {
-		int preview_x = ovl->screen_w / 2 + PADDING_PX;
-		int preview_w = ovl->screen_w / 2 - PADDING_PX * 2;
-		int preview_cy = ovl->screen_h / 2;
+#define WINDOW_RADIUS 4
+#define PAGINATION_HEIGHT 6
 
+		int hw = ovl->screen_w / 2;
+		int hh = ovl->screen_h / 2;
+		int pw = hw + S(WINDOW_RADIUS * 2);
+		int ph = hh + S(WINDOW_RADIUS * 2 + PAGINATION_HEIGHT + WINDOW_RADIUS);
+		int win_x = ovl->screen_w - pw - PADDING_PX;
+		int win_y = (ovl->screen_h - ph) / 2;
+
+		// Dark rounded window background
+		if (r->draw_rounded_rect)
+			r->draw_rounded_rect(win_x, win_y, pw, ph, S(WINDOW_RADIUS),
+								 EMU_OVL_COLOR_ROW_BG);
+		else
+			r->draw_rect(win_x, win_y, pw, ph, EMU_OVL_COLOR_ROW_BG);
+
+		int img_x = win_x + S(WINDOW_RADIUS);
+		int img_y = win_y + S(WINDOW_RADIUS);
+
+		// Black fill behind the screenshot area
+		r->draw_rect(img_x, img_y, hw, hh, EMU_OVL_COLOR_BLACK);
+
+		// Screenshot or fallback text
 		int icon_id = ovl->slot_icons[ovl->save_slot];
 		if (icon_id >= 0 && r->draw_icon) {
-			int iw = r->icon_width(icon_id);
-			int ih = r->icon_height(icon_id);
-			// Scale to fit the right half, preserve aspect
-			int draw_w = preview_w;
-			int draw_h = ih * draw_w / iw;
-			int ix = preview_x + (preview_w - draw_w) / 2;
-			int iy = preview_cy - draw_h / 2;
-			r->draw_icon(icon_id, ix, iy);
+			r->draw_icon(icon_id, img_x, img_y);
 		} else {
-			draw_shadowed_text(r, "Empty", preview_x + preview_w / 2 - S(20),
-							   preview_cy, EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_SMALL);
+			draw_centered_text(r, "Empty Slot",
+							   img_x + hw / 2, img_y + hh / 2,
+							   EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_LARGE);
 		}
 
-		// Slot pagination dots below preview
-		int dot_size = S(4);
-		int dot_gap = S(6);
-		int dots_w = EMU_OVL_MAX_SLOTS * dot_size + (EMU_OVL_MAX_SLOTS - 1) * dot_gap;
-		int dots_x = preview_x + (preview_w - dots_w) / 2;
-		int dots_y = preview_cy + preview_w * 3 / 8 + S(8);
+		// Pagination dots (centered horizontally in the window, below screenshot)
+		int dot_spacing = S(15);
+		int dots_total_w = dot_spacing * EMU_OVL_MAX_SLOTS;
+		int dots_x = win_x + (pw - dots_total_w) / 2;
+		int dots_y = img_y + hh + S(WINDOW_RADIUS);
 		for (int i = 0; i < EMU_OVL_MAX_SLOTS; i++) {
-			uint32_t color = (i == ovl->save_slot) ? EMU_OVL_COLOR_WHITE : EMU_OVL_COLOR_GRAY;
-			r->draw_rect(dots_x + i * (dot_size + dot_gap), dots_y, dot_size, dot_size, color);
+			int dx = dots_x + i * dot_spacing;
+			if (i == ovl->save_slot) {
+				// Current slot: larger white indicator (6×6 unscaled)
+				draw_pill(r, dx, dots_y, S(6), S(6), EMU_OVL_COLOR_WHITE);
+			} else {
+				// Other slots: smaller gray dot (2×2 unscaled), offset right+down
+				draw_pill(r, dx + 4, dots_y + S(2), S(2), S(2), EMU_OVL_COLOR_GRAY);
+			}
 		}
 	}
 
 	const char* hints[] = {"B", "BACK", "A", "OKAY"};
 	draw_footer_hints(ovl, hints, 4);
-}
-
-static void render_slot_select(EmuOvl* ovl) {
-	EmuOvlRenderBackend* r = ovl->render;
-	bool is_save = (ovl->state == EMU_OVL_STATE_SAVE_SELECT);
-
-	draw_menu_bar(ovl, is_save ? "Save State" : "Load State");
-
-	int bar_h = S(BUTTON_SIZE) + S(BUTTON_MARGIN) * 2;
-	int center_y = ovl->screen_h / 2;
-
-	// Slot screenshot (centered above slot text)
-	int icon_id = ovl->slot_icons[ovl->save_slot];
-	if (icon_id >= 0 && r->draw_icon) {
-		int iw = r->icon_width(icon_id);
-		int ih = r->icon_height(icon_id);
-		int ix = (ovl->screen_w - iw) / 2;
-		int iy = bar_h + (center_y - bar_h - ih) / 2;
-		if (iy < bar_h)
-			iy = bar_h;
-		r->draw_icon(icon_id, ix, iy);
-	} else {
-		// No screenshot: show "Empty" text
-		draw_centered_text(r, "Empty", ovl->screen_w / 2,
-						   bar_h + (center_y - bar_h) / 2,
-						   EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_SMALL);
-	}
-
-	// Slot text below center
-	char slot_text[32];
-	snprintf(slot_text, sizeof(slot_text), "<  Slot %d  >", ovl->save_slot + 1);
-	draw_centered_text(r, slot_text, ovl->screen_w / 2, center_y + S(PILL_SIZE) / 2,
-					   EMU_OVL_COLOR_WHITE, EMU_OVL_FONT_LARGE);
-
-	// Pagination dots
-	int dot_size = S(4);
-	int dot_gap = S(6);
-	int dots_w = EMU_OVL_MAX_SLOTS * dot_size + (EMU_OVL_MAX_SLOTS - 1) * dot_gap;
-	int dots_x = (ovl->screen_w - dots_w) / 2;
-	int dots_y = center_y + S(PILL_SIZE) + S(PILL_SIZE) / 2;
-
-	for (int i = 0; i < EMU_OVL_MAX_SLOTS; i++) {
-		uint32_t color = (i == ovl->save_slot) ? EMU_OVL_COLOR_ACCENT : EMU_OVL_COLOR_GRAY;
-		r->draw_rect(dots_x + i * (dot_size + dot_gap), dots_y, dot_size, dot_size, color);
-	}
-
-	const char* hints[] = {"LEFT/RIGHT", "SELECT", "B", "BACK", "A", "OKAY"};
-	draw_footer_hints(ovl, hints, 6);
 }
 
 static void render_section_list(EmuOvl* ovl) {
@@ -1182,10 +1139,6 @@ void emu_ovl_render(EmuOvl* ovl) {
 	switch (ovl->state) {
 	case EMU_OVL_STATE_MAIN_MENU:
 		render_main_menu(ovl);
-		break;
-	case EMU_OVL_STATE_SAVE_SELECT:
-	case EMU_OVL_STATE_LOAD_SELECT:
-		render_slot_select(ovl);
 		break;
 	case EMU_OVL_STATE_SECTION_LIST:
 		render_section_list(ovl);
