@@ -176,18 +176,55 @@ After 2 minutes in sleep, the device suspends to RAM. Press power again to wake.
 
 ### Overlay menu sections
 
-The overlay menu is defined in `config/shared/overlay_settings.json` and currently exposes:
+The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagged `"plugin": "gliden64"` or `"plugin": "rice"` are only visible when the corresponding video plugin is active; untagged items always appear. The **Save Changes** entry at the bottom of the Options list lets users persist settings globally or per-game (see [Save scope](#save-scope) below).
 
-- **Audio** — SDL resampler quality (`trivial` / `src-linear` / `src-sinc-fastest`).
-- **Core** — Video plugin selector (GLideN64 / Rice — requires a restart, persisted to `[NextUI] VideoPlugin`), CPU overclock multiplier, frame skip, cheats enable.
-- **Debug** — Show FPS, show stats, show D-list count, etc. (GLideN64-only items are hidden when Rice is active and vice versa.)
-- **Frame Buffer**, **Hi-Res Textures**, **Performance**, **Rendering**, **Texture Enhancement** — plugin-specific items. Tagged with `"plugin": "gliden64"` or `"plugin": "rice"` so only the relevant ones appear.
-- **Gamma Correction** — gamma level.
-- **Input** — per-game Input Mode (Joystick / D-Pad, see above).
-- **Shortcuts** — button bindings for fast forward, state save/load, reset, screenshot, game switcher, turbo per face/shoulder button, rewind, aspect cycle, toggle input mode.
-- **Cheats** — dynamic list from `mupencheat.txt` for the current ROM.
+#### Shared settings (visible with either video plugin)
 
-Settings persist to `mupen64plus.cfg` (in the appropriate plugin section) and are applied on the next relevant restart. Items tagged `"per_game": true` in the JSON (currently only `input_mode`) bypass `mupen64plus.cfg` and persist to per-ROM files instead — see [Per-game input mode](#per-game-input-mode) above.
+| Section | Setting | Notes |
+|---|---|---|
+| Audio | Audio Quality | Resampler: Low / Medium / High (restart required) |
+| Core | Video Plugin | GLideN64 / Rice (restart required) |
+| Core | CPU Overclock | Off / 2× / 4× / 8× (restart required) |
+| Input | Input Mode | Joystick / D-Pad (Brick only, see [Per-game input mode](#per-game-input-mode-brick-only)) |
+| Performance | CPU Mode | Powersave / Ondemand / Performance / Auto (applied on-demand) |
+| Performance | Rewind Buffer | Off / Small / Medium / Large |
+| Performance | Frame Skip | Off / 20fps / 25fps / 30fps (applied on-demand) |
+| Shortcuts | *(18 items)* | Toggle/Hold FF, Reset, Quick Save/Load, Screenshot, Game Switcher, 8× Turbo, Cycle Aspect, Toggle/Hold Rewind, Toggle Input Mode |
+| Cheats | *(dynamic)* | Loaded from `mupencheat.txt` for the current ROM |
+
+#### GLideN64-only settings
+
+| Section | Setting | Notes |
+|---|---|---|
+| Debug | Show FPS, Show VI/s, Show Speed % | Restart required |
+| Dithering | Dithering Pattern, Quantization, RDRAM Dithering, Hi-Res Noise Dithering | |
+| Frame Buffer | FB Emulation, Color to RDRAM, Depth to RDRAM, Color from RDRAM, N64 Depth Compare, Disable FB Info | |
+| Gamma | Force Gamma, Gamma Level | |
+| Hi-Res Textures | Enable Hi-Res, File Storage, Full Alpha Channel, Alt CRC | |
+| Performance | Inaccurate Tex Coords, Legacy Blending, Shader Cache, Fragment Depth Write, Backgrounds Mode | |
+| Rendering | Resolution Factor, Aspect Ratio, FXAA, Multi-Sampling, Anisotropic Filtering, Bilinear Mode, Hybrid Filter, HW Lighting, Coverage, Clipping, Buffer Swap Mode | |
+| Texture Enhancement | Filter Mode, Enhancement Mode, Deposterize, Ignore BG Textures | |
+
+#### Rice-only settings
+
+| Section | Setting | Notes |
+|---|---|---|
+| Debug | Show FPS | Restart required |
+| Frame Buffer | FB Setting, Render To Texture, Screen Update | |
+| Hi-Res Textures | Load Hi-Res Textures, Hi-Res CRC Only | |
+| Performance | Fast Texture Loading, Skip Frame, Accurate Texture Mapping | |
+| Rendering | Multi-Sampling, Anisotropic Filtering, Color Quality, Depth Buffer, Fog | |
+| Texture Enhancement | Texture Enhancement, Force Texture Filter, Mipmapping, Texture Quality | |
+
+#### Save scope
+
+Settings follow NextUI's minarch save model: changes are applied on-demand in memory where possible but only persisted to disk when the user explicitly picks a target from **Options → Save Changes**:
+
+- **Save for Console** — writes to `mupen64plus.cfg` (global, all games)
+- **Save for Game** — writes to `per-game/<rom>.cfg` (this ROM only)
+- **Restore Defaults** — deletes the currently-active scope's file and reverts to defaults
+
+The scope indicator at the top of the Save Changes page shows `Using defaults.`, `Using console config.`, or `Using game config.`
 
 ### CPU mode
 
