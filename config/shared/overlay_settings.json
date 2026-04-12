@@ -466,7 +466,7 @@
             "Performance",
             "Auto"
           ],
-          "default": 1,
+          "default": 2,
           "ini_section": "NextUI"
         },
         {
