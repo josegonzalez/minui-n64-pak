@@ -152,7 +152,7 @@
           "label": "Quantization",
           "description": "Dithering quantization",
           "type": "bool",
-          "default": true
+          "default": false
         },
         {
           "key": "RDRAMImageDitheringMode",
@@ -171,7 +171,7 @@
             "Magic Square",
             "Blue Noise"
           ],
-          "default": 3
+          "default": 0
         }
       ]
     },
@@ -219,7 +219,7 @@
             "From VRAM",
             "Software"
           ],
-          "default": 2,
+          "default": 1,
           "plugin": "gliden64"
         },
         {
@@ -511,7 +511,7 @@
           "label": "Inaccurate Tex Coords",
           "description": "Faster but less accurate texture coords",
           "type": "bool",
-          "default": false,
+          "default": true,
           "plugin": "gliden64"
         },
         {
@@ -519,7 +519,7 @@
           "label": "Legacy Blending",
           "description": "Use legacy blending mode",
           "type": "bool",
-          "default": false,
+          "default": true,
           "plugin": "gliden64"
         },
         {
@@ -564,7 +564,7 @@
           "label": "Threaded Video",
           "description": "Run video backend on a separate thread (restart required)",
           "type": "bool",
-          "default": false,
+          "default": true,
           "plugin": "gliden64"
         }
       ]
@@ -593,7 +593,7 @@
             "8x",
             "16x"
           ],
-          "default": 2,
+          "default": 0,
           "plugin": "gliden64"
         },
         {
@@ -828,7 +828,7 @@
             "3x",
             "4x"
           ],
-          "default": 2,
+          "default": 1,
           "plugin": "gliden64"
         }
       ]
@@ -1605,7 +1605,7 @@
           "min": 0,
           "max": 500,
           "step": 50,
-          "default": 100,
+          "default": 50,
           "plugin": "gliden64"
         },
         {
