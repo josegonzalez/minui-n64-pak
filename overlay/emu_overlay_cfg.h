@@ -8,6 +8,14 @@
 #define EMU_OVL_MAX_VALUES 16
 #define EMU_OVL_MAX_STR 128
 
+// Settings save scope — mirrors NextUI minarch's CONFIG_NONE/CONSOLE/GAME enum.
+// Determines where the overlay writes on "Save" and what "Restore Defaults" deletes.
+typedef enum {
+	EMU_SCOPE_NONE = 0,   // no user config — pure JSON defaults
+	EMU_SCOPE_CONSOLE,    // user has saved global customizations (mupen64plus.cfg)
+	EMU_SCOPE_GAME,       // per-game overrides exist (per-game/<rom>.cfg)
+} EmuConfigScope;
+
 typedef enum {
 	EMU_OVL_TYPE_BOOL,
 	EMU_OVL_TYPE_CYCLE,
@@ -29,7 +37,6 @@ typedef struct {
 	int current_value;
 	int staged_value;
 	bool dirty;
-	bool per_game; // if true, value is persisted to a per-game file by emu_frontend, not mupen64plus.cfg
 } EmuOvlItem;
 
 typedef struct {
@@ -54,8 +61,21 @@ int emu_ovl_cfg_load(EmuOvlConfig* cfg, const char* json_path);
 void emu_ovl_cfg_free(EmuOvlConfig* cfg);
 int emu_ovl_cfg_read_ini(EmuOvlConfig* cfg, const char* ini_path);
 int emu_ovl_cfg_write_ini(EmuOvlConfig* cfg, const char* ini_path);
+
+// Per-game overrides: read a flat "[section] key = value" file and overlay
+// matching items' current_value/staged_value on top of whatever was already
+// loaded via emu_ovl_cfg_read_ini. Returns 0 on success, -1 on error (file
+// missing is not an error — returns 0 with no changes).
+int emu_ovl_cfg_read_per_game(EmuOvlConfig* cfg, const char* path);
+
+// Scoped write: writes ALL items (full snapshot) to `path` in the flat
+// "[section] key = value" per-game format. Used for both "Save for Game"
+// and (via a separate path) "Save for Console".
+int emu_ovl_cfg_write_per_game(EmuOvlConfig* cfg, const char* path);
+
 void emu_ovl_cfg_reset_staged(EmuOvlConfig* cfg);
 void emu_ovl_cfg_reset_section_to_defaults(EmuOvlSection* sec);
+void emu_ovl_cfg_reset_all_to_defaults(EmuOvlConfig* cfg);
 void emu_ovl_cfg_apply_staged(EmuOvlConfig* cfg);
 bool emu_ovl_cfg_has_changes(EmuOvlConfig* cfg);
 

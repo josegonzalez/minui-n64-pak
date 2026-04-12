@@ -46,6 +46,10 @@ static void build_main_menu(EmuOvl* ovl) {
 		n++;
 	}
 
+	snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Save Changes");
+	ovl->main_items[n].type = EMU_OVL_MAIN_SAVE_CHANGES;
+	n++;
+
 	snprintf(ovl->main_items[n].label, sizeof(ovl->main_items[n].label), "Quit");
 	ovl->main_items[n].type = EMU_OVL_MAIN_QUIT;
 	n++;
@@ -346,6 +350,11 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 				ovl->scroll_offset = 0;
 				ovl->current_section = 0;
 				break;
+			case EMU_OVL_MAIN_SAVE_CHANGES:
+				ovl->state = EMU_OVL_STATE_SAVE_CHANGES;
+				ovl->selected = 0;
+				ovl->scroll_offset = 0;
+				break;
 			case EMU_OVL_MAIN_QUIT:
 				ovl->action = EMU_OVL_ACTION_QUIT;
 				ovl->state = EMU_OVL_STATE_CLOSED;
@@ -489,6 +498,32 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 		} else if (input->left) {
 			if (ovl->cheat_cb.cycle_variant)
 				ovl->cheat_cb.cycle_variant(ovl->selected, -1);
+		}
+		break;
+	}
+
+	// ----- SAVE CHANGES submenu -----
+	case EMU_OVL_STATE_SAVE_CHANGES: {
+		// 3 items: Save for Console, Save for Game, Restore Defaults
+		int count = 3;
+		if (input->up) {
+			ovl->selected = (ovl->selected - 1 + count) % count;
+		} else if (input->down) {
+			ovl->selected = (ovl->selected + 1) % count;
+		} else if (input->a) {
+			switch (ovl->selected) {
+			case 0: ovl->action = EMU_OVL_ACTION_SAVE_CONSOLE; break;
+			case 1: ovl->action = EMU_OVL_ACTION_SAVE_GAME; break;
+			case 2: ovl->action = EMU_OVL_ACTION_RESTORE_DEFAULTS; break;
+			}
+			// Return to main menu after action — emu_frontend handles the write
+			ovl->state = EMU_OVL_STATE_MAIN_MENU;
+			ovl->selected = 0;
+			break;
+		} else if (input->b || input->menu) {
+			ovl->state = EMU_OVL_STATE_MAIN_MENU;
+			ovl->selected = 0;
+			break;
 		}
 		break;
 	}
@@ -1086,6 +1121,48 @@ static void render_cheats(EmuOvl* ovl) {
 	draw_footer_hints(ovl, hints, 4);
 }
 
+static const char* scope_label(EmuConfigScope scope) {
+	switch (scope) {
+	case EMU_SCOPE_NONE:    return "Using defaults.";
+	case EMU_SCOPE_CONSOLE: return "Using console config.";
+	case EMU_SCOPE_GAME:    return "Using game config.";
+	}
+	return "";
+}
+
+static void render_save_changes(EmuOvl* ovl) {
+	EmuOvlRenderBackend* r = ovl->render;
+
+	draw_menu_bar(ovl, "Save Changes");
+
+	// Scope indicator below the title
+	const char* desc = scope_label(ovl->scope);
+	int desc_tw = r->text_width(desc, EMU_OVL_FONT_TINY);
+	int title_pill_h = S(PILL_SIZE);
+	int desc_y = PADDING_PX + title_pill_h + S(2);
+	r->draw_text(desc, PADDING_PX + S(BUTTON_PADDING), desc_y,
+				 EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_TINY);
+
+	// 3 rows: Save for Console, Save for Game, Restore Defaults
+	static const char* items[] = {
+		"Save for Console", "Save for Game", "Restore Defaults"
+	};
+	int row_h = S(PILL_SIZE);
+	int content_x = PADDING_PX;
+	int content_w = ovl->screen_w - PADDING_PX * 2;
+	int list_y = calc_centered_list_y(ovl, 3);
+
+	for (int i = 0; i < 3; i++) {
+		int iy = list_y + i * row_h;
+		bool sel = (i == ovl->selected);
+		draw_settings_row(ovl, content_x, iy, content_w, row_h,
+						  items[i], NULL, sel, false, EMU_OVL_FONT_LARGE);
+	}
+
+	const char* hints[] = {"B", "BACK", "A", "OKAY"};
+	draw_footer_hints(ovl, hints, 4);
+}
+
 void emu_ovl_render(EmuOvl* ovl) {
 	if (ovl->state == EMU_OVL_STATE_CLOSED)
 		return;
@@ -1113,6 +1190,9 @@ void emu_ovl_render(EmuOvl* ovl) {
 		break;
 	case EMU_OVL_STATE_CHEATS:
 		render_cheats(ovl);
+		break;
+	case EMU_OVL_STATE_SAVE_CHANGES:
+		render_save_changes(ovl);
 		break;
 	case EMU_OVL_STATE_CLOSED:
 		break;

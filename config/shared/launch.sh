@@ -200,6 +200,7 @@ export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
 export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"
 export EMU_OVERLAY_INI="$DEVICE_CONFIG_DIR/mupen64plus.cfg"
 export EMU_OVERLAY_GAME="$(basename "$ROM" | sed 's/\.[^.]*$//')"
+export EMU_DEFAULT_CFG="$BIN_DIR/default.cfg"
 
 # ── Video plugin selection (reads [NextUI] VideoPlugin from mupen64plus.cfg) ─
 VIDEO_PLUGIN_VALUE=$(awk -F' = ' '
@@ -236,17 +237,62 @@ mkdir -p "$MINUI_DIR"
 export EMU_OVERLAY_SCREENSHOT_DIR="$MINUI_DIR"
 export EMU_OVERLAY_ROMFILE="$(basename "$ROM")"
 
-# ── Per-game input mode (d-pad vs joystick) ──────────────────────────────────
-# Brick-only. Smart Pro and Smart Pro S both have physical analog sticks
-# wired to SDL axes 0/1 via default.cfg, so there's nothing for the input
-# plugin to override — we leave $EMU_INPUT_MODE_FILE unset on those devices
-# and plugin.c's Brick gate skips the remap block entirely. emu_frontend's
-# input_mode helpers early-return when the env var is missing, so the
-# overlay menu's Input → Input Mode item is a visible no-op there.
+# ── Per-game settings ────────────────────────────────────────────────────────
+PER_GAME_DIR="$DEVICE_CONFIG_DIR/per-game"
+mkdir -p "$PER_GAME_DIR"
+PER_GAME_CFG="$PER_GAME_DIR/$(basename "$ROM").cfg"
+export EMU_PER_GAME_CFG="$PER_GAME_CFG"
+
+# If a per-game config exists, overlay its values onto mupen64plus.cfg for
+# this run. Back up the console config first so it can be restored on exit
+# and so the overlay can write Save for Console to the backup path.
+if [ -f "$PER_GAME_CFG" ]; then
+    cp "$DEVICE_CFG" "$DEVICE_CFG.console-backup"
+    export EMU_CONSOLE_CFG="$DEVICE_CFG.console-backup"
+    # Apply each "[section] key = value" line from the per-game file
+    awk '
+    NR == FNR {
+        if (substr($0,1,1) == "[") {
+            i = index($0, "]")
+            if (i > 0) {
+                sec = substr($0, 2, i - 2)
+                rest = substr($0, i + 1)
+                sub(/^ +/, "", rest)
+                j = index(rest, " = ")
+                if (j > 0) {
+                    k = substr(rest, 1, j - 1)
+                    v = substr(rest, j + 3)
+                    ovr[sec, k] = v
+                    okeys[sec, k] = 1
+                }
+            }
+        }
+        next
+    }
+    /^\[/ {
+        gsub(/[\[\]]/, "")
+        cur = $0
+    }
+    {
+        if (cur != "" && index($0, " = ") > 0) {
+            k = $0
+            sub(/ = .*/, "", k)
+            if (okeys[cur, k]) {
+                print k " = " ovr[cur, k]
+                delete okeys[cur, k]
+                next
+            }
+        }
+        print
+    }
+    ' "$PER_GAME_CFG" "$DEVICE_CFG" > "$DEVICE_CFG.tmp" && \
+    mv "$DEVICE_CFG.tmp" "$DEVICE_CFG"
+fi
+
+# Brick-only d-pad vs joystick input mode. On devices with real analog
+# sticks, leave $EMU_INPUT_MODE_FILE unset (plugin.c gates on $DEVICE).
 if [ "$DEVICE" = "brick" ]; then
-    PER_GAME_DIR="$DEVICE_CONFIG_DIR/per-game"
-    mkdir -p "$PER_GAME_DIR"
-    export EMU_INPUT_MODE_FILE="$PER_GAME_DIR/$(basename "$ROM").cfg"
+    export EMU_INPUT_MODE_FILE="$PER_GAME_DIR/$(basename "$ROM").input.cfg"
 fi
 
 # ── Archive extraction ───────────────────────────────────────────────────────
@@ -377,6 +423,11 @@ done
 wait $EMU_PID
 killall sleepmon.elf 2>/dev/null || true
 kill $SYNC_PID 2>/dev/null || true
+
+# Restore console config backup if per-game overrides were applied
+if [ -f "$DEVICE_CFG.console-backup" ]; then
+    mv "$DEVICE_CFG.console-backup" "$DEVICE_CFG"
+fi
 
 # Restore CPU online state, CPU governor/frequency, and GPU governor
 case "$PLATFORM" in

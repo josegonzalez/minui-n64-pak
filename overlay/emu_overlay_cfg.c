@@ -117,8 +117,8 @@ static void parse_item(const cJSON* json_item, EmuOvlItem* item) {
 	s = json_get_string(json_item, "ini_section");
 	safe_strcpy(item->ini_section, sizeof(item->ini_section), s);
 
-	// if true, emu_frontend owns persistence (per-ROM file); skip INI read/write
-	item->per_game = json_get_bool(json_item, "per_game", false);
+	// (per_game flag removed — the scope-aware save system in emu_frontend
+	// handles per-game vs console persistence for all items now.)
 
 	// type
 	const char* type_str = json_get_string(json_item, "type");
@@ -407,8 +407,6 @@ int emu_ovl_cfg_read_ini(EmuOvlConfig* cfg, const char* ini_path) {
 			EmuOvlSection* sec = &cfg->sections[s];
 			for (int i = 0; i < sec->item_count; i++) {
 				EmuOvlItem* item = &sec->items[i];
-				if (item->per_game)
-					continue; // persistence handled by emu_frontend
 				const char* target_sec = get_ini_section_for_item(cfg, sec, item);
 				if (strcmp(target_sec, current_ini_section) != 0)
 					continue;
@@ -484,13 +482,12 @@ int emu_ovl_cfg_write_ini(EmuOvlConfig* cfg, const char* ini_path) {
 	}
 
 	// Build a flat list of dirty items with their target INI sections.
-	// Items flagged per_game are handled by emu_frontend and excluded here.
 	DirtyEntry dirty[EMU_OVL_MAX_SECTIONS * EMU_OVL_MAX_ITEMS];
 	int dirty_count = 0;
 	for (int s = 0; s < cfg->section_count; s++) {
 		EmuOvlSection* sec = &cfg->sections[s];
 		for (int i = 0; i < sec->item_count; i++) {
-			if (sec->items[i].dirty && !sec->items[i].per_game) {
+			if (sec->items[i].dirty) {
 				dirty[dirty_count].item = &sec->items[i];
 				dirty[dirty_count].ini_section = get_ini_section_for_item(cfg, sec, &sec->items[i]);
 				dirty[dirty_count].written = false;
@@ -699,4 +696,130 @@ bool emu_ovl_cfg_has_changes(EmuOvlConfig* cfg) {
 		}
 	}
 	return false;
+}
+
+void emu_ovl_cfg_reset_all_to_defaults(EmuOvlConfig* cfg) {
+	if (!cfg)
+		return;
+	for (int s = 0; s < cfg->section_count; s++)
+		emu_ovl_cfg_reset_section_to_defaults(&cfg->sections[s]);
+}
+
+// ---------------------------------------------------------------------------
+// Per-game config: flat "[section] key = value" file format
+// ---------------------------------------------------------------------------
+
+int emu_ovl_cfg_read_per_game(EmuOvlConfig* cfg, const char* path) {
+	if (!cfg || !path)
+		return -1;
+	FILE* f = fopen(path, "r");
+	if (!f)
+		return 0; // missing file is OK — no per-game overrides
+
+	char line[512];
+	while (fgets(line, sizeof(line), f)) {
+		// Trim trailing whitespace/newline
+		int len = (int)strlen(line);
+		while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' '))
+			line[--len] = '\0';
+		if (len == 0 || line[0] == '#')
+			continue;
+
+		// Parse "[section] key = value" OR bare "key = value"
+		char pg_section[EMU_OVL_MAX_STR] = "";
+		char* kv_start = line;
+		if (line[0] == '[') {
+			char* close = strchr(line, ']');
+			if (close) {
+				int slen = (int)(close - line - 1);
+				if (slen > 0 && slen < EMU_OVL_MAX_STR) {
+					memcpy(pg_section, line + 1, slen);
+					pg_section[slen] = '\0';
+				}
+				kv_start = close + 1;
+				while (*kv_start == ' ') kv_start++;
+			}
+		}
+
+		char* eq = strchr(kv_start, '=');
+		if (!eq)
+			continue;
+		*eq = '\0';
+		char* key = strip(kv_start);
+		char* val = strip(eq + 1);
+
+		// Match against config items
+		for (int s = 0; s < cfg->section_count; s++) {
+			EmuOvlSection* sec = &cfg->sections[s];
+			for (int i = 0; i < sec->item_count; i++) {
+				EmuOvlItem* item = &sec->items[i];
+				if (strcmp(item->key, key) != 0)
+					continue;
+				// If the per-game line has a [section], verify it matches
+				if (pg_section[0] != '\0') {
+					const char* target = get_ini_section_for_item(cfg, sec, item);
+					if (strcmp(target, pg_section) != 0)
+						continue;
+				}
+
+				int v;
+				switch (item->type) {
+				case EMU_OVL_TYPE_BOOL:
+					v = parse_ini_bool(val);
+					break;
+				case EMU_OVL_TYPE_CYCLE:
+				case EMU_OVL_TYPE_INT:
+					if (item->float_scale > 0)
+						v = (int)(atof(val) * item->float_scale + 0.5);
+					else
+						v = parse_ini_int(val);
+					break;
+				default:
+					v = parse_ini_int(val);
+					break;
+				}
+				item->current_value = v;
+				item->staged_value = v;
+				item->dirty = false;
+			}
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
+int emu_ovl_cfg_write_per_game(EmuOvlConfig* cfg, const char* path) {
+	if (!cfg || !path)
+		return -1;
+	FILE* f = fopen(path, "w");
+	if (!f) {
+		printf("[emu_ovl_cfg] failed to write per-game config %s\n", path);
+		return -1;
+	}
+
+	// Full snapshot: write every item's staged_value in [section] key = value form.
+	for (int s = 0; s < cfg->section_count; s++) {
+		EmuOvlSection* sec = &cfg->sections[s];
+		for (int i = 0; i < sec->item_count; i++) {
+			EmuOvlItem* item = &sec->items[i];
+			const char* ini_sec = get_ini_section_for_item(cfg, sec, item);
+			switch (item->type) {
+			case EMU_OVL_TYPE_BOOL:
+				fprintf(f, "[%s] %s = %s\n", ini_sec, item->key,
+						item->staged_value ? "True" : "False");
+				break;
+			case EMU_OVL_TYPE_CYCLE:
+			case EMU_OVL_TYPE_INT:
+				if (item->float_scale > 0)
+					fprintf(f, "[%s] %s = %f\n", ini_sec, item->key,
+							(double)item->staged_value / item->float_scale);
+				else
+					fprintf(f, "[%s] %s = %d\n", ini_sec, item->key,
+							item->staged_value);
+				break;
+			}
+		}
+	}
+	fclose(f);
+	return 0;
 }

@@ -13,6 +13,10 @@
 // Frame skip: owned here, read by GLideN64 RSP.cpp via extern
 int g_frameSkip = 0;
 
+// Forward declarations for scope-aware save system
+static const char* get_per_game_path(void);
+static EmuConfigScope compute_scope(void);
+
 // Core API and plugin ops (set by emu_frontend_init)
 static EmuFrontendCoreAPI s_coreAPI;
 static EmuFrontendPluginOps s_pluginOps;
@@ -1083,9 +1087,16 @@ static void overlay_ensure_init(int w, int h) {
 		// Load cheats from mupencheat.txt for the current ROM
 		load_cheats();
 
-		// Load the per-game input mode into the overlay config (this item is
-		// flagged per_game so the INI reader skipped it).
+		// Load per-game overrides if a per-game config file exists
+		const char* pgp = get_per_game_path();
+		if (pgp && pgp[0] != '\0')
+			emu_ovl_cfg_read_per_game(&s_overlayConfig, pgp);
+
+		// Load the per-game input mode (Brick-only; no-op on other devices)
 		load_input_mode_from_file(&s_overlayConfig);
+
+		// Compute initial scope for the Save Changes UI
+		s_overlay.scope = compute_scope();
 	}
 
 	// Try GL init on the video thread (retries each frame until GL context is available)
@@ -1225,21 +1236,134 @@ static EmuOvlAction run_overlay_loop(void) {
 
 	EmuOvlAction action = emu_ovl_get_action(&s_overlay);
 
-	// Handle config changes: write to INI first (while dirty flags are set), then apply
+	// Apply on-demand runtime settings (cpu_mode, frame_skip, input_mode)
+	// WITHOUT persisting to disk. Dirty flags stay set so the Save Changes
+	// menu knows something needs persistence.
 	if (emu_ovl_cfg_has_changes(&s_overlayConfig)) {
-		// Apply runtime settings before clearing dirty flags
 		apply_cpu_mode_if_dirty(&s_overlayConfig);
 		apply_frame_skip_if_dirty(&s_overlayConfig);
 		apply_input_mode_if_dirty(&s_overlayConfig);
-		if (s_overlayIniPath[0] != '\0') {
-			emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
-		}
-		// Map audio_quality to RESAMPLE string after INI is written
-		apply_audio_quality_if_dirty(&s_overlayConfig);
-		emu_ovl_cfg_apply_staged(&s_overlayConfig);
 	}
 
 	return action;
+}
+
+// Path to the per-game config file for this ROM
+static const char* get_per_game_path(void) {
+	return getenv("EMU_PER_GAME_CFG");
+}
+
+// Path to the ".customized" stamp (console scope indicator)
+static char s_customizedPath[512] = "";
+static void ensure_customized_path(void) {
+	if (s_customizedPath[0] != '\0') return;
+	// Derive from the overlay INI path's directory
+	if (s_overlayIniPath[0] == '\0') return;
+	snprintf(s_customizedPath, sizeof(s_customizedPath), "%s", s_overlayIniPath);
+	char* slash = strrchr(s_customizedPath, '/');
+	if (slash) {
+		snprintf(slash + 1, sizeof(s_customizedPath) - (slash + 1 - s_customizedPath),
+				 ".customized");
+	}
+}
+
+static EmuConfigScope compute_scope(void) {
+	const char* pgp = get_per_game_path();
+	if (pgp && pgp[0] != '\0' && access(pgp, F_OK) == 0)
+		return EMU_SCOPE_GAME;
+	ensure_customized_path();
+	if (s_customizedPath[0] != '\0' && access(s_customizedPath, F_OK) == 0)
+		return EMU_SCOPE_CONSOLE;
+	return EMU_SCOPE_NONE;
+}
+
+static void handle_save_for_console(void) {
+	// Write all items to mupen64plus.cfg via the existing merge-preserve writer.
+	// When in game scope, launch.sh backed up the console config to
+	// $EMU_CONSOLE_CFG; write there instead so the console config is
+	// updated without clobbering the game-overlaid runtime copy.
+	const char* target = getenv("EMU_CONSOLE_CFG");
+	if (!target || target[0] == '\0') target = s_overlayIniPath;
+	if (target[0] != '\0') {
+		emu_ovl_cfg_write_ini(&s_overlayConfig, target);
+		apply_audio_quality_if_dirty(&s_overlayConfig);
+	}
+	emu_ovl_cfg_apply_staged(&s_overlayConfig);
+	// Touch .customized stamp
+	ensure_customized_path();
+	if (s_customizedPath[0] != '\0') {
+		FILE* f = fopen(s_customizedPath, "w");
+		if (f) fclose(f);
+	}
+	s_overlay.scope = EMU_SCOPE_CONSOLE;
+	fprintf(stderr, "[Overlay] Saved for console.\n");
+}
+
+static void handle_save_for_game(void) {
+	const char* pgp = get_per_game_path();
+	if (!pgp || pgp[0] == '\0') {
+		fprintf(stderr, "[Overlay] No per-game path set; cannot save for game.\n");
+		return;
+	}
+	emu_ovl_cfg_write_per_game(&s_overlayConfig, pgp);
+	// Also write to the live mupen64plus.cfg so restart-required settings
+	// take effect on next launch of THIS same game (launch.sh will overlay
+	// the per-game file anyway, but if the user is still in-session it keeps
+	// the runtime copy current too).
+	if (s_overlayIniPath[0] != '\0') {
+		emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
+		apply_audio_quality_if_dirty(&s_overlayConfig);
+	}
+	emu_ovl_cfg_apply_staged(&s_overlayConfig);
+	s_overlay.scope = EMU_SCOPE_GAME;
+	fprintf(stderr, "[Overlay] Saved for game.\n");
+}
+
+static void handle_restore_defaults(void) {
+	if (s_overlay.scope == EMU_SCOPE_GAME) {
+		// Delete per-game file, revert to console scope
+		const char* pgp = get_per_game_path();
+		if (pgp && pgp[0] != '\0') unlink(pgp);
+		// Reload values from the console config (mupen64plus.cfg)
+		if (s_overlayIniPath[0] != '\0')
+			emu_ovl_cfg_read_ini(&s_overlayConfig, s_overlayIniPath);
+		s_overlay.scope = compute_scope();
+		fprintf(stderr, "[Overlay] Restored console defaults.\n");
+	} else if (s_overlay.scope == EMU_SCOPE_CONSOLE) {
+		// Delete .customized stamp; reset all items to JSON defaults
+		ensure_customized_path();
+		if (s_customizedPath[0] != '\0') unlink(s_customizedPath);
+		emu_ovl_cfg_reset_all_to_defaults(&s_overlayConfig);
+		emu_ovl_cfg_apply_staged(&s_overlayConfig);
+		// Re-seed mupen64plus.cfg from default.cfg
+		const char* default_cfg = getenv("EMU_DEFAULT_CFG");
+		if (default_cfg && default_cfg[0] != '\0' && s_overlayIniPath[0] != '\0') {
+			// Copy default.cfg over mupen64plus.cfg
+			FILE* src = fopen(default_cfg, "r");
+			if (src) {
+				FILE* dst = fopen(s_overlayIniPath, "w");
+				if (dst) {
+					char buf[4096];
+					size_t n;
+					while ((n = fread(buf, 1, sizeof(buf), src)) > 0)
+						fwrite(buf, 1, n, dst);
+					fclose(dst);
+				}
+				fclose(src);
+			}
+		}
+		s_overlay.scope = EMU_SCOPE_NONE;
+		fprintf(stderr, "[Overlay] Restored defaults.\n");
+	} else {
+		// Already on defaults — reset staged values
+		emu_ovl_cfg_reset_all_to_defaults(&s_overlayConfig);
+		emu_ovl_cfg_apply_staged(&s_overlayConfig);
+		fprintf(stderr, "[Overlay] Already on defaults; reset staged.\n");
+	}
+	// Re-apply runtime settings with the restored values
+	apply_cpu_mode(find_cpu_mode_value(&s_overlayConfig));
+	int fs = find_frame_skip_value(&s_overlayConfig);
+	if (fs >= 0) g_frameSkip = fs;
 }
 
 static void handle_overlay_action(EmuOvlAction action) {
@@ -1266,6 +1390,15 @@ static void handle_overlay_action(EmuOvlAction action) {
 		}
 		break;
 	}
+	case EMU_OVL_ACTION_SAVE_CONSOLE:
+		handle_save_for_console();
+		break;
+	case EMU_OVL_ACTION_SAVE_GAME:
+		handle_save_for_game();
+		break;
+	case EMU_OVL_ACTION_RESTORE_DEFAULTS:
+		handle_restore_defaults();
+		break;
 	default:
 		break;
 	}

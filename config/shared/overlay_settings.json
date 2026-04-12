@@ -86,8 +86,7 @@
             "Joystick",
             "D-Pad"
           ],
-          "default": 0,
-          "per_game": true
+          "default": 0
         }
       ]
     },
