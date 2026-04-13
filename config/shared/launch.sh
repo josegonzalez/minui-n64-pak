@@ -210,13 +210,13 @@ VIDEO_PLUGIN_VALUE=$(awk -F' = ' '
     in_section && $1 == "VideoPlugin" { gsub(/[[:space:]]+/, "", $2); print $2; exit }
 ' "$DEVICE_CFG" 2>/dev/null)
 case "$VIDEO_PLUGIN_VALUE" in
-    1)
-        GFX_PLUGIN="mupen64plus-video-rice.so"
-        export EMU_VIDEO_PLUGIN=rice
-        ;;
-    *)
+    0)
         GFX_PLUGIN="mupen64plus-video-GLideN64.so"
         export EMU_VIDEO_PLUGIN=gliden64
+        ;;
+    *)
+        GFX_PLUGIN="mupen64plus-video-rice.so"
+        export EMU_VIDEO_PLUGIN=rice
         ;;
 esac
 # Font: try NextUI's font1/font2.ttf (selected via minuisettings.txt font=),
