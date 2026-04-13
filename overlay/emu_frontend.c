@@ -1428,12 +1428,20 @@ static EmuOvlAction run_overlay_loop(void) {
 				if (nb > 16) nb = 16;
 				for (int b = 0; b < nb; b++) {
 					int cur = SDL_JoystickGetButton(s_joy, b);
+					// Fix 1: skip MENU and SELECT — they're modifier-only
+					// in capture. MENU is reserved (opens overlay), SELECT
+					// is a modifier key. Both can be held simultaneously
+					// with another button to create a combo binding.
+					if (b == MOD_BTN_MENU || b == MOD_BTN_SELECT) {
+						bc_prev_btn[b] = cur;
+						continue;
+					}
 					if (cur && !bc_prev_btn[b]) {
 						m->physical = b;
 						m->is_axis = 0;
 						m->axis_dir = 0;
-						// Set modifier only if captured button != modifier button
-						m->mod = (held_mod > 0 && b != held_mod) ? held_mod : 0;
+						// Fix 2: held_mod != 0 (was > 0, excluded negative axis mods)
+						m->mod = (held_mod != 0 && b != held_mod) ? held_mod : 0;
 						bound = true;
 						break;
 					}
@@ -1442,7 +1450,11 @@ static EmuOvlAction run_overlay_loop(void) {
 				if (!bound) {
 					int na = SDL_JoystickNumAxes(s_joy);
 					if (na > 8) na = 8;
+					// Fix 3: skip the modifier's own axis so L2/R2 held as
+					// modifier don't get captured as the bound axis
+					int skip_axis = (held_mod < 0) ? -(held_mod + 1) : -1;
 					for (int a = 0; a < na; a++) {
+						if (a == skip_axis) continue;
 						int val = SDL_JoystickGetAxis(s_joy, a);
 						int delta = val - bc_prev_axis[a];
 						if (delta < 0) delta = -delta;
@@ -1450,8 +1462,8 @@ static EmuOvlAction run_overlay_loop(void) {
 							m->physical = a;
 							m->is_axis = 1;
 							m->axis_dir = (val > bc_prev_axis[a]) ? 1 : -1;
-							// Axis captures don't get axis modifiers (would conflict)
-							m->mod = (held_mod > 0) ? held_mod : 0;
+							// Fix 2 (same): allow axis modifiers too
+							m->mod = (held_mod != 0) ? held_mod : 0;
 							bound = true;
 							break;
 						}
