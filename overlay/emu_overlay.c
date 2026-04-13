@@ -1,8 +1,10 @@
 #include "emu_overlay.h"
+#include "emu_overlay_icons.h"
 #include "emu_frontend.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 // Layout constants (pre-scaled) — matching NextUI's common/defines.h.
 // NextUI's desktop platform (1024x768, FIXED_SCALE=3) overrides PADDING to 5,
@@ -212,7 +214,8 @@ static void load_slot_screenshots(EmuOvl* ovl) {
 		}
 		char path[512];
 		get_slot_screenshot_path(ovl, i, path, sizeof(path));
-		ovl->slot_icons[i] = ovl->render->load_icon(path, target_h);
+		if (access(path, F_OK) == 0)
+			ovl->slot_icons[i] = ovl->render->load_icon(path, target_h);
 	}
 }
 
@@ -277,20 +280,15 @@ int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,
 	for (int i = 0; i < EMU_OVL_MAX_SLOTS; i++)
 		ovl->slot_icons[i] = -1;
 
-	// Load button hint icons from resource directory
+	// Load button hint icons from embedded ARGB data
 	ovl->icon_a = -1;
 	ovl->icon_b = -1;
 	ovl->icon_dpad_h = -1;
-	const char* res_dir = getenv("EMU_OVERLAY_RES");
-	if (res_dir && res_dir[0] != '\0' && render->load_icon) {
+	if (render->load_icon_rgba) {
 		int icon_h = S(BUTTON_SIZE); // match NextUI's btn_sz = SCALE1(BUTTON_SIZE)
-		char path[512];
-		snprintf(path, sizeof(path), "%s/nav_button_a.png", res_dir);
-		ovl->icon_a = render->load_icon(path, icon_h);
-		snprintf(path, sizeof(path), "%s/nav_button_b.png", res_dir);
-		ovl->icon_b = render->load_icon(path, icon_h);
-		snprintf(path, sizeof(path), "%s/nav_dpad_horizontal.png", res_dir);
-		ovl->icon_dpad_h = render->load_icon(path, icon_h);
+		ovl->icon_a = render->load_icon_rgba(icon_a_data, ICON_A_W, ICON_A_H, icon_h);
+		ovl->icon_b = render->load_icon_rgba(icon_b_data, ICON_B_W, ICON_B_H, icon_h);
+		ovl->icon_dpad_h = render->load_icon_rgba(icon_dpad_h_data, ICON_DPAD_H_W, ICON_DPAD_H_H, icon_h);
 	}
 
 	// Note: caller is responsible for calling render->init() before emu_ovl_init

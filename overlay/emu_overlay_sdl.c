@@ -13,7 +13,6 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
-#include <SDL2/SDL_image.h>
 #include <GLES3/gl3.h>
 
 #include <math.h>
@@ -196,12 +195,6 @@ static int ovl_sdl_init(int screen_w, int screen_h) {
 		}
 	}
 
-	// Initialize SDL_image for PNG icon loading
-	if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) {
-		fprintf(stderr, "[OverlaySDL] IMG_Init(PNG) failed: %s\n", IMG_GetError());
-		// Non-fatal: icons will just not load
-	}
-
 	// Reset icon storage
 	for (int i = 0; i < MAX_ICONS; i++)
 		s_icons[i] = NULL;
@@ -342,7 +335,6 @@ static void ovl_sdl_destroy(void) {
 		}
 	}
 	s_iconCount = 0;
-	IMG_Quit();
 
 	if (s_renderSurface) {
 		SDL_FreeSurface(s_renderSurface);
@@ -853,14 +845,43 @@ static int ovl_sdl_load_icon(const char* path, int target_height) {
 	if (!path || s_iconCount >= MAX_ICONS || target_height <= 0)
 		return -1;
 
-	SDL_Surface* raw = IMG_Load(path);
+	SDL_Surface* raw = SDL_LoadBMP(path);
 	if (!raw) {
-		fprintf(stderr, "[OverlaySDL] IMG_Load(%s) failed: %s\n", path, IMG_GetError());
+		fprintf(stderr, "[OverlaySDL] SDL_LoadBMP(%s) failed: %s\n", path, SDL_GetError());
 		return -1;
 	}
 
 	// Scale to target height preserving aspect ratio
 	int scaled_w = (int)((float)raw->w * (float)target_height / (float)raw->h + 0.5f);
+	SDL_Surface* argb = SDL_CreateRGBSurfaceWithFormat(
+		0, scaled_w, target_height, 32, SDL_PIXELFORMAT_ARGB8888);
+	if (!argb) {
+		SDL_FreeSurface(raw);
+		return -1;
+	}
+
+	SDL_SetSurfaceBlendMode(raw, SDL_BLENDMODE_NONE);
+	SDL_Rect dst = {0, 0, scaled_w, target_height};
+	SDL_BlitScaled(raw, NULL, argb, &dst);
+	SDL_FreeSurface(raw);
+
+	int id = s_iconCount++;
+	s_icons[id] = argb;
+	return id;
+}
+
+static int ovl_sdl_load_icon_rgba(const uint32_t* pixels, int w, int h,
+								  int target_height) {
+	if (!pixels || s_iconCount >= MAX_ICONS || target_height <= 0)
+		return -1;
+
+	SDL_Surface* raw = SDL_CreateRGBSurfaceFrom(
+		(void*)pixels, w, h, 32, w * 4,
+		0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+	if (!raw)
+		return -1;
+
+	int scaled_w = (int)((float)w * (float)target_height / (float)h + 0.5f);
 	SDL_Surface* argb = SDL_CreateRGBSurfaceWithFormat(
 		0, scaled_w, target_height, 32, SDL_PIXELFORMAT_ARGB8888);
 	if (!argb) {
@@ -907,7 +928,7 @@ static void ovl_sdl_free_icon(int icon_id) {
 }
 
 // ---------------------------------------------------------------------------
-// save_captured_frame — write captured frame as PNG
+// save_captured_frame — write captured frame as BMP
 // ---------------------------------------------------------------------------
 
 static int ovl_sdl_save_captured_frame(const char* path) {
@@ -937,6 +958,7 @@ static EmuOvlRenderBackend s_backend = {
 	ovl_sdl_capture_frame,
 	ovl_sdl_draw_captured_frame,
 	ovl_sdl_load_icon,
+	ovl_sdl_load_icon_rgba,
 	ovl_sdl_free_icon,
 	ovl_sdl_draw_icon,
 	ovl_sdl_icon_width,

@@ -242,7 +242,6 @@ if [ ! -f "$FONT_FILE" ]; then
     done
 fi
 export EMU_OVERLAY_FONT="$FONT_FILE"
-export EMU_OVERLAY_RES="$BIN_DIR"
 # Screenshot directory (matches minarch's .minui path for game switcher)
 MINUI_DIR="$SHARED_USERDATA_PATH/.minui/$EMU_TAG"
 mkdir -p "$MINUI_DIR"

@@ -1,5 +1,5 @@
 diff --git a/projects/unix/Makefile b/projects/unix/Makefile
-index da26ff1..9955caa 100755
+index da26ff1..c778424 100755
 --- a/projects/unix/Makefile
 +++ b/projects/unix/Makefile
 @@ -140,11 +140,12 @@ endif
@@ -21,7 +21,7 @@ index da26ff1..9955caa 100755
  endif
  CFLAGS += $(SDL_CFLAGS)
 -LDLIBS += $(SDL_LDLIBS)
-+LDLIBS += $(SDL_LDLIBS) -lSDL2_ttf -lSDL2_image
++LDLIBS += $(SDL_LDLIBS) -lSDL2_ttf
  
  # set mupen64plus core API header path
  ifneq ("$(APIDIR)","")

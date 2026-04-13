@@ -273,9 +273,6 @@ define DIST_COMMON
 	cp $(SRC)/mupen64plus-video-rice/data/RiceVideoLinux.ini $(1)/
 	cp $(SRC)/7zip/7zzs                                $(1)/
 	cp $(SRC)/7zip/License.txt                         $(1)/7zzs.LICENSE
-	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_a.png $(1)/
-	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_b.png $(1)/
-	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_dpad_horizontal.png $(1)/
 	cp pak.json $(1)/
 endef
 

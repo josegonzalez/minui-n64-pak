@@ -40,13 +40,14 @@ typedef struct EmuOvlRenderBackend {
 	void (*end_frame)(void);
 	void (*capture_frame)(void);
 	void (*draw_captured_frame)(float dim);
-	// Icon support (PNG images for button hints and screenshots)
+	// Icon support (BMP files for screenshots, embedded ARGB data for button hints)
 	int (*load_icon)(const char* path, int target_height); // returns icon_id (>=0) or -1
+	int (*load_icon_rgba)(const uint32_t* pixels, int w, int h, int target_height);
 	void (*free_icon)(int icon_id);
 	void (*draw_icon)(int icon_id, int x, int y);
 	int (*icon_width)(int icon_id);
 	int (*icon_height)(int icon_id);
-	// Save captured frame as PNG
+	// Save captured frame as BMP
 	int (*save_captured_frame)(const char* path);
 } EmuOvlRenderBackend;
 
