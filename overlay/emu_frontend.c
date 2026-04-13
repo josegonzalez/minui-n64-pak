@@ -1220,6 +1220,17 @@ static EmuOvlAction run_overlay_loop(void) {
 	// Pause audio (stays on main thread)
 	SDL_PauseAudio(1);
 
+	// Temporarily restore d-pad for menu navigation. trimui_inputd's
+	// input_no_dpad suppresses hat events at the kernel level, which
+	// breaks poll_overlay_input (it reads SDL hat 0). Remove the flags
+	// while the menu is open; re-apply after close via apply_input_mode_if_dirty.
+	int saved_input_mode = -1;
+	EmuOvlItem* im_item = find_input_mode_item(&s_overlayConfig);
+	if (im_item) {
+		saved_input_mode = im_item->current_value;
+		apply_input_mode(1); // force d-pad passthrough for menu nav
+	}
+
 	// Open overlay on video thread (captures current frame — needs GL)
 	s_pluginOps.exec_on_video_thread(overlay_open_on_gl_thread, NULL);
 
@@ -1282,6 +1293,12 @@ static EmuOvlAction run_overlay_loop(void) {
 	SDL_PauseAudio(0);
 
 	EmuOvlAction action = emu_ovl_get_action(&s_overlay);
+
+	// Restore the input mode that was active before the menu opened.
+	// If the user changed it in the menu, apply_input_mode_if_dirty will
+	// override with the new value below.
+	if (saved_input_mode >= 0)
+		apply_input_mode(saved_input_mode);
 
 	// Apply on-demand runtime settings (cpu_mode, frame_skip, input_mode)
 	// WITHOUT persisting to disk. Dirty flags stay set so the Save Changes
