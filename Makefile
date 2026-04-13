@@ -1,3 +1,10 @@
+PAK_NAME := $(shell jq -r .name pak.json)
+PAK_TYPE := $(shell jq -r .type pak.json)
+PAK_FOLDER := $(shell echo $(PAK_TYPE) | cut -c1)$(shell echo $(PAK_TYPE) | tr '[:upper:]' '[:lower:]' | cut -c2-)s
+
+PUSH_SDCARD_PATH ?= /mnt/SDCARD
+PUSH_PLATFORM ?= tg5040
+
 SHELL := /bin/bash
 
 # ── Upstream repos and pinned versions ────────────────────────────────────────
@@ -65,17 +72,17 @@ DOCKER_SCRIPT := /build/src/.docker-env.sh
 
 .PHONY: all build tg5040 tg5050 gliden64 rice dist clone patch patches clean
 
-build: all
+build: clone patch
+	$(MAKE) tg5040
+	$(MAKE) tg5050
+	$(MAKE) gliden64
+	$(MAKE) rice-tg5040
+	$(MAKE) rice-tg5050
 
 # Build both platforms sequentially, staging outputs between builds since they
 # share source directories.
-all: clone patch
-	$(MAKE) tg5040
-	$(MAKE) gliden64
-	$(MAKE) rice-tg5040
+all:
 	$(MAKE) dist-tg5040
-	$(MAKE) tg5050
-	$(MAKE) rice-tg5050
 	$(MAKE) dist-tg5050
 	@echo "=== Build complete. dist/N64.pak/ assembled ==="
 	@find $(DIST) -type f | sort
@@ -269,9 +276,10 @@ define DIST_COMMON
 	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_a.png $(1)/
 	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_button_b.png $(1)/
 	cp $(SRC)/nx-redux/skeleton/SYSTEM/res/nav_dpad_horizontal.png $(1)/
+	cp pak.json $(1)/
 endef
 
-dist: dist-tg5050
+dist: dist-tg5040 dist-tg5050
 	@echo "=== dist/N64.pak/ assembled ==="
 	@find $(DIST) -type f | sort
 
@@ -300,6 +308,15 @@ dist-tg5050:
 	$(call DIST_COMMON,$(DIST)/tg5050)
 	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
 	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5050/libz.so.1
+
+release: build dist
+	$(MAKE) bump-version
+	cd dist && zip -r "$(PAK_NAME).pak.zip" "$(PAK_NAME).pak"
+	ls -lah dist
+
+bump-version:
+	jq '.version = "$(RELEASE_VERSION)"' pak.json > pak.json.tmp
+	mv pak.json.tmp pak.json
 
 # ── Regenerate patches from current source trees ─────────────────────────────
 
