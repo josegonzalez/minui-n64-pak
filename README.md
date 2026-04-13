@@ -63,14 +63,28 @@ The 7-Zip binary ships alongside the plugins and is downloaded + sha256-verified
 
 ## Patches
 
-All patches live in `patches/shared/`:
+All patches live in `patches/shared/`. See [`patches/shared/README.md`](patches/shared/README.md) for detailed descriptions of what each patch modifies and why.
 
-- **mupen64plus-core.patch** — Adds `romfilename` field to `ROM_PARAMS` and `SaveFilenameFormat=2` option for ROM-filename-based save naming (matching NextUI conventions). Exports `ROM_PARAMS` in the linker version script so the frontend can set the filename via dlsym.
-- **mupen64plus-ui-console.patch** — Changes `dlopen()` to use `RTLD_GLOBAL` so GLES/EGL symbols from the core library are visible to plugins. Sets `ROM_PARAMS.romfilename` from the command-line ROM path (basename without extension) for save file naming.
-- **mupen64plus-audio-sdl.patch** — Empty placeholder (pulled from nx-redux at build time). Audio plugin is built from unmodified source to enable `src-sinc-fastest` resampler via libsamplerate.
-- **mupen64plus-input-sdl.patch** — Per-game d-pad vs joystick input mode (reads `$EMU_INPUT_MODE_FILE` with stat-mtime caching and remaps the physical d-pad through the N64 analog stick when `input_mode=joystick`), plus the Brick's R2+ABXY C-button remap by physical position.
-- **GLideN64-standalone.patch** — Thin shim that wires GLideN64 into the shared `emu_frontend` overlay module. All custom features (overlay menu, power button handling, shortcuts, rewind, cheats, save/load, screenshot, game switcher) live in `overlay/emu_frontend.c` and are compiled into the plugin via the CMakeLists sources list. Also contains the EGL/GLES runtime glue, the tg5050 libpng16 static link, and the cross-compilation toolchain file.
-- **mupen64plus-video-rice.patch** — Wires the Rice video plugin into the same `emu_frontend` module as GLideN64 so every custom feature works regardless of which video plugin is active. Adds the overlay sources to Rice's Makefile and hooks `emu_frontend_frame` into `UpdateScreen`.
+## Save states
+
+Save and Load are on the Quick Menu's main screen. When either is highlighted, d-pad left/right cycles through **8 slots** and a preview panel appears on the right half of the screen showing the slot's screenshot (or "Empty Slot" if unused). Pressing A immediately saves or loads the visible slot and closes the menu. This matches NextUI's minarch save-state UX — no separate slot-picker screen.
+
+Slot screenshots are stored as BMP files at `$SHARED_USERDATA_PATH/.minui/N64/<rom>.<slot>.bmp` and are loaded when the menu opens.
+
+## Data paths
+
+All paths are set via CLI flags or `--set` on the mupen64plus command line — `launch.sh` does not `sed` the config file for these.
+
+| Purpose | Mechanism | Path on Brick |
+|---|---|---|
+| User config | `--configdir` | `.userdata/tg5040/N64-mupen64plus/brick/` |
+| Shared data (ROM DB, INI) | `--datadir` | `Emus/tg5040/N64.pak/tg5040/` |
+| Plugins | `--plugindir` | `Emus/tg5040/N64.pak/tg5040/` |
+| SRAM / battery saves | `--set "Core[SaveSRAMPath]=..."` | `/mnt/SDCARD/Saves/N64/` |
+| Save states | `--set "Core[SaveStatePath]=..."` | `.userdata/shared/N64-mupen64plus/` |
+| Screenshots | `--sshotdir` | `/mnt/SDCARD/Screenshots/` |
+| User cache (shaders, textures) | `--cachedir` (patched into ui-console) | `.userdata/tg5040/N64-mupen64plus/brick/cache/` |
+| User data | `XDG_DATA_HOME` env var | `.userdata/tg5040/N64-mupen64plus/brick/` |
 
 ## Dist layout
 
@@ -93,6 +107,9 @@ dist/N64.pak/
 │   ├── mupencheat.txt                  cheat codes
 │   ├── 7zzs                            7-Zip standalone (for .zip/.7z ROMs)
 │   ├── 7zzs.LICENSE                    7-Zip license
+│   ├── nav_button_a.png                button hint icon (A)
+│   ├── nav_button_b.png                button hint icon (B)
+│   ├── nav_dpad_horizontal.png         button hint icon (d-pad)
 │   ├── libpng16.so.16                  libpng runtime
 │   └── libz.so.1                       zlib runtime (libpng16 dep)
 └── tg5050/                            TrimUI Smart Pro S
@@ -183,13 +200,13 @@ The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagg
 | Section | Setting | Notes |
 |---|---|---|
 | Audio | Audio Quality | Resampler: Low / Medium / High (restart required) |
-| Core | Video Plugin | GLideN64 / Rice (restart required) |
+| Core | Video Plugin | Rice (default) / GLideN64 (restart required) |
 | Core | CPU Overclock | Off / 2× / 4× / 8× (restart required) |
 | Input | Input Mode | Joystick / D-Pad (Brick only, see [Per-game input mode](#per-game-input-mode-brick-only)) |
 | Performance | CPU Mode | Powersave / Ondemand / Performance / Auto (applied on-demand) |
 | Performance | Rewind Buffer | Off / Small / Medium / Large |
 | Performance | Frame Skip | Off / 20fps / 25fps / 30fps (applied on-demand) |
-| Shortcuts | *(18 items)* | Toggle/Hold FF, Reset, Quick Save/Load, Screenshot, Game Switcher, 8× Turbo, Cycle Aspect, Toggle/Hold Rewind, Toggle Input Mode |
+| Shortcuts | *(19 items)* | Toggle/Hold FF, Reset, Quick Save/Load, Screenshot, Game Switcher, 8× Turbo, Cycle Aspect, Toggle/Hold Rewind, Toggle Input Mode |
 | Cheats | *(dynamic)* | Loaded from `mupencheat.txt` for the current ROM |
 
 #### GLideN64-only settings
@@ -201,9 +218,9 @@ The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagg
 | Frame Buffer | FB Emulation, Color to RDRAM, Depth to RDRAM, Color from RDRAM, N64 Depth Compare, Disable FB Info | |
 | Gamma | Force Gamma, Gamma Level | |
 | Hi-Res Textures | Enable Hi-Res, File Storage, Full Alpha Channel, Alt CRC | |
-| Performance | Inaccurate Tex Coords, Legacy Blending, Shader Cache, Fragment Depth Write, Backgrounds Mode | |
+| Performance | Inaccurate Tex Coords, Legacy Blending, Shader Cache, Fragment Depth Write, Backgrounds Mode, Threaded Video | |
 | Rendering | Resolution Factor, Aspect Ratio, FXAA, Multi-Sampling, Anisotropic Filtering, Bilinear Mode, Hybrid Filter, HW Lighting, Coverage, Clipping, Buffer Swap Mode | |
-| Texture Enhancement | Filter Mode, Enhancement Mode, Deposterize, Ignore BG Textures | |
+| Texture Enhancement | Filter Mode, Enhancement Mode, Deposterize, Ignore BG Textures, Texture Cache Size | |
 
 #### Rice-only settings
 
@@ -233,10 +250,10 @@ The overlay menu's **Performance → CPU Mode** toggle controls the kernel CPU g
 | Mode | Governor | Min Freq | Max Freq |
 |------|----------|----------|----------|
 | Powersave | `powersave` | 408 MHz | 408 MHz |
-| Ondemand (default) | `ondemand` | 1.2 GHz | 1.8 GHz |
-| Performance | `performance` | Platform max | Platform max |
+| Ondemand | `ondemand` | 1.2 GHz | 1.8 GHz |
+| Performance (default) | `performance` | Platform max | Platform max |
 
-Applied immediately when changed, persists to the config file, and re-applied automatically on each launch.
+Applied immediately when changed. Persisted only via Options → Save Changes.
 
 ## Build flags
 
