@@ -244,7 +244,7 @@ gliden64: $(PATCH_STAMP)
 	@# Replace bundled static libs with ARM64 versions:
 	@#   libpng16.a from tg5050 sysroot (tg5040 only has libpng12)
 	@#   libz.a from zlib source build above
-	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.a /build/src/GLideN64/src/GLideNHQ/lib/libpng.a
+	$(DOCKER_RUN_5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.a /build/src/GLideN64/src/GLideNHQ/lib/libpng.a
 	cp $(SRC)/zlib/libz.a $(SRC)/GLideN64/src/GLideNHQ/lib/libz.a
 	$(DOCKER_RUN_5040) bash -c 'cd /build/src/GLideN64/src && mkdir -p build && cd build && cmake -DCMAKE_TOOLCHAIN_FILE=../../toolchain-aarch64.cmake -DMUPENPLUSAPI=ON -DEGL=ON -DMESA=ON -DNEON_OPT=ON -DCRC_ARMV8=ON .. && make -j$$(nproc) mupen64plus-video-GLideN64'
 
@@ -293,8 +293,8 @@ dist-tg5040:
 	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5040/
 	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/tg5040/
 	$(call DIST_COMMON,$(DIST)/tg5040)
-	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5040/libpng16.so.16
-	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5040/libz.so.1
+	$(DOCKER_RUN_5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5040/libpng16.so.16
+	$(DOCKER_RUN_5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5040/libz.so.1
 
 dist-tg5050:
 	mkdir -p $(DIST)/tg5050
@@ -306,8 +306,8 @@ dist-tg5050:
 	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5050/
 	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/tg5050/
 	$(call DIST_COMMON,$(DIST)/tg5050)
-	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
-	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5050/libz.so.1
+	$(DOCKER_RUN_5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
+	$(DOCKER_RUN_5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5050/libz.so.1
 
 # ── Release ──────────────────────────────────────────────────────────────────
 
