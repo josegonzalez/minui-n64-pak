@@ -137,64 +137,6 @@ static void apply_frame_skip_if_dirty(EmuOvlConfig* cfg) {
 }
 
 // ---------------------------------------------------------------------------
-// Resample (maps numeric overlay value to RESAMPLE string in INI)
-// ---------------------------------------------------------------------------
-
-static void apply_resample_if_dirty(EmuOvlConfig* cfg) {
-	for (int s = 0; s < cfg->section_count; s++)
-		for (int i = 0; i < cfg->sections[s].item_count; i++)
-			if (strcmp(cfg->sections[s].items[i].key, "RESAMPLE") == 0 &&
-			    cfg->sections[s].items[i].dirty) {
-				const char* resample;
-				switch (cfg->sections[s].items[i].staged_value) {
-					case 0:  resample = "trivial"; break;
-					case 1:  resample = "src-zero-order-hold"; break;
-					case 2:  resample = "src-linear"; break;
-					case 3:  resample = "src-sinc-fastest"; break;
-					case 4:  resample = "src-sinc-medium-quality"; break;
-					default: resample = "src-sinc-best-quality"; break;
-				}
-				if (s_overlayIniPath[0] != '\0') {
-					FILE* f = fopen(s_overlayIniPath, "r");
-					if (!f) return;
-					fseek(f, 0, SEEK_END);
-					long sz = ftell(f);
-					fseek(f, 0, SEEK_SET);
-					char* buf = (char*)malloc(sz + 1);
-					if (!buf) { fclose(f); return; }
-					fread(buf, 1, sz, f);
-					buf[sz] = '\0';
-					fclose(f);
-					char* p = strstr(buf, "RESAMPLE = ");
-					if (p) {
-						char* eol = strchr(p, '\n');
-						if (!eol) eol = buf + sz;
-						char newline[128];
-						snprintf(newline, sizeof(newline), "RESAMPLE = \"%s\"", resample);
-						long before = p - buf;
-						long after_len = sz - (eol - buf);
-						long new_sz = before + (long)strlen(newline) + after_len;
-						char* out = (char*)malloc(new_sz + 1);
-						if (out) {
-							memcpy(out, buf, before);
-							memcpy(out + before, newline, strlen(newline));
-							memcpy(out + before + strlen(newline), eol, after_len);
-							out[new_sz] = '\0';
-							f = fopen(s_overlayIniPath, "w");
-							if (f) {
-								fwrite(out, 1, new_sz, f);
-								fclose(f);
-							}
-							free(out);
-						}
-					}
-					free(buf);
-				}
-				return;
-			}
-}
-
-// ---------------------------------------------------------------------------
 // Input mode (d-pad vs joystick) — Brick only. Uses trimui_inputd flag files
 // at /tmp/trimui_inputd/ to remap the physical d-pad to virtual analog axes
 // at the kernel input layer. This is cleaner than our old input-sdl patch
@@ -2098,7 +2040,6 @@ static void handle_save_for_console(void) {
 		emu_ovl_cfg_write_ini(&s_overlayConfig, target);
 		write_bindings_to_ini(target);
 		write_shortcuts_to_ini(target);
-		apply_resample_if_dirty(&s_overlayConfig);
 	}
 	emu_ovl_cfg_apply_staged(&s_overlayConfig);
 	emu_frontend_write_button_map_file();
@@ -2136,7 +2077,6 @@ static void handle_save_for_game(void) {
 		emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
 		write_bindings_to_ini(s_overlayIniPath);
 		write_shortcuts_to_ini(s_overlayIniPath);
-		apply_resample_if_dirty(&s_overlayConfig);
 	}
 	emu_ovl_cfg_apply_staged(&s_overlayConfig);
 	emu_frontend_write_button_map_file();

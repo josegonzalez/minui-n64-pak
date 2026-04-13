@@ -16,12 +16,12 @@
           "description": "Audio resampling algorithm (restart required)",
           "type": "cycle",
           "values": [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5
+            "trivial",
+            "src-zero-order-hold",
+            "src-linear",
+            "src-sinc-fastest",
+            "src-sinc-medium-quality",
+            "src-sinc-best-quality"
           ],
           "labels": [
             "Trivial",
@@ -31,7 +31,7 @@
             "Sinc (Medium)",
             "Sinc (Best)"
           ],
-          "default": 2
+          "default": 3
         }
       ]
     },
@@ -158,7 +158,7 @@
           "label": "Quantization",
           "description": "Dithering quantization",
           "type": "bool",
-          "default": false
+          "default": true
         },
         {
           "key": "RDRAMImageDitheringMode",
@@ -177,7 +177,7 @@
             "Magic Square",
             "Blue Noise"
           ],
-          "default": 0
+          "default": 3
         }
       ]
     },
@@ -225,7 +225,7 @@
             "From VRAM",
             "Software"
           ],
-          "default": 1,
+          "default": 2,
           "plugin": "gliden64"
         },
         {
@@ -413,7 +413,7 @@
           "min": 0,
           "max": 200,
           "step": 50,
-          "default": 50,
+          "default": 200,
           "plugin": "gliden64"
         },
         {
@@ -528,7 +528,7 @@
           "label": "Inaccurate Tex Coords",
           "description": "Faster but less accurate texture coords",
           "type": "bool",
-          "default": true,
+          "default": false,
           "plugin": "gliden64"
         },
         {
@@ -536,7 +536,7 @@
           "label": "Legacy Blending",
           "description": "Use legacy blending mode",
           "type": "bool",
-          "default": true,
+          "default": false,
           "plugin": "gliden64"
         },
         {
@@ -809,7 +809,7 @@
           "label": "LOD Emulation",
           "description": "Level-of-detail texture emulation",
           "type": "bool",
-          "default": false,
+          "default": true,
           "plugin": "gliden64"
         },
         {
@@ -874,7 +874,7 @@
             "3x",
             "4x"
           ],
-          "default": 1,
+          "default": 2,
           "plugin": "gliden64"
         }
       ]

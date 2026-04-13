@@ -30,6 +30,8 @@ typedef struct {
 	EmuOvlItemType type;
 	int values[EMU_OVL_MAX_VALUES];
 	char labels[EMU_OVL_MAX_VALUES][EMU_OVL_MAX_STR];
+	char string_values[EMU_OVL_MAX_VALUES][EMU_OVL_MAX_STR];
+	bool is_string_cycle;
 	int value_count;
 	int int_min, int_max, int_step;
 	int float_scale; // >0: INI value is float; multiply by scale to get int, divide when writing

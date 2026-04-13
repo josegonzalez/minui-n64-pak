@@ -133,17 +133,30 @@ static void parse_item(const cJSON* json_item, EmuOvlItem* item) {
 			item->type = EMU_OVL_TYPE_BOOL;
 	}
 
-	// values array (for cycle type)
+	// values array (for cycle type) — supports both integer and string values
 	item->value_count = 0;
+	item->is_string_cycle = false;
 	const cJSON* values_arr = cJSON_GetObjectItemCaseSensitive(json_item, "values");
 	if (cJSON_IsArray(values_arr)) {
 		int count = cJSON_GetArraySize(values_arr);
 		if (count > EMU_OVL_MAX_VALUES)
 			count = EMU_OVL_MAX_VALUES;
-		for (int i = 0; i < count; i++) {
-			const cJSON* v = cJSON_GetArrayItem(values_arr, i);
-			if (cJSON_IsNumber(v))
-				item->values[i] = v->valueint;
+		const cJSON* first = cJSON_GetArrayItem(values_arr, 0);
+		if (first && cJSON_IsString(first)) {
+			item->is_string_cycle = true;
+			for (int i = 0; i < count; i++) {
+				const cJSON* v = cJSON_GetArrayItem(values_arr, i);
+				if (cJSON_IsString(v) && v->valuestring)
+					safe_strcpy(item->string_values[i],
+					            sizeof(item->string_values[i]), v->valuestring);
+				item->values[i] = i;
+			}
+		} else {
+			for (int i = 0; i < count; i++) {
+				const cJSON* v = cJSON_GetArrayItem(values_arr, i);
+				if (cJSON_IsNumber(v))
+					item->values[i] = v->valueint;
+			}
 		}
 		item->value_count = count;
 	}
@@ -350,6 +363,18 @@ static int parse_ini_int(const char* val) {
 	return atoi(val);
 }
 
+// Strip surrounding double-quotes from an INI string value in-place.
+static char* strip_quotes(char* s) {
+	if (!s)
+		return s;
+	size_t len = strlen(s);
+	if (len >= 2 && s[0] == '"' && s[len - 1] == '"') {
+		s[len - 1] = '\0';
+		return s + 1;
+	}
+	return s;
+}
+
 // Get the effective INI section name for a given item.
 // Precedence: item-level override → section-level override → global config_section.
 static const char* get_ini_section_for_item(const EmuOvlConfig* cfg,
@@ -424,6 +449,18 @@ int emu_ovl_cfg_read_ini(EmuOvlConfig* cfg, const char* ini_path) {
 					val = parse_ini_bool(ini_val);
 					break;
 				case EMU_OVL_TYPE_CYCLE:
+					if (item->is_string_cycle) {
+						char* unquoted = strip_quotes(ini_val);
+						val = item->default_value;
+						for (int j = 0; j < item->value_count; j++) {
+							if (str_eq_nocase(item->string_values[j], unquoted)) {
+								val = j;
+								break;
+							}
+						}
+						break;
+					}
+					/* fall through for numeric cycles */
 				case EMU_OVL_TYPE_INT:
 					if (item->float_scale > 0)
 						val = (int)(atof(ini_val) * item->float_scale + 0.5);
@@ -458,6 +495,14 @@ static void write_item_value(FILE* out, const EmuOvlItem* item) {
 				item->staged_value ? "True" : "False");
 		break;
 	case EMU_OVL_TYPE_CYCLE:
+		if (item->is_string_cycle) {
+			int idx = item->staged_value;
+			if (idx < 0 || idx >= item->value_count)
+				idx = 0;
+			fprintf(out, "%s = \"%s\"\n", item->key, item->string_values[idx]);
+			break;
+		}
+		/* fall through for numeric cycles */
 	case EMU_OVL_TYPE_INT:
 		if (item->float_scale > 0)
 			fprintf(out, "%s = %f\n", item->key,
@@ -773,6 +818,18 @@ int emu_ovl_cfg_read_per_game(EmuOvlConfig* cfg, const char* path) {
 					v = parse_ini_bool(val);
 					break;
 				case EMU_OVL_TYPE_CYCLE:
+					if (item->is_string_cycle) {
+						char* unquoted = strip_quotes(val);
+						v = item->default_value;
+						for (int j = 0; j < item->value_count; j++) {
+							if (str_eq_nocase(item->string_values[j], unquoted)) {
+								v = j;
+								break;
+							}
+						}
+						break;
+					}
+					/* fall through for numeric cycles */
 				case EMU_OVL_TYPE_INT:
 					if (item->float_scale > 0)
 						v = (int)(atof(val) * item->float_scale + 0.5);
@@ -814,6 +871,15 @@ int emu_ovl_cfg_write_per_game(EmuOvlConfig* cfg, const char* path) {
 						item->staged_value ? "True" : "False");
 				break;
 			case EMU_OVL_TYPE_CYCLE:
+				if (item->is_string_cycle) {
+					int idx = item->staged_value;
+					if (idx < 0 || idx >= item->value_count)
+						idx = 0;
+					fprintf(f, "[%s] %s = \"%s\"\n", ini_sec, item->key,
+							item->string_values[idx]);
+					break;
+				}
+				/* fall through for numeric cycles */
 			case EMU_OVL_TYPE_INT:
 				if (item->float_scale > 0)
 					fprintf(f, "[%s] %s = %f\n", ini_sec, item->key,
