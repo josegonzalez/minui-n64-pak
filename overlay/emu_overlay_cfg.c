@@ -280,9 +280,8 @@ int emu_ovl_cfg_load(EmuOvlConfig* cfg, const char* json_path) {
 			parse_section(json_sec, &cfg->sections[cfg->section_count], active_plugin);
 			// Drop sections that ended up empty after per-item filtering,
 			// UNLESS they're dynamic sections with no JSON-defined items
-			// (Controls = button remapping, Cheats = loaded from mupencheat.txt).
+			// (Cheats = loaded from mupencheat.txt at runtime).
 			if (cfg->sections[cfg->section_count].item_count == 0 &&
-				strcmp(cfg->sections[cfg->section_count].name, "Controls") != 0 &&
 				strcmp(cfg->sections[cfg->section_count].name, "Cheats") != 0)
 				continue;
 			cfg->section_count++;
