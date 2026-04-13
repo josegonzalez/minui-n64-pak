@@ -11,6 +11,13 @@
       "ini_section": "Audio-SDL",
       "items": [
         {
+          "key": "AUDIO_SYNC",
+          "label": "Audio Sync",
+          "description": "Synchronize audio and video (may drop frames)",
+          "type": "bool",
+          "default": false
+        },
+        {
           "key": "RESAMPLE",
           "label": "Resampling",
           "description": "Audio resampling algorithm (restart required)",
@@ -59,6 +66,66 @@
           "default": 0
         },
         {
+          "key": "cpu_mode",
+          "label": "CPU Mode",
+          "description": "Powersave saves battery, Performance maximizes speed",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Powersave",
+            "Ondemand",
+            "Performance",
+            "Auto"
+          ],
+          "default": 2,
+          "ini_section": "NextUI"
+        },
+        {
+          "key": "frame_skip",
+          "label": "Frame Skip",
+          "description": "Auto-skip frames when below target FPS",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Off",
+            "20fps",
+            "25fps",
+            "30fps"
+          ],
+          "default": 0,
+          "ini_section": "NextUI"
+        },
+        {
+          "key": "rewind_buffer",
+          "label": "Rewind Buffer",
+          "description": "Off saves RAM, Large gives more rewind time",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Off",
+            "Small (5s)",
+            "Medium (15s)",
+            "Large (30s)"
+          ],
+          "default": 0,
+          "ini_section": "NextUI"
+        },
+        {
           "key": "VideoPlugin",
           "label": "Video Plugin",
           "description": "Restart game to apply",
@@ -77,7 +144,7 @@
       ]
     },
     {
-      "name": "Input",
+      "name": "Controls",
       "items": [
         {
           "key": "input_mode",
@@ -132,52 +199,6 @@
           "type": "bool",
           "default": false,
           "plugin": "gliden64"
-        }
-      ]
-    },
-    {
-      "name": "Dithering",
-      "plugin": "gliden64",
-      "items": [
-        {
-          "key": "EnableDitheringPattern",
-          "label": "Dithering Pattern",
-          "description": "N64 dithering pattern emulation",
-          "type": "bool",
-          "default": false
-        },
-        {
-          "key": "EnableHiresNoiseDithering",
-          "label": "Hi-Res Noise Dithering",
-          "description": "Noise dithering for hi-res output",
-          "type": "bool",
-          "default": false
-        },
-        {
-          "key": "DitheringQuantization",
-          "label": "Quantization",
-          "description": "Dithering quantization",
-          "type": "bool",
-          "default": true
-        },
-        {
-          "key": "RDRAMImageDitheringMode",
-          "label": "RDRAM Dithering",
-          "description": "RDRAM image dithering algorithm",
-          "type": "cycle",
-          "values": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "labels": [
-            "Off",
-            "Bayer",
-            "Magic Square",
-            "Blue Noise"
-          ],
-          "default": 3
         }
       ]
     },
@@ -328,49 +349,6 @@
       ]
     },
     {
-      "name": "Gamma",
-      "plugin": "gliden64",
-      "items": [
-        {
-          "key": "ForceGammaCorrection",
-          "label": "Force Gamma",
-          "description": "Force gamma correction",
-          "type": "bool",
-          "default": false
-        },
-        {
-          "key": "GammaCorrectionLevel",
-          "label": "Gamma Level",
-          "description": "Gamma correction level",
-          "type": "cycle",
-          "values": [
-            10,
-            15,
-            20,
-            25,
-            30,
-            35,
-            40,
-            45,
-            50
-          ],
-          "labels": [
-            "1.0",
-            "1.5",
-            "2.0",
-            "2.5",
-            "3.0",
-            "3.5",
-            "4.0",
-            "4.5",
-            "5.0"
-          ],
-          "float_scale": 10,
-          "default": 20
-        }
-      ]
-    },
-    {
       "name": "Hi-Res Textures",
       "items": [
         {
@@ -467,26 +445,6 @@
           "plugin": "gliden64"
         },
         {
-          "key": "cpu_mode",
-          "label": "CPU Mode",
-          "description": "Powersave saves battery, Performance maximizes speed",
-          "type": "cycle",
-          "values": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "labels": [
-            "Powersave",
-            "Ondemand",
-            "Performance",
-            "Auto"
-          ],
-          "default": 2,
-          "ini_section": "NextUI"
-        },
-        {
           "key": "FastTextureLoading",
           "label": "Fast Texture Loading",
           "description": "Faster algorithm for texture loading and CRC",
@@ -504,26 +462,6 @@
           "plugin": "gliden64"
         },
         {
-          "key": "frame_skip",
-          "label": "Frame Skip",
-          "description": "Auto-skip frames when below target FPS",
-          "type": "cycle",
-          "values": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "labels": [
-            "Off",
-            "20fps",
-            "25fps",
-            "30fps"
-          ],
-          "default": 0,
-          "ini_section": "NextUI"
-        },
-        {
           "key": "EnableInaccurateTextureCoordinates",
           "label": "Inaccurate Tex Coords",
           "description": "Faster but less accurate texture coords",
@@ -538,26 +476,6 @@
           "type": "bool",
           "default": false,
           "plugin": "gliden64"
-        },
-        {
-          "key": "rewind_buffer",
-          "label": "Rewind Buffer",
-          "description": "Off saves RAM, Large gives more rewind time",
-          "type": "cycle",
-          "values": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "labels": [
-            "Off",
-            "Small (5s)",
-            "Medium (15s)",
-            "Large (30s)"
-          ],
-          "default": 0,
-          "ini_section": "NextUI"
         },
         {
           "key": "EnableShadersStorage",
@@ -764,6 +682,50 @@
           "ini_section": "Video-Rice"
         },
         {
+          "key": "EnableDitheringPattern",
+          "label": "Dithering Pattern",
+          "description": "N64 dithering pattern emulation",
+          "type": "bool",
+          "default": false,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "EnableHiresNoiseDithering",
+          "label": "Hi-Res Noise Dithering",
+          "description": "Noise dithering for hi-res output",
+          "type": "bool",
+          "default": false,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "DitheringQuantization",
+          "label": "Dithering Quantization",
+          "description": "Dithering quantization",
+          "type": "bool",
+          "default": true,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "RDRAMImageDitheringMode",
+          "label": "RDRAM Dithering",
+          "description": "RDRAM image dithering algorithm",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Off",
+            "Bayer",
+            "Magic Square",
+            "Blue Noise"
+          ],
+          "default": 3,
+          "plugin": "gliden64"
+        },
+        {
           "key": "FogMethod",
           "label": "Fog",
           "description": "Fog generation",
@@ -779,6 +741,45 @@
           "default": 1,
           "plugin": "rice",
           "ini_section": "Video-Rice"
+        },
+        {
+          "key": "ForceGammaCorrection",
+          "label": "Force Gamma",
+          "description": "Force gamma correction",
+          "type": "bool",
+          "default": false,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "GammaCorrectionLevel",
+          "label": "Gamma Level",
+          "description": "Gamma correction level",
+          "type": "cycle",
+          "values": [
+            10,
+            15,
+            20,
+            25,
+            30,
+            35,
+            40,
+            45,
+            50
+          ],
+          "labels": [
+            "1.0",
+            "1.5",
+            "2.0",
+            "2.5",
+            "3.0",
+            "3.5",
+            "4.0",
+            "4.5",
+            "5.0"
+          ],
+          "float_scale": 10,
+          "default": 20,
+          "plugin": "gliden64"
         },
         {
           "key": "FXAA",

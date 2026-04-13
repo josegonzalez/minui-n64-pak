@@ -426,7 +426,7 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 		if (ovl->bind_capture >= 0)
 			break;
 		EmuOvlSection* sec = &ovl->config->sections[ovl->current_section];
-		bool is_input = (strcmp(sec->name, "Input") == 0);
+		bool is_input = (strcmp(sec->name, "Controls") == 0);
 		bool is_shortcuts = (strcmp(sec->name, "Shortcuts") == 0);
 		int remap_rows = is_input ? N64_REMAP_COUNT : 0;
 		int shortcut_rows = is_shortcuts ? SHORTCUT_COUNT : 0;
@@ -1017,7 +1017,7 @@ static void render_section_items(EmuOvl* ovl) {
 	int content_x = PADDING_PX;
 	int content_w = ovl->screen_w - PADDING_PX * 2;
 
-	bool is_input = (strcmp(sec->name, "Input") == 0);
+	bool is_input = (strcmp(sec->name, "Controls") == 0);
 	bool is_shortcuts = (strcmp(sec->name, "Shortcuts") == 0);
 	int remap_rows = is_input ? N64_REMAP_COUNT : 0;
 	int shortcut_rows = is_shortcuts ? SHORTCUT_COUNT : 0;
