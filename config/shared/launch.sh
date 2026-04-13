@@ -205,7 +205,8 @@ export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
 # ── Overlay menu config ──────────────────────────────────────────────────────
 export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"
 export EMU_OVERLAY_INI="$DEVICE_CONFIG_DIR/mupen64plus.cfg"
-export EMU_OVERLAY_GAME="$(basename "$ROM" | sed 's/\.[^.]*$//')"
+_ROM_BASE="$(basename "$ROM")"
+export EMU_OVERLAY_GAME="${_ROM_BASE%.*}"
 export EMU_DEFAULT_CFG="$BIN_DIR/default.cfg"
 
 # ── Video plugin selection (reads [NextUI] VideoPlugin from mupen64plus.cfg) ─
