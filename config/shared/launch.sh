@@ -129,14 +129,19 @@ if [ ! -f "$DEVICE_CONFIG_DIR/.initialized" ]; then
     touch "$DEVICE_CONFIG_DIR/.initialized"
 fi
 
-# Patch platform-specific values on every launch so the config stays correct
-# even if the pak is moved to a different device.
+# Platform-specific values are applied via --set flags on the mupen64plus
+# command line instead of patching the config file, so user edits persist.
 DEVICE_CFG="$DEVICE_CONFIG_DIR/mupen64plus.cfg"
 SCREEN_W="${DEVICE_RESOLUTION%x*}"
 SCREEN_H="${DEVICE_RESOLUTION#*x}"
-sed -i "s/^ScreenWidth = .*/ScreenWidth = $SCREEN_W/" "$DEVICE_CFG"
-sed -i "s/^ScreenHeight = .*/ScreenHeight = $SCREEN_H/" "$DEVICE_CFG"
-sed -i "s/^anisotropy = .*/anisotropy = $DEVICE_ANISOTROPY/" "$DEVICE_CFG"
+
+# Read the user's console-level anisotropy from the config file so we can
+# detect whether they customised it away from the device default.
+CONSOLE_ANISOTROPY=$(awk -F' = ' '
+    /^\[Video-GLideN64\]/ { in_section=1; next }
+    /^\[/                 { in_section=0 }
+    in_section && $1 == "anisotropy" { print $2; exit }
+' "$DEVICE_CFG" 2>/dev/null)
 
 # Align save paths with NextUI conventions
 BATTERY_SAVE_DIR="$SAVES_PATH/$EMU_TAG"
@@ -300,6 +305,22 @@ if [ -f "$PER_GAME_CFG" ]; then
     mv "$DEVICE_CFG.tmp" "$DEVICE_CFG"
 fi
 
+# Determine anisotropy for --set: per-game override > user console setting > device default
+ANISO_SET=""
+if [ -f "$PER_GAME_CFG" ]; then
+    PER_GAME_ANISO=$(awk '/^\[Video-GLideN64\] anisotropy = / { sub(/.*= /, ""); print; exit }' "$PER_GAME_CFG" 2>/dev/null)
+fi
+if [ -n "$PER_GAME_ANISO" ]; then
+    # Per-game override takes highest priority
+    ANISO_SET="--set Video-GLideN64[anisotropy]=$PER_GAME_ANISO"
+elif [ "$CONSOLE_ANISOTROPY" != "$DEVICE_ANISOTROPY" ]; then
+    # User customised console anisotropy — don't override, let config file value win
+    ANISO_SET=""
+else
+    # No customisation — apply device-appropriate default
+    ANISO_SET="--set Video-GLideN64[anisotropy]=$DEVICE_ANISOTROPY"
+fi
+
 # D-pad↔joystick input mode is handled by trimui_inputd via flag files
 # in /tmp/trimui_inputd/. emu_frontend applies the per-game mode at init
 # time and toggles on user action. Flag files are cleaned up on exit.
@@ -380,8 +401,11 @@ cd "$BIN_DIR"
     --plugindir "$BIN_DIR" \
     --sshotdir "$SCREENSHOT_DIR" \
     --cachedir "$DEVICE_CONFIG_DIR/cache" \
+    --set "Video-General[ScreenWidth]=$SCREEN_W" \
+    --set "Video-General[ScreenHeight]=$SCREEN_H" \
     --set "Core[SaveSRAMPath]=$BATTERY_SAVE_DIR/" \
     --set "Core[SaveStatePath]=$STATE_SAVE_DIR/" \
+    $ANISO_SET \
     --gfx "$BIN_DIR/$GFX_PLUGIN" \
     --audio mupen64plus-audio-sdl.so \
     --input mupen64plus-input-sdl.so \
