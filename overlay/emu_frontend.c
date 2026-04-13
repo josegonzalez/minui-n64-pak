@@ -383,7 +383,7 @@ N64ButtonMapping* emu_frontend_get_button_mappings(void) {
 }
 
 static const char* s_btnLabels[] = {
-	"B", "A", "Y", "X", "L1", "R1", "?", "Start", "Select",
+	"B", "A", "Y", "X", "L1", "R1", "Select", "Start", "Menu",
 	"L3/F1", "R3/F2", NULL
 };
 
@@ -1349,6 +1349,93 @@ static EmuOvlAction run_overlay_loop(void) {
 			break;
 		default:
 			break;
+		}
+
+		// Bind capture runs on the MAIN thread (not GL thread) so SDL
+		// joystick polling works correctly and frames keep rendering.
+		// Three phases: cooldown (0-500ms, ignore input), listening
+		// (500-5500ms, edge-detect), timeout (>5500ms, cancel).
+		#define BC_COOLDOWN_MS 500
+		#define BC_TIMEOUT_MS 5500
+		if (s_overlay.bind_capture >= 0 && s_joy) {
+			static int bc_prev_btn[16];
+			static int bc_prev_axis[8];
+			static bool bc_baselines_set;
+
+			uint32_t elapsed = SDL_GetTicks() - s_overlay.bind_capture_start;
+
+			if (elapsed >= BC_TIMEOUT_MS) {
+				// Timeout — cancel capture, keep original binding
+				s_overlay.bind_capture = -1;
+				bc_baselines_set = false;
+			} else if (elapsed < BC_COOLDOWN_MS) {
+				// Cooldown — ignore all input (A button releases naturally)
+				bc_baselines_set = false;
+			} else {
+				// Listening — record baselines once, then edge-detect
+				if (!bc_baselines_set) {
+					int nb = SDL_JoystickNumButtons(s_joy);
+					if (nb > 16) nb = 16;
+					for (int b = 0; b < nb; b++)
+						bc_prev_btn[b] = SDL_JoystickGetButton(s_joy, b);
+					int na = SDL_JoystickNumAxes(s_joy);
+					if (na > 8) na = 8;
+					for (int a = 0; a < na; a++)
+						bc_prev_axis[a] = SDL_JoystickGetAxis(s_joy, a);
+					bc_baselines_set = true;
+				}
+
+				N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
+				N64ButtonMapping* m = &mappings[s_overlay.bind_capture];
+				bool bound = false;
+
+				int nb = SDL_JoystickNumButtons(s_joy);
+				if (nb > 16) nb = 16;
+				for (int b = 0; b < nb; b++) {
+					int cur = SDL_JoystickGetButton(s_joy, b);
+					if (cur && !bc_prev_btn[b]) {
+						m->physical = b;
+						m->is_axis = 0;
+						m->axis_dir = 0;
+						m->mod = 0;
+						bound = true;
+						break;
+					}
+					bc_prev_btn[b] = cur;
+				}
+				if (!bound) {
+					int na = SDL_JoystickNumAxes(s_joy);
+					if (na > 8) na = 8;
+					for (int a = 0; a < na; a++) {
+						int val = SDL_JoystickGetAxis(s_joy, a);
+						// Detect a large change from baseline AND past threshold.
+						// Triggers rest at -32768 so absolute-threshold edge detection
+						// fails (baseline is already past -24000). Delta-based detection
+						// catches the actual press regardless of resting value.
+						int delta = val - bc_prev_axis[a];
+						if (delta < 0) delta = -delta;
+						if (delta > 16000 && (val > 24000 || val < -24000)) {
+							m->physical = a;
+							m->is_axis = 1;
+							m->axis_dir = (val > bc_prev_axis[a]) ? 1 : -1;
+							m->mod = 0;
+							bound = true;
+							break;
+						}
+						// Do NOT update bc_prev_axis — keep original baseline
+					}
+				}
+				if (bound) {
+					emu_frontend_write_button_map_file();
+					s_overlay.bind_capture = -1;
+					bc_baselines_set = false;
+					// Auto-advance to next remap row
+					EmuOvlSection* sec = &s_overlayConfig.sections[s_overlay.current_section];
+					int remap_end = sec->item_count + N64_REMAP_COUNT;
+					if (s_overlay.selected + 1 < remap_end)
+						s_overlay.selected++;
+				}
+			}
 		}
 
 		SDL_Delay(16);

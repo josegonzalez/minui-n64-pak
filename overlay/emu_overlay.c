@@ -304,6 +304,7 @@ void emu_ovl_open(EmuOvl* ovl) {
 	ovl->action_param = 0;
 	ovl->save_slot = 0;
 	ovl->scroll_offset = 0;
+	ovl->bind_capture = -1;
 
 	if (ovl->render && ovl->render->capture_frame)
 		ovl->render->capture_frame();
@@ -423,6 +424,9 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 
 	// ----- SECTION ITEMS -----
 	case EMU_OVL_STATE_SECTION_ITEMS: {
+		// During bind capture, the main loop owns input — skip here
+		if (ovl->bind_capture >= 0)
+			break;
 		EmuOvlSection* sec = &ovl->config->sections[ovl->current_section];
 		bool is_input = (strcmp(sec->name, "Input") == 0);
 		int remap_rows = is_input ? N64_REMAP_COUNT : 0;
@@ -443,62 +447,24 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 			if (ovl->selected == total_rows - 1) {
 				// "Reset to Default" (last row)
 				emu_ovl_cfg_reset_section_to_defaults(sec);
-			} else if (is_input && ovl->selected >= sec->item_count &&
-					   ovl->selected < sec->item_count + remap_rows) {
-				// Button remap row — live-bind capture
-				int remap_idx = ovl->selected - sec->item_count;
-				N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
-				N64ButtonMapping* m = &mappings[remap_idx];
-				SDL_Joystick* joy = emu_frontend_get_joystick();
-				if (joy) {
-					// Wait for all buttons released
-					bool released = false;
-					while (!released) {
-						SDL_JoystickUpdate();
-						released = true;
-						for (int b = 0; b < SDL_JoystickNumButtons(joy) && b < 16; b++)
-							if (SDL_JoystickGetButton(joy, b)) { released = false; break; }
-						SDL_Delay(16);
-					}
-					// Capture loop
-					int prev[16] = {0};
-					bool bound = false;
-					while (!bound) {
-						SDL_JoystickUpdate();
-						int nb = SDL_JoystickNumButtons(joy);
-						if (nb > 16) nb = 16;
-						for (int b = 0; b < nb; b++) {
-							int cur = SDL_JoystickGetButton(joy, b);
-							if (cur && !prev[b]) {
-								m->physical = b;
-								m->is_axis = 0;
-								m->axis_dir = 0;
-								m->mod = 0;
-								bound = true;
-								break;
-							}
-							prev[b] = cur;
-						}
-						if (!bound) {
-							for (int a = 0; a < SDL_JoystickNumAxes(joy); a++) {
-								int val = SDL_JoystickGetAxis(joy, a);
-								if (val > 24000 || val < -24000) {
-									m->physical = a;
-									m->is_axis = 1;
-									m->axis_dir = (val > 0) ? 1 : -1;
-									m->mod = 0;
-									bound = true;
-									break;
-								}
-							}
-						}
-						if (!bound) SDL_Delay(16);
+				// Also reset button mappings if in the Input section
+				if (is_input) {
+					N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
+					for (int i = 0; i < N64_REMAP_COUNT; i++) {
+						mappings[i].physical = mappings[i].default_physical;
+						mappings[i].is_axis = mappings[i].default_is_axis;
+						mappings[i].axis_dir = mappings[i].default_axis_dir;
+						mappings[i].mod = 0;
 					}
 					emu_frontend_write_button_map_file();
-					// Auto-advance
-					if (ovl->selected + 1 < total_rows - 1)
-						ovl->selected++;
 				}
+			} else if (is_input && ovl->selected >= sec->item_count &&
+					   ovl->selected < sec->item_count + remap_rows) {
+				// Start bind capture — set the flag + timestamp. The actual
+				// input polling happens in run_overlay_loop on the main
+				// thread (not here on the GL thread, which would block).
+				ovl->bind_capture = ovl->selected - sec->item_count;
+				ovl->bind_capture_start = SDL_GetTicks();
 			} else if (ovl->selected < sec->item_count && sec->item_count > 0) {
 				cycle_item_next(&sec->items[ovl->selected]);
 			}
@@ -1072,7 +1038,23 @@ static void render_section_items(EmuOvl* ovl) {
 		} else if (is_input && idx < sec->item_count + remap_rows) {
 			// Button remap row
 			int ri = idx - sec->item_count;
-			const char* label = emu_frontend_binding_label(&mappings[ri]);
+			const char* label;
+			char countdown_buf[16];
+			if (ovl->bind_capture == ri) {
+				// Show capture state: cooldown or countdown
+				unsigned int elapsed = SDL_GetTicks() - ovl->bind_capture_start;
+				if (elapsed < 500) {
+					label = "...";
+				} else {
+					int remaining = (int)(5500 - elapsed) / 1000 + 1;
+					if (remaining < 1) remaining = 1;
+					if (remaining > 5) remaining = 5;
+					snprintf(countdown_buf, sizeof(countdown_buf), "%d...", remaining);
+					label = countdown_buf;
+				}
+			} else {
+				label = emu_frontend_binding_label(&mappings[ri]);
+			}
 			draw_settings_row(ovl, content_x, iy, content_w, row_h,
 							  mappings[ri].name, label, sel, false,
 							  EMU_OVL_FONT_SMALL);

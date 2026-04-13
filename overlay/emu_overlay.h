@@ -82,6 +82,8 @@ typedef struct {
 	int action_param;
 
 	EmuConfigScope scope; // current save scope (none/console/game)
+	int bind_capture;            // -1 = not capturing, >= 0 = remap row index
+	unsigned int bind_capture_start; // SDL_GetTicks() when capture began
 
 	char game_name[256];
 	int screen_w;
