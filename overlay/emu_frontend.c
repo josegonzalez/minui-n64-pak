@@ -477,16 +477,29 @@ static void load_button_mappings_from_file(const char* path) {
 						while (key[strlen(key)-1] == ' ') key[strlen(key)-1] = '\0';
 						char* val = eq + 1;
 						while (*val == ' ') val++;
-						for (int i = 0; i < N64_REMAP_COUNT; i++) {
-							if (strcmp(s_buttonMappings[i].cfg_key, key) == 0) {
-								int phys, is_ax, ax_dir;
-								if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
-									s_buttonMappings[i].physical = phys;
-									s_buttonMappings[i].is_axis = is_ax;
-									s_buttonMappings[i].axis_dir = ax_dir;
-									s_buttonMappings[i].mod = 0;
+						// Check for _mod suffix
+						int klen = (int)strlen(key);
+						if (klen > 4 && strcmp(key + klen - 4, "_mod") == 0) {
+							char base_key[128];
+							snprintf(base_key, sizeof(base_key), "%.*s", klen - 4, key);
+							for (int i = 0; i < N64_REMAP_COUNT; i++) {
+								if (strcmp(s_buttonMappings[i].cfg_key, base_key) == 0) {
+									s_buttonMappings[i].mod = atoi(val);
+									break;
 								}
-								break;
+							}
+						} else {
+							for (int i = 0; i < N64_REMAP_COUNT; i++) {
+								if (strcmp(s_buttonMappings[i].cfg_key, key) == 0) {
+									int phys, is_ax, ax_dir;
+									if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
+										s_buttonMappings[i].physical = phys;
+										s_buttonMappings[i].is_axis = is_ax;
+										s_buttonMappings[i].axis_dir = ax_dir;
+										s_buttonMappings[i].mod = 0;
+									}
+									break;
+								}
 							}
 						}
 					}
@@ -506,16 +519,29 @@ static void load_button_mappings_from_file(const char* path) {
 		while (key[strlen(key)-1] == ' ') key[strlen(key)-1] = '\0';
 		char* val = eq + 1;
 		while (*val == ' ') val++;
-		for (int i = 0; i < N64_REMAP_COUNT; i++) {
-			if (strcmp(s_buttonMappings[i].cfg_key, key) == 0) {
-				int phys, is_ax, ax_dir;
-				if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
-					s_buttonMappings[i].physical = phys;
-					s_buttonMappings[i].is_axis = is_ax;
-					s_buttonMappings[i].axis_dir = ax_dir;
-					s_buttonMappings[i].mod = 0;
+		// Check for _mod suffix
+		int klen = (int)strlen(key);
+		if (klen > 4 && strcmp(key + klen - 4, "_mod") == 0) {
+			char base_key[128];
+			snprintf(base_key, sizeof(base_key), "%.*s", klen - 4, key);
+			for (int i = 0; i < N64_REMAP_COUNT; i++) {
+				if (strcmp(s_buttonMappings[i].cfg_key, base_key) == 0) {
+					s_buttonMappings[i].mod = atoi(val);
+					break;
 				}
-				break;
+			}
+		} else {
+			for (int i = 0; i < N64_REMAP_COUNT; i++) {
+				if (strcmp(s_buttonMappings[i].cfg_key, key) == 0) {
+					int phys, is_ax, ax_dir;
+					if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
+						s_buttonMappings[i].physical = phys;
+						s_buttonMappings[i].is_axis = is_ax;
+						s_buttonMappings[i].axis_dir = ax_dir;
+						s_buttonMappings[i].mod = 0;
+					}
+					break;
+				}
 			}
 		}
 	}
@@ -854,6 +880,24 @@ static void write_shortcuts_to_ini(const char* ini_path) {
 			fprintf(f, "%s_mod = %d\n", s->key, s->mod);
 	}
 	fclose(f);
+}
+
+// Persistence: write button mappings in per-game flat format
+static void write_bindings_per_game(FILE* f) {
+	if (!f) return;
+	for (int i = 0; i < N64_REMAP_COUNT; i++) {
+		N64ButtonMapping* m = &s_buttonMappings[i];
+		if (m->physical < 0) {
+			fprintf(f, "[Input-SDL-Control1] %s = \"\"\n", m->cfg_key);
+		} else if (m->is_axis) {
+			fprintf(f, "[Input-SDL-Control1] %s = \"axis(%d%s)\"\n", m->cfg_key,
+					m->physical, m->axis_dir > 0 ? "+" : "-");
+		} else {
+			fprintf(f, "[Input-SDL-Control1] %s = \"button(%d)\"\n", m->cfg_key, m->physical);
+		}
+		if (m->mod != 0)
+			fprintf(f, "[Input-SDL-Control1] %s_mod = %d\n", m->cfg_key, m->mod);
+	}
 }
 
 // Persistence: write shortcuts in per-game flat format
@@ -2021,7 +2065,6 @@ static void write_bindings_to_ini(const char* ini_path) {
 	for (int i = 0; i < N64_REMAP_COUNT; i++) {
 		N64ButtonMapping* m = &s_buttonMappings[i];
 		if (m->physical < 0) {
-			// Unbound
 			fprintf(f, "%s = \"\"\n", m->cfg_key);
 		} else if (m->is_axis) {
 			fprintf(f, "%s = \"axis(%d%s)\"\n", m->cfg_key,
@@ -2029,6 +2072,8 @@ static void write_bindings_to_ini(const char* ini_path) {
 		} else {
 			fprintf(f, "%s = \"button(%d)\"\n", m->cfg_key, m->physical);
 		}
+		if (m->mod != 0)
+			fprintf(f, "%s_mod = %d\n", m->cfg_key, m->mod);
 	}
 	fclose(f);
 }
@@ -2065,10 +2110,14 @@ static void handle_save_for_game(void) {
 		return;
 	}
 	emu_ovl_cfg_write_per_game(&s_overlayConfig, pgp);
-	// Append shortcuts to per-game file in flat format
+	// Append bindings and shortcuts to per-game file in flat format
 	{
 		FILE* pgf = fopen(pgp, "a");
-		if (pgf) { write_shortcuts_per_game(pgf); fclose(pgf); }
+		if (pgf) {
+			write_bindings_per_game(pgf);
+			write_shortcuts_per_game(pgf);
+			fclose(pgf);
+		}
 	}
 	// Also write to the live mupen64plus.cfg so restart-required settings
 	// take effect on next launch of THIS same game (launch.sh will overlay
