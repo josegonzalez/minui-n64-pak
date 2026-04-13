@@ -301,11 +301,9 @@ if [ -f "$PER_GAME_CFG" ]; then
     mv "$DEVICE_CFG.tmp" "$DEVICE_CFG"
 fi
 
-# Brick-only d-pad vs joystick input mode. On devices with real analog
-# sticks, leave $EMU_INPUT_MODE_FILE unset (plugin.c gates on $DEVICE).
-if [ "$DEVICE" = "brick" ]; then
-    export EMU_INPUT_MODE_FILE="$PER_GAME_DIR/$(basename "$ROM").input.cfg"
-fi
+# D-pad↔joystick input mode is handled by trimui_inputd via flag files
+# in /tmp/trimui_inputd/. emu_frontend applies the per-game mode at init
+# time and toggles on user action. Flag files are cleaned up on exit.
 
 # ── Archive extraction ───────────────────────────────────────────────────────
 # If the ROM is a .zip or .7z, extract the inner N64 ROM to a tmpfs directory
@@ -444,6 +442,10 @@ kill $SYNC_PID 2>/dev/null || true
 if [ -f "$DEVICE_CFG.console-backup" ]; then
     mv "$DEVICE_CFG.console-backup" "$DEVICE_CFG"
 fi
+
+# Clean up trimui_inputd flag files so we don't leak d-pad remap state
+rm -f /tmp/trimui_inputd/input_dpad_to_joystick
+rm -f /tmp/trimui_inputd/input_no_dpad
 
 # Restore CPU online state, CPU governor/frequency, and GPU governor
 case "$PLATFORM" in

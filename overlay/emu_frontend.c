@@ -186,11 +186,14 @@ static void apply_audio_quality_if_dirty(EmuOvlConfig* cfg) {
 }
 
 // ---------------------------------------------------------------------------
-// Input mode (d-pad vs joystick) — persisted to a per-ROM file written to
-// $EMU_INPUT_MODE_FILE. The input-sdl plugin polls this file each frame and
-// applies the d-pad → joystick remap when the value is "dpad". The default
-// for a fresh ROM is chosen here by matching the core's GoodName (from the
-// mupen64plus.ini ROM database) against the list below.
+// Input mode (d-pad vs joystick) — Brick only. Uses trimui_inputd flag files
+// at /tmp/trimui_inputd/ to remap the physical d-pad to virtual analog axes
+// at the kernel input layer. This is cleaner than our old input-sdl patch
+// approach: the daemon gives proper proportional axis values, and there's
+// zero per-frame overhead in the emulator process.
+//
+// The per-game default is chosen by matching the ROM's GoodName against the
+// list below. The user can toggle at runtime via the overlay menu or shortcut.
 // ---------------------------------------------------------------------------
 
 // Games that default to d-pad input on first run. Matched as a case-insensitive
@@ -241,15 +244,36 @@ static int dpad_default_for_current_rom(void) {
 	return 0;
 }
 
-// Read the per-game input_mode file; returns 1 for dpad, 0 for joystick.
-// Returns -1 if the file does not exist.
+// Apply input mode via trimui_inputd flag files. The daemon polls
+// /tmp/trimui_inputd/ and remaps d-pad to virtual analog at the kernel level.
+// mode 0 = joystick (d-pad → analog stick), mode 1 = dpad (passthrough).
+static void apply_input_mode(int mode) {
+	const char* d = getenv("DEVICE");
+	if (!d || strcmp(d, "brick") != 0) return; // Brick-only
+
+	if (mode == 0) {
+		// Joystick: d-pad becomes analog stick
+		mkdir("/tmp/trimui_inputd", 0755);
+		int fd = open("/tmp/trimui_inputd/input_dpad_to_joystick", O_CREAT | O_WRONLY, 0644);
+		if (fd >= 0) close(fd);
+		fd = open("/tmp/trimui_inputd/input_no_dpad", O_CREAT | O_WRONLY, 0644);
+		if (fd >= 0) close(fd);
+	} else {
+		// D-pad: passthrough (remove flag files)
+		unlink("/tmp/trimui_inputd/input_dpad_to_joystick");
+		unlink("/tmp/trimui_inputd/input_no_dpad");
+	}
+}
+
+// Read the per-game input_mode from the per-game config file.
+// Returns 1 for dpad, 0 for joystick, -1 if file missing.
 static int read_input_mode_file(void) {
-	const char* path = getenv("EMU_INPUT_MODE_FILE");
+	const char* path = get_per_game_path();
 	if (!path || path[0] == '\0') return -1;
 	FILE* f = fopen(path, "r");
 	if (!f) return -1;
 	char line[128];
-	int value = 0;
+	int value = -1;
 	while (fgets(line, sizeof(line), f)) {
 		if (strncmp(line, "input_mode=", 11) == 0) {
 			value = (strncmp(line + 11, "dpad", 4) == 0) ? 1 : 0;
@@ -260,10 +284,9 @@ static int read_input_mode_file(void) {
 	return value;
 }
 
-// Write the per-game input_mode file. input-sdl picks up the change via
-// stat() mtime polling in GetKeys.
+// Write input_mode to the per-game config file.
 static void write_input_mode_file(int value) {
-	const char* path = getenv("EMU_INPUT_MODE_FILE");
+	const char* path = get_per_game_path();
 	if (!path || path[0] == '\0') return;
 	FILE* f = fopen(path, "w");
 	if (!f) return;
@@ -280,19 +303,15 @@ static EmuOvlItem* find_input_mode_item(EmuOvlConfig* cfg) {
 	return NULL;
 }
 
-// Load the per-game input mode into the overlay item (called after the
-// config is parsed from JSON, since per-game items are skipped by the INI
-// reader). If the per-game file does not yet exist, pick a default based on
-// the ROM's GoodName and write it.
-//
-// On Smart Pro / Smart Pro S, launch.sh leaves $EMU_INPUT_MODE_FILE unset
-// (the feature is Brick-only since those devices have real analog sticks).
-// We early-return in that case, leaving the overlay item at its default.
+// Load the per-game input mode into the overlay item and apply it via
+// trimui_inputd. On first launch for a ROM, seeds the default from the
+// GoodName auto-detect list. On non-Brick devices, early-returns (the
+// feature is Brick-only since those devices have real analog sticks).
 static void load_input_mode_from_file(EmuOvlConfig* cfg) {
 	EmuOvlItem* item = find_input_mode_item(cfg);
 	if (!item) return;
-	const char* path = getenv("EMU_INPUT_MODE_FILE");
-	if (!path || path[0] == '\0') return;
+	const char* d = getenv("DEVICE");
+	if (!d || strcmp(d, "brick") != 0) return;
 	int v = read_input_mode_file();
 	if (v < 0) {
 		v = dpad_default_for_current_rom();
@@ -301,36 +320,36 @@ static void load_input_mode_from_file(EmuOvlConfig* cfg) {
 	item->current_value = v;
 	item->staged_value = v;
 	item->dirty = false;
+	apply_input_mode(v);
 }
 
 // If the input_mode item is dirty (user changed it in the overlay menu),
-// persist the new value to the per-game file. No-op on non-Brick devices
-// where launch.sh leaves $EMU_INPUT_MODE_FILE unset.
+// apply via trimui_inputd and persist to the per-game file.
 static void apply_input_mode_if_dirty(EmuOvlConfig* cfg) {
 	EmuOvlItem* item = find_input_mode_item(cfg);
 	if (!item || !item->dirty) return;
-	const char* path = getenv("EMU_INPUT_MODE_FILE");
-	if (!path || path[0] == '\0') {
-		item->dirty = false; // clear the flag so we don't loop
+	const char* d = getenv("DEVICE");
+	if (!d || strcmp(d, "brick") != 0) {
+		item->dirty = false;
 		return;
 	}
+	apply_input_mode(item->staged_value);
 	write_input_mode_file(item->staged_value);
 	item->current_value = item->staged_value;
 	item->dirty = false;
 }
 
-// Shortcut: toggle input mode and persist to the per-game file. Also updates
-// the overlay item's current_value so the menu reflects the new state.
-// No-op on non-Brick devices.
+// Shortcut: toggle input mode. Applies via trimui_inputd and persists.
 static void process_input_mode_shortcut(void) {
 	int btn = emu_frontend_get_shortcut("shortcut_toggle_input_mode");
 	if (!emu_frontend_btn_just_pressed(btn))
 		return;
-	const char* path = getenv("EMU_INPUT_MODE_FILE");
-	if (!path || path[0] == '\0') return;
+	const char* d = getenv("DEVICE");
+	if (!d || strcmp(d, "brick") != 0) return;
 	int cur = read_input_mode_file();
 	if (cur < 0) cur = 0;
 	int new_value = cur ? 0 : 1;
+	apply_input_mode(new_value);
 	write_input_mode_file(new_value);
 	if (s_overlayConfigLoaded) {
 		EmuOvlItem* item = find_input_mode_item(&s_overlayConfig);
@@ -1481,6 +1500,10 @@ void emu_frontend_frame(int w, int h) {
 void emu_frontend_cleanup(void) {
 	rewind_cleanup();
 	clear_turbo_files();
+	// Clean up trimui_inputd flag files so we don't leak d-pad remap state
+	// to other emulators. launch.sh's exit trap also does this as a safety net.
+	unlink("/tmp/trimui_inputd/input_dpad_to_joystick");
+	unlink("/tmp/trimui_inputd/input_no_dpad");
 }
 
 SDL_Joystick* emu_frontend_get_joystick(void) {

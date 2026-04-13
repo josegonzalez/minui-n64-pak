@@ -1,33 +1,18 @@
 diff --git a/src/plugin.c b/src/plugin.c
-index 974b1db..5d97832 100644
+index 974b1db..74995b4 100644
 --- a/src/plugin.c
 +++ b/src/plugin.c
-@@ -27,6 +27,7 @@
- #include <stdlib.h>
- #include <string.h>
- #include <math.h>
-+#include <sys/stat.h>
- 
- #define M64P_PLUGIN_PROTOTYPES 1
- #include "config.h"
-@@ -614,6 +615,88 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
+@@ -614,6 +614,45 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
          controller[Control].buttons.Y_AXIS = iY;
      }
  
-+    /* Brick-only input remap. The TrimUI Brick has no physical analog
-+     * sticks, so the physical d-pad has to double as the N64 analog stick
-+     * on games that use one, and the face buttons have to double as
-+     * C-buttons. Smart Pro / Smart Pro S have real left + right analog
-+     * sticks and get native mappings via default.cfg, so none of this
-+     * applies — we gate everything on $DEVICE at first call.
++    /* Brick-only C-button remap. The Brick has no right analog stick, so
++     * R2 (axis 5) + ABXY sends C-buttons by physical position:
++     *   A (right) → C-Right, B (bottom) → C-Down,
++     *   X (top) → C-Up, Y (left) → C-Left.
 +     *
-+     * - `input_mode=joystick` in $EMU_INPUT_MODE_FILE routes the physical
-+     *   d-pad through the N64 analog stick (the config's hat→d-pad bits
-+     *   are cleared for the frame).
-+     * - `input_mode=dpad` leaves the default hat→d-pad mapping intact.
-+     * - R2 (axis 5) + ABXY sends C-buttons by physical position:
-+     *     A (right) → C-Right, B (bottom) → C-Down,
-+     *     X (top) → C-Up, Y (left) → C-Left. */
++     * D-pad↔joystick remapping is handled by trimui_inputd at the kernel
++     * input layer (flag files in /tmp/trimui_inputd/), not here. */
 +    {
 +        static int is_brick = -1;
 +        if (is_brick < 0) {
@@ -35,44 +20,8 @@ index 974b1db..5d97832 100644
 +            is_brick = (d && strcmp(d, "brick") == 0) ? 1 : 0;
 +        }
 +      if (is_brick) {
-+        static int dpad_as_joystick = 0; /* default when file is missing: no remap */
-+        static time_t cached_mtime = 0;
-+        static const char* cached_path = NULL;
-+        if (cached_path == NULL) {
-+            cached_path = getenv("EMU_INPUT_MODE_FILE");
-+            if (cached_path == NULL) cached_path = "";
-+        }
-+        if (cached_path[0] != '\0') {
-+            struct stat st;
-+            if (stat(cached_path, &st) == 0 && st.st_mtime != cached_mtime) {
-+                cached_mtime = st.st_mtime;
-+                FILE* f = fopen(cached_path, "r");
-+                if (f) {
-+                    char line[128];
-+                    while (fgets(line, sizeof(line), f)) {
-+                        if (strncmp(line, "input_mode=", 11) == 0) {
-+                            /* "joystick" = route physical d-pad → N64 analog */
-+                            /* "dpad"     = physical d-pad → N64 d-pad (passthrough) */
-+                            dpad_as_joystick = (strncmp(line + 11, "joystick", 8) == 0);
-+                            break;
-+                        }
-+                    }
-+                    fclose(f);
-+                }
-+            }
-+        }
-+
 +        SDL_Joystick *joy = controller[Control].joystick;
 +        if (joy && Control == 0) {
-+            if (dpad_as_joystick) {
-+                Uint8 hat = SDL_JoystickGetHat(joy, 0);
-+                controller[Control].buttons.Value &= ~0x000F; /* clear D-pad bits */
-+                if (hat & SDL_HAT_RIGHT) controller[Control].buttons.X_AXIS =  80;
-+                if (hat & SDL_HAT_LEFT)  controller[Control].buttons.X_AXIS = -80;
-+                if (hat & SDL_HAT_UP)    controller[Control].buttons.Y_AXIS =  80;
-+                if (hat & SDL_HAT_DOWN)  controller[Control].buttons.Y_AXIS = -80;
-+            }
-+
 +            /* R2 modifier (axis 5 > 0): remap ABXY to C-buttons by position */
 +            if (SDL_JoystickGetAxis(joy, 5) > 0) {
 +                if (SDL_JoystickGetButton(joy, 1)) { /* A (right) → C-Right */
