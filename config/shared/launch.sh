@@ -1,16 +1,16 @@
 #!/bin/sh
 PAK_DIR="$(dirname "$0")"
-PAK_NAME="$(basename "$PAK_DIR")"
-PAK_NAME="${PAK_NAME%.*}"
+EMU_TAG="$(basename "$PAK_DIR")"
+EMU_TAG="${EMU_TAG%.*}"
 set -x
 
-rm -f "$LOGS_PATH/$PAK_NAME.txt"
-exec >>"$LOGS_PATH/$PAK_NAME.txt"
+rm -f "$LOGS_PATH/$EMU_TAG.txt"
+exec >>"$LOGS_PATH/$EMU_TAG.txt"
 exec 2>&1
 
-EMU_TAG=$(basename "$(dirname "$0")" .pak)
 BIN_DIR="$PAK_DIR/$PLATFORM"
 ROM="$1"
+ROM_BASE="$(basename "$ROM")"
 
 mkdir -p "$SAVES_PATH/$EMU_TAG"
 
@@ -70,27 +70,6 @@ echo 3 >/proc/sys/vm/drop_caches 2>/dev/null
 # the Brick and Smart Pro variants, so those two need a suffix within the
 # tg5040 platform dir. tg5050 has no variants.
 USERDATA_DIR="$USERDATA_PATH/$EMU_TAG-mupen64plus"
-case "$PLATFORM" in
-    tg5040)
-        if [ "$DEVICE" = "brick" ]; then
-            DEVICE_CONFIG_DIR="$USERDATA_DIR/brick"
-            DEVICE_RESOLUTION="1024x768"
-            DEVICE_ANISOTROPY=0
-        else
-            DEVICE_CONFIG_DIR="$USERDATA_DIR/smart-pro"
-            DEVICE_RESOLUTION="1280x720"
-            DEVICE_ANISOTROPY=0
-        fi
-        ;;
-    tg5050)
-        DEVICE_CONFIG_DIR="$USERDATA_DIR"
-        DEVICE_RESOLUTION="1280x720"
-        # Anisotropic filtering: sharpens textures viewed at oblique angles.
-        # Mali-G57 (tg5050) can handle level 2; PowerVR GE8300 (tg5040) cannot.
-        DEVICE_ANISOTROPY=2
-        ;;
-esac
-
 # Migrate from the legacy shared-userdata path if present. This moves the
 # user's mupen64plus.cfg, .initialized marker, per-game/ overrides, and
 # anything else into the new per-platform location. Kept for one release;
@@ -99,12 +78,22 @@ LEGACY_USERDATA_DIR="$SHARED_USERDATA_PATH/N64-mupen64plus"
 case "$PLATFORM" in
     tg5040)
         if [ "$DEVICE" = "brick" ]; then
+            DEVICE_CONFIG_DIR="$USERDATA_DIR/brick"
+            DEVICE_RESOLUTION="1024x768"
             LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5040-brick"
         else
+            DEVICE_CONFIG_DIR="$USERDATA_DIR/smart-pro"
+            DEVICE_RESOLUTION="1280x720"
             LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5040-smart-pro"
         fi
+        DEVICE_ANISOTROPY=0
         ;;
     tg5050)
+        DEVICE_CONFIG_DIR="$USERDATA_DIR"
+        DEVICE_RESOLUTION="1280x720"
+        # Anisotropic filtering: sharpens textures viewed at oblique angles.
+        # Mali-G57 (tg5050) can handle level 2; PowerVR GE8300 (tg5040) cannot.
+        DEVICE_ANISOTROPY=2
         LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5050"
         ;;
 esac
@@ -205,8 +194,7 @@ export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
 # ── Overlay menu config ──────────────────────────────────────────────────────
 export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"
 export EMU_OVERLAY_INI="$DEVICE_CONFIG_DIR/mupen64plus.cfg"
-_ROM_BASE="$(basename "$ROM")"
-export EMU_OVERLAY_GAME="${_ROM_BASE%.*}"
+export EMU_OVERLAY_GAME="${ROM_BASE%.*}"
 export EMU_DEFAULT_CFG="$BIN_DIR/default.cfg"
 
 # ── Video plugin selection (reads [NextUI] VideoPlugin from mupen64plus.cfg) ─
@@ -232,13 +220,17 @@ RES_DIR="$SDCARD_PATH/.system/res"
 MINUI_SETTINGS="$SDCARD_PATH/.userdata/shared/minuisettings.txt"
 FONT_ID=$(awk -F= '$1=="font"{print $2; exit}' "$MINUI_SETTINGS" 2>/dev/null)
 case "$FONT_ID" in
-    1) FONT_FILE="$RES_DIR/font1.ttf" ;;
-    *) FONT_FILE="$RES_DIR/font2.ttf" ;;
+    1) FONT_CANDIDATES="font1.ttf font2.ttf" ;;
+    *) FONT_CANDIDATES="font2.ttf font1.ttf" ;;
 esac
-[ -f "$FONT_FILE" ] || FONT_FILE="$RES_DIR/font2.ttf"
-[ -f "$FONT_FILE" ] || FONT_FILE="$RES_DIR/font1.ttf"
-[ -f "$FONT_FILE" ] || FONT_FILE="$RES_DIR/BPreplayBold-unhinted.otf"
-if [ ! -f "$FONT_FILE" ]; then
+FONT_FILE=""
+for name in $FONT_CANDIDATES BPreplayBold-unhinted.otf; do
+    if [ -f "$RES_DIR/$name" ]; then
+        FONT_FILE="$RES_DIR/$name"
+        break
+    fi
+done
+if [ -z "$FONT_FILE" ]; then
     # Last resort: pick the first .ttf or .otf in the res directory
     for f in "$RES_DIR"/*.ttf "$RES_DIR"/*.otf; do
         if [ -f "$f" ]; then
@@ -252,12 +244,12 @@ export EMU_OVERLAY_FONT="$FONT_FILE"
 MINUI_DIR="$SHARED_USERDATA_PATH/.minui/$EMU_TAG"
 mkdir -p "$MINUI_DIR"
 export EMU_OVERLAY_SCREENSHOT_DIR="$MINUI_DIR"
-export EMU_OVERLAY_ROMFILE="$(basename "$ROM")"
+export EMU_OVERLAY_ROMFILE="$ROM_BASE"
 
 # ── Per-game settings ────────────────────────────────────────────────────────
 PER_GAME_DIR="$DEVICE_CONFIG_DIR/per-game"
 mkdir -p "$PER_GAME_DIR"
-PER_GAME_CFG="$PER_GAME_DIR/$(basename "$ROM").cfg"
+PER_GAME_CFG="$PER_GAME_DIR/$ROM_BASE.cfg"
 export EMU_PER_GAME_CFG="$PER_GAME_CFG"
 
 # If a per-game config exists, overlay its values onto mupen64plus.cfg for
@@ -327,7 +319,7 @@ fi
 # time and toggles on user action. Flag files are cleaned up on exit.
 
 # Runtime button remap file for immediate application in input-sdl
-export EMU_BUTTON_MAP_FILE="$PER_GAME_DIR/$(basename "$ROM").buttons"
+export EMU_BUTTON_MAP_FILE="$PER_GAME_DIR/$ROM_BASE.buttons"
 
 # ── Archive extraction ───────────────────────────────────────────────────────
 # If the ROM is a .zip or .7z, extract the inner N64 ROM to a tmpfs directory
@@ -375,8 +367,7 @@ case "$ROM" in
         fi
         # Rename so the basename matches the archive (sans .zip/.7z). This is
         # what mupen64plus-ui-console.patch reads for M64CMD_SET_ROM_FILENAME.
-        ROM_BASENAME=$(basename "$ROM_ARCHIVE")
-        ROM_STEM="${ROM_BASENAME%.*}"
+        ROM_STEM="${ROM_BASE%.*}"
         ROM_RENAMED="$ROM_EXTRACT_DIR/${ROM_STEM}.z64"
         if [ "$ROM_INNER" != "$ROM_RENAMED" ]; then
             mv "$ROM_INNER" "$ROM_RENAMED"
