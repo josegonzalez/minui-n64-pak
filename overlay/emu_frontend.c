@@ -387,20 +387,27 @@ static const char* s_btnLabels[] = {
 	"L3/F1", "R3/F2", NULL
 };
 
+static const char* mod_label(int mod) {
+	if (mod == 8) return "MENU";
+	if (mod == 6) return "SELECT";
+	if (mod == -3) return "L2";   // -(axis_id + 1)
+	if (mod == -6) return "R2";
+	return "MOD";
+}
+
 const char* emu_frontend_binding_label(const N64ButtonMapping* m) {
 	static char buf[64];
 	if (m->physical < 0) return "NONE";
+	const char* base;
+	char axis_buf[32];
 	if (m->is_axis) {
-		snprintf(buf, sizeof(buf), "Axis %d%s", m->physical, m->axis_dir > 0 ? "+" : "-");
-		return buf;
+		snprintf(axis_buf, sizeof(axis_buf), "Axis %d%s", m->physical, m->axis_dir > 0 ? "+" : "-");
+		base = axis_buf;
+	} else {
+		base = (m->physical >= 0 && m->physical < 11) ? s_btnLabels[m->physical] : "?";
 	}
-	const char* base = (m->physical >= 0 && m->physical < 11) ? s_btnLabels[m->physical] : "?";
-	if (m->mod > 0) {
-		const char* mod_name = "MOD";
-		// MENU=button index varies by platform; common indices:
-		// button 8 = Select, button 10 = R3/F2
-		if (m->mod == 8) mod_name = "SELECT";
-		snprintf(buf, sizeof(buf), "%s+%s", mod_name, base);
+	if (m->mod != 0) {
+		snprintf(buf, sizeof(buf), "%s+%s", mod_label(m->mod), base);
 	} else {
 		snprintf(buf, sizeof(buf), "%s", base);
 	}
@@ -415,13 +422,18 @@ void emu_frontend_write_button_map_file(void) {
 	for (int i = 0; i < N64_REMAP_COUNT; i++) {
 		N64ButtonMapping* m = &s_buttonMappings[i];
 		if (m->physical < 0) continue; // unbound — skip
+		// mod_type: 0=none, 1=button modifier, 2=axis modifier
+		// mod_id: SDL button index (type 1) or axis index (type 2)
+		int mod_type = 0, mod_id = -1;
+		if (m->mod > 0) { mod_type = 1; mod_id = m->mod; }
+		else if (m->mod < 0) { mod_type = 2; mod_id = -(m->mod + 1); }
 		fprintf(f, "%04x %c %d %d %d %d\n",
 				m->n64_bit,
 				m->is_axis ? 'a' : 'b',
 				m->physical,
 				m->axis_dir,
-				m->mod > 0 ? 1 : 0,
-				m->mod > 0 ? m->mod : -1);
+				mod_type,
+				mod_id);
 	}
 	fclose(f);
 }
@@ -1389,6 +1401,29 @@ static EmuOvlAction run_overlay_loop(void) {
 				N64ButtonMapping* m = &mappings[s_overlay.bind_capture];
 				bool bound = false;
 
+				// Detect modifier held simultaneously (MENU/SELECT/L2/R2).
+				// Computed once per frame; only applied if the captured
+				// button is DIFFERENT from the modifier itself.
+				#define MOD_BTN_MENU   8
+				#define MOD_BTN_SELECT 6
+				#define MOD_AXIS_L2    2
+				#define MOD_AXIS_R2    5
+				int held_mod = 0;
+				if (SDL_JoystickGetButton(s_joy, MOD_BTN_MENU))
+					held_mod = MOD_BTN_MENU;
+				else if (SDL_JoystickGetButton(s_joy, MOD_BTN_SELECT))
+					held_mod = MOD_BTN_SELECT;
+				else {
+					int l2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_L2);
+					int r2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_R2);
+					int l2_delta = l2 - bc_prev_axis[MOD_AXIS_L2];
+					int r2_delta = r2 - bc_prev_axis[MOD_AXIS_R2];
+					if (l2_delta < 0) l2_delta = -l2_delta;
+					if (r2_delta < 0) r2_delta = -r2_delta;
+					if (l2_delta > 16000) held_mod = -(MOD_AXIS_L2 + 1); // negative = axis mod
+					else if (r2_delta > 16000) held_mod = -(MOD_AXIS_R2 + 1);
+				}
+
 				int nb = SDL_JoystickNumButtons(s_joy);
 				if (nb > 16) nb = 16;
 				for (int b = 0; b < nb; b++) {
@@ -1397,7 +1432,8 @@ static EmuOvlAction run_overlay_loop(void) {
 						m->physical = b;
 						m->is_axis = 0;
 						m->axis_dir = 0;
-						m->mod = 0;
+						// Set modifier only if captured button != modifier button
+						m->mod = (held_mod > 0 && b != held_mod) ? held_mod : 0;
 						bound = true;
 						break;
 					}
@@ -1408,17 +1444,14 @@ static EmuOvlAction run_overlay_loop(void) {
 					if (na > 8) na = 8;
 					for (int a = 0; a < na; a++) {
 						int val = SDL_JoystickGetAxis(s_joy, a);
-						// Detect a large change from baseline AND past threshold.
-						// Triggers rest at -32768 so absolute-threshold edge detection
-						// fails (baseline is already past -24000). Delta-based detection
-						// catches the actual press regardless of resting value.
 						int delta = val - bc_prev_axis[a];
 						if (delta < 0) delta = -delta;
 						if (delta > 16000 && (val > 24000 || val < -24000)) {
 							m->physical = a;
 							m->is_axis = 1;
 							m->axis_dir = (val > bc_prev_axis[a]) ? 1 : -1;
-							m->mod = 0;
+							// Axis captures don't get axis modifiers (would conflict)
+							m->mod = (held_mod > 0) ? held_mod : 0;
 							bound = true;
 							break;
 						}
@@ -1493,6 +1526,31 @@ static EmuConfigScope compute_scope(void) {
 	return EMU_SCOPE_NONE;
 }
 
+// Write current button mappings into a mupen64plus.cfg file by appending
+// the binding strings to the [Input-SDL-Control1] section. This is a
+// simple append-if-missing approach that works with the existing INI writer.
+static void write_bindings_to_ini(const char* ini_path) {
+	if (!ini_path || ini_path[0] == '\0') return;
+	FILE* f = fopen(ini_path, "a"); // append mode
+	if (!f) return;
+	// The INI already has [Input-SDL-Control1] from default.cfg.
+	// We append our overridden keys — the last value for a key wins
+	// when mupen64plus-input-sdl parses the file.
+	for (int i = 0; i < N64_REMAP_COUNT; i++) {
+		N64ButtonMapping* m = &s_buttonMappings[i];
+		if (m->physical < 0) {
+			// Unbound
+			fprintf(f, "%s = \"\"\n", m->cfg_key);
+		} else if (m->is_axis) {
+			fprintf(f, "%s = \"axis(%d%s)\"\n", m->cfg_key,
+					m->physical, m->axis_dir > 0 ? "+" : "-");
+		} else {
+			fprintf(f, "%s = \"button(%d)\"\n", m->cfg_key, m->physical);
+		}
+	}
+	fclose(f);
+}
+
 static void handle_save_for_console(void) {
 	// Write all items to mupen64plus.cfg via the existing merge-preserve writer.
 	// When in game scope, launch.sh backed up the console config to
@@ -1502,9 +1560,11 @@ static void handle_save_for_console(void) {
 	if (!target || target[0] == '\0') target = s_overlayIniPath;
 	if (target[0] != '\0') {
 		emu_ovl_cfg_write_ini(&s_overlayConfig, target);
+		write_bindings_to_ini(target);
 		apply_audio_quality_if_dirty(&s_overlayConfig);
 	}
 	emu_ovl_cfg_apply_staged(&s_overlayConfig);
+	emu_frontend_write_button_map_file();
 	// Touch .customized stamp
 	ensure_customized_path();
 	if (s_customizedPath[0] != '\0') {
@@ -1528,9 +1588,11 @@ static void handle_save_for_game(void) {
 	// the runtime copy current too).
 	if (s_overlayIniPath[0] != '\0') {
 		emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
+		write_bindings_to_ini(s_overlayIniPath);
 		apply_audio_quality_if_dirty(&s_overlayConfig);
 	}
 	emu_ovl_cfg_apply_staged(&s_overlayConfig);
+	emu_frontend_write_button_map_file();
 	s_overlay.scope = EMU_SCOPE_GAME;
 	fprintf(stderr, "[Overlay] Saved for game.\n");
 }
