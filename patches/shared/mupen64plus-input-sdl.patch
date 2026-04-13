@@ -1,5 +1,5 @@
 diff --git a/src/plugin.c b/src/plugin.c
-index 974b1db..d08b26b 100644
+index 974b1db..76efb35 100644
 --- a/src/plugin.c
 +++ b/src/plugin.c
 @@ -27,6 +27,7 @@
@@ -63,10 +63,10 @@ index 974b1db..d08b26b 100644
 +        /* N64 button bits used in controller.buttons.Value */
 +        #define N64_A      0x0080
 +        #define N64_B      0x0040
-+        #define N64_START  0x1000
-+        #define N64_Z      0x2000
-+        #define N64_L      0x0020
-+        #define N64_R      0x0010
++        #define N64_START  0x0010
++        #define N64_Z      0x0020
++        #define N64_L      0x2000
++        #define N64_R      0x1000
 +        #define N64_CU     0x0800
 +        #define N64_CD     0x0400
 +        #define N64_CL     0x0200

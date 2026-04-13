@@ -319,10 +319,10 @@ static void process_input_mode_shortcut(void) {
 static N64ButtonMapping s_buttonMappings[N64_REMAP_COUNT] = {
 	{"A Button",  "A Button",   0x0080, 1, 0, 0, 0, 1, 0, 0},
 	{"B Button",  "B Button",   0x0040, 0, 0, 0, 0, 0, 0, 0},
-	{"Start",     "Start",      0x1000, 7, 0, 0, 0, 7, 0, 0},
-	{"Z Trig",    "Z Trig",     0x2000, 2, 1, 1, 0, 2, 1, 1},    // axis(2+)
-	{"L Trig",    "L Trig",     0x0020, 4, 0, 0, 0, 4, 0, 0},
-	{"R Trig",    "R Trig",     0x0010, 5, 0, 0, 0, 5, 0, 0},
+	{"Start",     "Start",      0x0010, 7, 0, 0, 0, 7, 0, 0},
+	{"Z Trig",    "Z Trig",     0x0020, 2, 1, 1, 0, 2, 1, 1},    // axis(2+)
+	{"L Trig",    "L Trig",     0x2000, 4, 0, 0, 0, 4, 0, 0},
+	{"R Trig",    "R Trig",     0x1000, 5, 0, 0, 0, 5, 0, 0},
 	{"C-Up",      "C Button U", 0x0800, 4, 1,-1, 0, 4, 1,-1},    // axis(4-)
 	{"C-Down",    "C Button D", 0x0400, 2, 0, 0, 0, 2, 0, 0},    // button(2) fallback
 	{"C-Left",    "C Button L", 0x0200, 3, 0, 0, 0, 3, 0, 0},    // button(3) fallback
