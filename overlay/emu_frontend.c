@@ -362,6 +362,71 @@ static void process_input_mode_shortcut(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Button remapping (N64 action buttons → physical buttons)
+// ---------------------------------------------------------------------------
+
+static N64ButtonMapping s_buttonMappings[N64_REMAP_COUNT] = {
+	{"A Button",  "A Button",   0x0080, 1, 0, 0, 0, 1, 0, 0},
+	{"B Button",  "B Button",   0x0040, 0, 0, 0, 0, 0, 0, 0},
+	{"Start",     "Start",      0x1000, 7, 0, 0, 0, 7, 0, 0},
+	{"Z Trig",    "Z Trig",     0x2000, 2, 1, 1, 0, 2, 1, 1},    // axis(2+)
+	{"L Trig",    "L Trig",     0x0020, 4, 0, 0, 0, 4, 0, 0},
+	{"R Trig",    "R Trig",     0x0010, 5, 0, 0, 0, 5, 0, 0},
+	{"C-Up",      "C Button U", 0x0800, 4, 1,-1, 0, 4, 1,-1},    // axis(4-)
+	{"C-Down",    "C Button D", 0x0400, 2, 0, 0, 0, 2, 0, 0},    // button(2) fallback
+	{"C-Left",    "C Button L", 0x0200, 3, 0, 0, 0, 3, 0, 0},    // button(3) fallback
+	{"C-Right",   "C Button R", 0x0100, 3, 1, 1, 0, 3, 1, 1},    // axis(3+)
+};
+
+N64ButtonMapping* emu_frontend_get_button_mappings(void) {
+	return s_buttonMappings;
+}
+
+static const char* s_btnLabels[] = {
+	"B", "A", "Y", "X", "L1", "R1", "?", "Start", "Select",
+	"L3/F1", "R3/F2", NULL
+};
+
+const char* emu_frontend_binding_label(const N64ButtonMapping* m) {
+	static char buf[64];
+	if (m->physical < 0) return "NONE";
+	if (m->is_axis) {
+		snprintf(buf, sizeof(buf), "Axis %d%s", m->physical, m->axis_dir > 0 ? "+" : "-");
+		return buf;
+	}
+	const char* base = (m->physical >= 0 && m->physical < 11) ? s_btnLabels[m->physical] : "?";
+	if (m->mod > 0) {
+		const char* mod_name = "MOD";
+		// MENU=button index varies by platform; common indices:
+		// button 8 = Select, button 10 = R3/F2
+		if (m->mod == 8) mod_name = "SELECT";
+		snprintf(buf, sizeof(buf), "%s+%s", mod_name, base);
+	} else {
+		snprintf(buf, sizeof(buf), "%s", base);
+	}
+	return buf;
+}
+
+void emu_frontend_write_button_map_file(void) {
+	const char* path = getenv("EMU_BUTTON_MAP_FILE");
+	if (!path || path[0] == '\0') return;
+	FILE* f = fopen(path, "w");
+	if (!f) return;
+	for (int i = 0; i < N64_REMAP_COUNT; i++) {
+		N64ButtonMapping* m = &s_buttonMappings[i];
+		if (m->physical < 0) continue; // unbound — skip
+		fprintf(f, "%04x %c %d %d %d %d\n",
+				m->n64_bit,
+				m->is_axis ? 'a' : 'b',
+				m->physical,
+				m->axis_dir,
+				m->mod > 0 ? 1 : 0,
+				m->mod > 0 ? m->mod : -1);
+	}
+	fclose(f);
+}
+
+// ---------------------------------------------------------------------------
 // Turbo buttons (via platform trimui_inputd daemon)
 // ---------------------------------------------------------------------------
 

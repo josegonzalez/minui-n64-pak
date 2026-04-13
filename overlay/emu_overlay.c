@@ -1,4 +1,5 @@
 #include "emu_overlay.h"
+#include "emu_frontend.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -404,7 +405,9 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 				ovl->scroll_offset = 0;
 			} else {
 				EmuOvlSection* sec = &ovl->config->sections[ovl->selected];
-				if (strcmp(sec->name, "Cheats") == 0) {
+				if (strcmp(sec->name, "Controls") == 0) {
+					ovl->state = EMU_OVL_STATE_CONTROLS;
+				} else if (strcmp(sec->name, "Cheats") == 0) {
 					ovl->state = EMU_OVL_STATE_CHEATS;
 				} else {
 					ovl->current_section = ovl->selected;
@@ -509,6 +512,97 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 			ovl->state = EMU_OVL_STATE_MAIN_MENU;
 			ovl->selected = 0;
 			break;
+		}
+		break;
+	}
+
+	// ----- CONTROLS (button remapping) -----
+	case EMU_OVL_STATE_CONTROLS: {
+		N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
+		if (input->up) {
+			ovl->selected = (ovl->selected - 1 + N64_REMAP_COUNT) % N64_REMAP_COUNT;
+		} else if (input->down) {
+			ovl->selected = (ovl->selected + 1) % N64_REMAP_COUNT;
+		} else if (input->a) {
+			// Live-bind capture: blocking poll loop until a button is pressed
+			N64ButtonMapping* m = &mappings[ovl->selected];
+			SDL_Joystick* joy = emu_frontend_get_joystick();
+			if (joy) {
+				// Record previous button states for edge detection
+				int prev[16] = {0};
+				for (int b = 0; b < SDL_JoystickNumButtons(joy) && b < 16; b++)
+					prev[b] = SDL_JoystickGetButton(joy, b);
+
+				// Wait for all buttons to be released first
+				bool all_released = false;
+				while (!all_released) {
+					SDL_JoystickUpdate();
+					all_released = true;
+					for (int b = 0; b < SDL_JoystickNumButtons(joy) && b < 16; b++) {
+						if (SDL_JoystickGetButton(joy, b)) { all_released = false; break; }
+					}
+					SDL_Delay(16);
+				}
+				// Reset prev state after release
+				for (int b = 0; b < 16; b++) prev[b] = 0;
+
+				bool bound = false;
+				while (!bound) {
+					SDL_JoystickUpdate();
+					int num_btns = SDL_JoystickNumButtons(joy);
+					if (num_btns > 16) num_btns = 16;
+					for (int b = 0; b < num_btns; b++) {
+						int cur = SDL_JoystickGetButton(joy, b);
+						if (cur && !prev[b]) {
+							// Skip MENU (varies) and POWER
+							// On TrimUI: button 8=Select, 10=R3/F2
+							// MENU button detection: check common indices
+							// For safety, skip nothing here — MENU/POWER are
+							// handled by emu_frontend and don't reach SDL buttons
+							m->physical = b;
+							m->is_axis = 0;
+							m->axis_dir = 0;
+							m->mod = 0;
+							bound = true;
+							break;
+						}
+						prev[b] = cur;
+					}
+					// Check axes for triggers
+					if (!bound) {
+						int num_axes = SDL_JoystickNumAxes(joy);
+						for (int a = 0; a < num_axes; a++) {
+							int val = SDL_JoystickGetAxis(joy, a);
+							if (val > 24000 || val < -24000) {
+								m->physical = a;
+								m->is_axis = 1;
+								m->axis_dir = (val > 0) ? 1 : -1;
+								m->mod = 0;
+								bound = true;
+								break;
+							}
+						}
+					}
+					if (!bound) {
+						SDL_Delay(16);
+					}
+				}
+				// Write updated mappings to runtime file
+				emu_frontend_write_button_map_file();
+				// Auto-advance cursor
+				ovl->selected = (ovl->selected + 1) % N64_REMAP_COUNT;
+			}
+		} else if (input->right) {
+			// X button = unbind (we use right as alternative since X isn't in our input struct)
+			N64ButtonMapping* m = &mappings[ovl->selected];
+			m->physical = -1;
+			m->is_axis = 0;
+			m->mod = 0;
+			emu_frontend_write_button_map_file();
+		} else if (input->b) {
+			ovl->state = EMU_OVL_STATE_SECTION_LIST;
+			ovl->selected = 0;
+			ovl->scroll_offset = 0;
 		}
 		break;
 	}
@@ -1086,6 +1180,36 @@ static void render_cheats(EmuOvl* ovl) {
 	draw_footer_hints(ovl, hints, 4);
 }
 
+static void render_controls(EmuOvl* ovl) {
+	EmuOvlRenderBackend* r = ovl->render;
+	draw_menu_bar(ovl, "Controls");
+
+	N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
+	int row_h = S(PILL_SIZE);
+	int content_x = PADDING_PX;
+	int content_w = ovl->screen_w - PADDING_PX * 2;
+	int list_y = calc_centered_list_y(ovl, N64_REMAP_COUNT);
+
+	for (int i = 0; i < N64_REMAP_COUNT; i++) {
+		int iy = list_y + i * row_h;
+		bool sel = (i == ovl->selected);
+		const char* label = emu_frontend_binding_label(&mappings[i]);
+		draw_settings_row(ovl, content_x, iy, content_w, row_h,
+						  mappings[i].name, label, sel, false,
+						  EMU_OVL_FONT_SMALL);
+	}
+
+	// Description
+	int desc_y = list_y + N64_REMAP_COUNT * row_h + S(2);
+	const char* desc_text = "Press A to bind, X to clear";
+	int tw = r->text_width(desc_text, EMU_OVL_FONT_TINY);
+	r->draw_text(desc_text, (ovl->screen_w - tw) / 2, desc_y,
+				 EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_TINY);
+
+	const char* hints[] = {"B", "BACK", "A", "OKAY"};
+	draw_footer_hints(ovl, hints, 4);
+}
+
 static const char* scope_label(EmuConfigScope scope) {
 	switch (scope) {
 	case EMU_SCOPE_NONE:    return "Using defaults.";
@@ -1154,6 +1278,9 @@ void emu_ovl_render(EmuOvl* ovl) {
 		break;
 	case EMU_OVL_STATE_SAVE_CHANGES:
 		render_save_changes(ovl);
+		break;
+	case EMU_OVL_STATE_CONTROLS:
+		render_controls(ovl);
 		break;
 	case EMU_OVL_STATE_CLOSED:
 		break;

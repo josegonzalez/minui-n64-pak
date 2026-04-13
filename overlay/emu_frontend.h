@@ -64,4 +64,28 @@ bool emu_frontend_btn_is_held(int b);
 // Frame skip value (owned by emu_frontend, read by GLideN64 RSP.cpp via extern)
 extern int g_frameSkip;
 
+// N64 button mapping (10 remappable action buttons)
+#define N64_REMAP_COUNT 10
+typedef struct {
+	const char* name;       // display name: "A Button", "Z Trig", etc.
+	const char* cfg_key;    // mupen64plus.cfg key in [Input-SDL-Control1]
+	unsigned int n64_bit;   // N64 button bit in controller.buttons.Value
+	int physical;           // SDL button index, or encoded axis (-1 = unbound)
+	int is_axis;            // 0 = button, 1 = axis
+	int axis_dir;           // +1 or -1 for axes
+	int mod;                // modifier: 0=none, button index for MENU/SELECT/etc
+	int default_physical;   // factory default physical
+	int default_is_axis;
+	int default_axis_dir;
+} N64ButtonMapping;
+
+// Get the current button mappings array (owned by emu_frontend)
+N64ButtonMapping* emu_frontend_get_button_mappings(void);
+
+// Write current mappings to the runtime file for input-sdl to pick up
+void emu_frontend_write_button_map_file(void);
+
+// Get human-readable label for a mapping (e.g., "R1", "MENU+A", "L2 axis")
+const char* emu_frontend_binding_label(const N64ButtonMapping* m);
+
 #endif

@@ -305,6 +305,9 @@ fi
 # in /tmp/trimui_inputd/. emu_frontend applies the per-game mode at init
 # time and toggles on user action. Flag files are cleaned up on exit.
 
+# Runtime button remap file for immediate application in input-sdl
+export EMU_BUTTON_MAP_FILE="$PER_GAME_DIR/$(basename "$ROM").buttons"
+
 # ── Archive extraction ───────────────────────────────────────────────────────
 # If the ROM is a .zip or .7z, extract the inner N64 ROM to a tmpfs directory
 # and hand that path to mupen64plus instead. We keep the *original* $ROM name

@@ -92,6 +92,10 @@
       ]
     },
     {
+      "name": "Controls",
+      "items": []
+    },
+    {
       "name": "Debug",
       "items": [
         {
