@@ -642,6 +642,27 @@
           "plugin": "gliden64"
         },
         {
+          "key": "AspectRatio",
+          "label": "Aspect Ratio",
+          "description": "Display aspect ratio mode",
+          "type": "cycle",
+          "values": [
+            3,
+            1,
+            2,
+            0
+          ],
+          "labels": [
+            "Auto",
+            "4:3",
+            "16:9",
+            "Stretch"
+          ],
+          "default": 1,
+          "plugin": "rice",
+          "ini_section": "Video-Rice"
+        },
+        {
           "key": "bilinearMode",
           "label": "Bilinear Mode",
           "description": "Texture bilinear filtering mode",
