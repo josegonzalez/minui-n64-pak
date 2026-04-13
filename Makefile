@@ -309,14 +309,22 @@ dist-tg5050:
 	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
 	$(DOCKER_RUN_5050) cp /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5050/libz.so.1
 
-release: build dist
+# ── Release ──────────────────────────────────────────────────────────────────
+
+release: dist
 	$(MAKE) bump-version
-	cd dist && zip -r "$(PAK_NAME).pak.zip" "$(PAK_NAME).pak"
+	cp pak.json $(DIST)/
+	cd $(DIST) && zip -r "../$(PAK_NAME).pak.zip" .
 	ls -lah dist
 
 bump-version:
 	jq '.version = "$(RELEASE_VERSION)"' pak.json > pak.json.tmp
 	mv pak.json.tmp pak.json
+
+push: release
+	rm -rf "dist/$(PAK_NAME).pak"
+	cd dist && unzip "$(PAK_NAME).pak.zip" -d "$(PAK_NAME).pak"
+	adb push "dist/$(PAK_NAME).pak/." "$(PUSH_SDCARD_PATH)/$(PAK_FOLDER)/$(PUSH_PLATFORM)/$(PAK_NAME).pak"
 
 # ── Regenerate patches from current source trees ─────────────────────────────
 
