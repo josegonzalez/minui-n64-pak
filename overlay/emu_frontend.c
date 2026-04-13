@@ -20,6 +20,9 @@ static void handle_save_for_console(void);
 static void handle_save_for_game(void);
 static void handle_restore_defaults(void);
 
+// Forward declarations for shortcut system
+static ShortcutBinding* find_shortcut(const char* key);
+
 // Core API and plugin ops (set by emu_frontend_init)
 static EmuFrontendCoreAPI s_coreAPI;
 static EmuFrontendPluginOps s_pluginOps;
@@ -341,8 +344,8 @@ static void apply_input_mode_if_dirty(EmuOvlConfig* cfg) {
 
 // Shortcut: toggle input mode. Applies via trimui_inputd and persists.
 static void process_input_mode_shortcut(void) {
-	int btn = emu_frontend_get_shortcut("shortcut_toggle_input_mode");
-	if (!emu_frontend_btn_just_pressed(btn))
+	ShortcutBinding* s = find_shortcut("shortcut_toggle_input_mode");
+	if (!emu_frontend_shortcut_just_pressed(s))
 		return;
 	const char* d = getenv("DEVICE");
 	if (!d || strcmp(d, "brick") != 0) return;
@@ -412,6 +415,111 @@ const char* emu_frontend_binding_label(const N64ButtonMapping* m) {
 		snprintf(buf, sizeof(buf), "%s", base);
 	}
 	return buf;
+}
+
+// Parse a mupen64plus-native binding string like "button(5)" or "axis(2+)"
+// into physical/is_axis/axis_dir. Returns true on success.
+static bool parse_binding_string(const char* str, int* physical, int* is_axis, int* axis_dir) {
+	if (!str) return false;
+	// Strip surrounding quotes if present
+	while (*str == '"' || *str == ' ') str++;
+	int id;
+	char dir;
+	if (sscanf(str, "button(%d)", &id) == 1) {
+		*physical = id;
+		*is_axis = 0;
+		*axis_dir = 0;
+		return true;
+	}
+	if (sscanf(str, "axis(%d%c", &id, &dir) >= 1) {
+		*physical = id;
+		*is_axis = 1;
+		*axis_dir = (dir == '-') ? -1 : 1;
+		return true;
+	}
+	if (str[0] == '\0' || strcmp(str, "\"\"") == 0) {
+		*physical = -1; // unbound
+		*is_axis = 0;
+		*axis_dir = 0;
+		return true;
+	}
+	return false;
+}
+
+// Load button mappings from a config file (mupen64plus.cfg or per-game cfg).
+// Scans for [Input-SDL-Control1] keys matching our cfg_keys and updates
+// s_buttonMappings. Called at init to restore saved bindings.
+static void load_button_mappings_from_file(const char* path) {
+	if (!path || path[0] == '\0') return;
+	FILE* f = fopen(path, "r");
+	if (!f) return;
+	char line[512];
+	bool in_input_section = false;
+	while (fgets(line, sizeof(line), f)) {
+		// Trim
+		int len = (int)strlen(line);
+		while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' '))
+			line[--len] = '\0';
+		// Check for section header
+		if (line[0] == '[') {
+			in_input_section = (strstr(line, "[Input-SDL-Control1]") != NULL);
+			// Also check per-game flat format: [Input-SDL-Control1] key = value
+			if (in_input_section && strchr(line, '=')) {
+				// Flat format — parse inline
+				char* rest = strstr(line, "]");
+				if (rest) {
+					rest++;
+					while (*rest == ' ') rest++;
+					char* eq = strchr(rest, '=');
+					if (eq) {
+						*eq = '\0';
+						char* key = rest;
+						while (key[strlen(key)-1] == ' ') key[strlen(key)-1] = '\0';
+						char* val = eq + 1;
+						while (*val == ' ') val++;
+						for (int i = 0; i < N64_REMAP_COUNT; i++) {
+							if (strcmp(s_buttonMappings[i].cfg_key, key) == 0) {
+								int phys, is_ax, ax_dir;
+								if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
+									s_buttonMappings[i].physical = phys;
+									s_buttonMappings[i].is_axis = is_ax;
+									s_buttonMappings[i].axis_dir = ax_dir;
+									s_buttonMappings[i].mod = 0;
+								}
+								break;
+							}
+						}
+					}
+				}
+				in_input_section = false; // flat format is one-line
+				continue;
+			}
+			continue;
+		}
+		if (!in_input_section) continue;
+		// Parse "key = value" within [Input-SDL-Control1]
+		char* eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = '\0';
+		char* key = line;
+		while (*key == ' ') key++;
+		while (key[strlen(key)-1] == ' ') key[strlen(key)-1] = '\0';
+		char* val = eq + 1;
+		while (*val == ' ') val++;
+		for (int i = 0; i < N64_REMAP_COUNT; i++) {
+			if (strcmp(s_buttonMappings[i].cfg_key, key) == 0) {
+				int phys, is_ax, ax_dir;
+				if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
+					s_buttonMappings[i].physical = phys;
+					s_buttonMappings[i].is_axis = is_ax;
+					s_buttonMappings[i].axis_dir = ax_dir;
+					s_buttonMappings[i].mod = 0;
+				}
+				break;
+			}
+		}
+	}
+	fclose(f);
 }
 
 void emu_frontend_write_button_map_file(void) {
@@ -596,34 +704,275 @@ static void handle_sleep(void) {
 static int s_currentSlot = 0;
 static uint32_t s_btnState = 0;
 static uint32_t s_btnPrev = 0;
+static int32_t s_axisState[8];
+static int32_t s_axisPrev[8];
 
 void emu_frontend_update_buttons(void) {
 	s_btnPrev = s_btnState;
 	s_btnState = 0;
+	memcpy(s_axisPrev, s_axisState, sizeof(s_axisPrev));
 	if (!s_joy) return;
 	for (int b = 0; b <= 10; b++)
 		if (SDL_JoystickGetButton(s_joy, b))
 			s_btnState |= (1u << b);
+	int na = SDL_JoystickNumAxes(s_joy);
+	if (na > 8) na = 8;
+	for (int a = 0; a < na; a++)
+		s_axisState[a] = SDL_JoystickGetAxis(s_joy, a);
 }
 
-int emu_frontend_get_shortcut(const char* key) {
-	if (!s_overlayConfigLoaded) return -1;
-	for (int s = 0; s < s_overlayConfig.section_count; s++)
-		for (int i = 0; i < s_overlayConfig.sections[s].item_count; i++)
-			if (strcmp(s_overlayConfig.sections[s].items[i].key, key) == 0)
-				return s_overlayConfig.sections[s].items[i].current_value;
-	return -1;
-}
-
-bool emu_frontend_btn_just_pressed(int b) {
+static bool btn_just_pressed(int b) {
 	if (b < 0) return false;
 	uint32_t m = 1u << b;
 	return (s_btnState & m) && !(s_btnPrev & m);
 }
 
-bool emu_frontend_btn_is_held(int b) {
+static bool btn_is_held(int b) {
 	if (b < 0) return false;
 	return (s_btnState & (1u << b)) != 0;
+}
+
+// ---------------------------------------------------------------------------
+// Shortcut bindings (19 remappable shortcuts — same model as controls)
+// ---------------------------------------------------------------------------
+
+static ShortcutBinding s_shortcuts[SHORTCUT_COUNT] = {
+	{"shortcut_cycle_aspect",      "Cycle Aspect Ratio",   -1, 0, 0, 0},
+	{"shortcut_game_switcher",     "Game Switcher",        -1, 0, 0, 0},
+	{"shortcut_hold_ff",           "Hold Fast Forward",    -1, 0, 0, 0},
+	{"shortcut_hold_rewind",       "Hold Rewind",          -1, 0, 0, 0},
+	{"shortcut_load_state",        "Quick Load",           -1, 0, 0, 0},
+	{"shortcut_reset",             "Reset Game",           -1, 0, 0, 0},
+	{"shortcut_save_state",        "Quick Save",           -1, 0, 0, 0},
+	{"shortcut_screenshot",        "Screenshot",           -1, 0, 0, 0},
+	{"shortcut_toggle_ff",         "Toggle Fast Forward",  -1, 0, 0, 0},
+	{"shortcut_toggle_input_mode", "Toggle Input Mode",    -1, 0, 0, 0},
+	{"shortcut_toggle_rewind",     "Toggle Rewind",        -1, 0, 0, 0},
+	{"shortcut_turbo_a",           "Toggle Turbo A",       -1, 0, 0, 0},
+	{"shortcut_turbo_b",           "Toggle Turbo B",       -1, 0, 0, 0},
+	{"shortcut_turbo_l",           "Toggle Turbo L",       -1, 0, 0, 0},
+	{"shortcut_turbo_l2",          "Toggle Turbo L2",      -1, 0, 0, 0},
+	{"shortcut_turbo_r",           "Toggle Turbo R",       -1, 0, 0, 0},
+	{"shortcut_turbo_r2",          "Toggle Turbo R2",      -1, 0, 0, 0},
+	{"shortcut_turbo_x",           "Toggle Turbo X",       -1, 0, 0, 0},
+	{"shortcut_turbo_y",           "Toggle Turbo Y",       -1, 0, 0, 0},
+};
+
+ShortcutBinding* emu_frontend_get_shortcuts(void) {
+	return s_shortcuts;
+}
+
+static ShortcutBinding* find_shortcut(const char* key) {
+	for (int i = 0; i < SHORTCUT_COUNT; i++)
+		if (strcmp(s_shortcuts[i].key, key) == 0)
+			return &s_shortcuts[i];
+	return NULL;
+}
+
+const char* emu_frontend_shortcut_label(const ShortcutBinding* s) {
+	static char buf[64];
+	if (!s || s->physical < 0) return "NONE";
+	const char* base;
+	char axis_buf[32];
+	if (s->is_axis) {
+		snprintf(axis_buf, sizeof(axis_buf), "Axis %d%s",
+				 s->physical, s->axis_dir > 0 ? "+" : "-");
+		base = axis_buf;
+	} else {
+		base = (s->physical >= 0 && s->physical < 11) ? s_btnLabels[s->physical] : "?";
+	}
+	if (s->mod != 0) {
+		snprintf(buf, sizeof(buf), "%s+%s", mod_label(s->mod), base);
+	} else {
+		snprintf(buf, sizeof(buf), "%s", base);
+	}
+	return buf;
+}
+
+// Check if a modifier is currently held (button or axis)
+static bool mod_is_held(int mod) {
+	if (mod == 0) return true;
+	if (mod > 0) return btn_is_held(mod);
+	// Axis modifier: mod = -(axis_id + 1). L2/R2 rest at -32768, pressed ≈ +32767.
+	int axis_id = -(mod + 1);
+	return (axis_id >= 0 && axis_id < 8) ? s_axisState[axis_id] > 0 : false;
+}
+
+bool emu_frontend_shortcut_just_pressed(const ShortcutBinding* s) {
+	if (!s || s->physical < 0) return false;
+	bool pressed;
+	if (s->is_axis) {
+		if (s->physical < 0 || s->physical >= 8) return false;
+		int threshold = 16000;
+		if (s->axis_dir > 0)
+			pressed = (s_axisState[s->physical] > threshold) &&
+					  (s_axisPrev[s->physical] <= threshold);
+		else
+			pressed = (s_axisState[s->physical] < -threshold) &&
+					  (s_axisPrev[s->physical] >= -threshold);
+	} else {
+		pressed = btn_just_pressed(s->physical);
+	}
+	if (!pressed) return false;
+	return mod_is_held(s->mod);
+}
+
+bool emu_frontend_shortcut_is_held(const ShortcutBinding* s) {
+	if (!s || s->physical < 0) return false;
+	bool held;
+	if (s->is_axis) {
+		if (s->physical < 0 || s->physical >= 8) return false;
+		int threshold = 16000;
+		if (s->axis_dir > 0)
+			held = s_axisState[s->physical] > threshold;
+		else
+			held = s_axisState[s->physical] < -threshold;
+	} else {
+		held = btn_is_held(s->physical);
+	}
+	if (!held) return false;
+	return mod_is_held(s->mod);
+}
+
+// Persistence: write shortcuts to an INI file under [NextUI-Shortcuts]
+static void write_shortcuts_to_ini(const char* ini_path) {
+	if (!ini_path || ini_path[0] == '\0') return;
+	FILE* f = fopen(ini_path, "a");
+	if (!f) return;
+	fprintf(f, "\n[NextUI-Shortcuts]\n");
+	for (int i = 0; i < SHORTCUT_COUNT; i++) {
+		ShortcutBinding* s = &s_shortcuts[i];
+		if (s->physical < 0) {
+			fprintf(f, "%s = \"\"\n", s->key);
+		} else if (s->is_axis) {
+			fprintf(f, "%s = \"axis(%d%s)\"\n", s->key,
+					s->physical, s->axis_dir > 0 ? "+" : "-");
+		} else {
+			fprintf(f, "%s = \"button(%d)\"\n", s->key, s->physical);
+		}
+		if (s->mod != 0)
+			fprintf(f, "%s_mod = %d\n", s->key, s->mod);
+	}
+	fclose(f);
+}
+
+// Persistence: write shortcuts in per-game flat format
+static void write_shortcuts_per_game(FILE* f) {
+	if (!f) return;
+	for (int i = 0; i < SHORTCUT_COUNT; i++) {
+		ShortcutBinding* s = &s_shortcuts[i];
+		if (s->physical < 0) {
+			fprintf(f, "[NextUI-Shortcuts] %s = \"\"\n", s->key);
+		} else if (s->is_axis) {
+			fprintf(f, "[NextUI-Shortcuts] %s = \"axis(%d%s)\"\n", s->key,
+					s->physical, s->axis_dir > 0 ? "+" : "-");
+		} else {
+			fprintf(f, "[NextUI-Shortcuts] %s = \"button(%d)\"\n", s->key, s->physical);
+		}
+		if (s->mod != 0)
+			fprintf(f, "[NextUI-Shortcuts] %s_mod = %d\n", s->key, s->mod);
+	}
+}
+
+// Load shortcuts from a config file (INI or per-game flat format).
+// Handles both [NextUI-Shortcuts] section format and flat "[NextUI-Shortcuts] key = val".
+static void load_shortcuts_from_file(const char* path) {
+	if (!path || path[0] == '\0') return;
+	FILE* f = fopen(path, "r");
+	if (!f) return;
+	char line[512];
+	bool in_section = false;
+	while (fgets(line, sizeof(line), f)) {
+		int len = (int)strlen(line);
+		while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' '))
+			line[--len] = '\0';
+		if (line[0] == '[') {
+			// Check for flat format: [NextUI-Shortcuts] key = value
+			if (strstr(line, "[NextUI-Shortcuts]")) {
+				char* rest = strstr(line, "]");
+				if (rest) {
+					rest++;
+					while (*rest == ' ') rest++;
+					if (*rest != '\0') {
+						// Flat format — parse inline key = value
+						char* eq = strchr(rest, '=');
+						if (eq) {
+							*eq = '\0';
+							char* key = rest;
+							while (key[strlen(key)-1] == ' ') key[strlen(key)-1] = '\0';
+							char* val = eq + 1;
+							while (*val == ' ') val++;
+							// Check if this is a _mod key
+							int klen = (int)strlen(key);
+							if (klen > 4 && strcmp(key + klen - 4, "_mod") == 0) {
+								char base_key[128];
+								snprintf(base_key, sizeof(base_key), "%.*s", klen - 4, key);
+								ShortcutBinding* s = find_shortcut(base_key);
+								if (s) s->mod = atoi(val);
+							} else {
+								ShortcutBinding* s = find_shortcut(key);
+								if (s) {
+									int phys, is_ax, ax_dir;
+									if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
+										s->physical = phys;
+										s->is_axis = is_ax;
+										s->axis_dir = ax_dir;
+										s->mod = 0; // reset mod; _mod line follows if needed
+									}
+								}
+							}
+						}
+						in_section = false;
+						continue;
+					}
+				}
+				in_section = true;
+			} else {
+				in_section = false;
+			}
+			continue;
+		}
+		if (!in_section) continue;
+		char* eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = '\0';
+		char* key = line;
+		while (*key == ' ' || *key == '\t') key++;
+		char* kend = eq - 1;
+		while (kend > key && (*kend == ' ' || *kend == '\t')) kend--;
+		*(kend + 1) = '\0';
+		char* val = eq + 1;
+		while (*val == ' ' || *val == '\t') val++;
+		int klen = (int)strlen(key);
+		if (klen > 4 && strcmp(key + klen - 4, "_mod") == 0) {
+			char base_key[128];
+			snprintf(base_key, sizeof(base_key), "%.*s", klen - 4, key);
+			ShortcutBinding* s = find_shortcut(base_key);
+			if (s) s->mod = atoi(val);
+		} else {
+			ShortcutBinding* s = find_shortcut(key);
+			if (s) {
+				int phys, is_ax, ax_dir;
+				if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
+					s->physical = phys;
+					s->is_axis = is_ax;
+					s->axis_dir = ax_dir;
+					s->mod = 0;
+				}
+			}
+		}
+	}
+	fclose(f);
+}
+
+// Reset all shortcuts to unbound
+static void reset_shortcuts_to_defaults(void) {
+	for (int i = 0; i < SHORTCUT_COUNT; i++) {
+		s_shortcuts[i].physical = -1;
+		s_shortcuts[i].is_axis = 0;
+		s_shortcuts[i].axis_dir = 0;
+		s_shortcuts[i].mod = 0;
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -644,18 +993,18 @@ static void set_fast_forward(bool enable) {
 }
 
 static void process_fast_forward(void) {
-	int toggleBtn = emu_frontend_get_shortcut("shortcut_toggle_ff");
-	int holdBtn = emu_frontend_get_shortcut("shortcut_hold_ff");
+	ShortcutBinding* toggle = find_shortcut("shortcut_toggle_ff");
+	ShortcutBinding* hold = find_shortcut("shortcut_hold_ff");
 
-	if (emu_frontend_btn_just_pressed(toggleBtn)) {
+	if (emu_frontend_shortcut_just_pressed(toggle)) {
 		s_ffToggledOn = !s_ffToggledOn;
 		set_fast_forward(s_ffToggledOn);
 	}
-	if (holdBtn >= 0) {
-		if (emu_frontend_btn_is_held(holdBtn) && !s_ffHoldActive) {
+	if (hold && hold->physical >= 0) {
+		if (emu_frontend_shortcut_is_held(hold) && !s_ffHoldActive) {
 			s_ffHoldActive = true;
 			set_fast_forward(true);
-		} else if (!emu_frontend_btn_is_held(holdBtn) && s_ffHoldActive) {
+		} else if (!emu_frontend_shortcut_is_held(hold) && s_ffHoldActive) {
 			s_ffHoldActive = false;
 			set_fast_forward(s_ffToggledOn);
 		}
@@ -765,21 +1114,21 @@ static void rewind_step_back(void) {
 
 static void process_rewind(void) {
 	rewind_update_config();
-	int toggleBtn = emu_frontend_get_shortcut("shortcut_toggle_rewind");
-	int holdBtn = emu_frontend_get_shortcut("shortcut_hold_rewind");
+	ShortcutBinding* toggle = find_shortcut("shortcut_toggle_rewind");
+	ShortcutBinding* hold = find_shortcut("shortcut_hold_rewind");
 
-	if (emu_frontend_btn_just_pressed(toggleBtn)) {
+	if (emu_frontend_shortcut_just_pressed(toggle)) {
 		s_rewindToggledOn = !s_rewindToggledOn;
 		s_rewinding = s_rewindToggledOn;
 		if (s_rewinding && s_fastForward) set_fast_forward(false);
 	}
 
-	if (holdBtn >= 0) {
-		if (emu_frontend_btn_is_held(holdBtn) && !s_rewindHoldActive) {
+	if (hold && hold->physical >= 0) {
+		if (emu_frontend_shortcut_is_held(hold) && !s_rewindHoldActive) {
 			s_rewindHoldActive = true;
 			s_rewinding = true;
 			if (s_fastForward) set_fast_forward(false);
-		} else if (!emu_frontend_btn_is_held(holdBtn) && s_rewindHoldActive) {
+		} else if (!emu_frontend_shortcut_is_held(hold) && s_rewindHoldActive) {
 			s_rewindHoldActive = false;
 			s_rewinding = s_rewindToggledOn;
 			if (!s_rewinding && s_ffToggledOn) set_fast_forward(true);
@@ -1049,14 +1398,12 @@ static void cheat_cycle_variant(int idx, int dir) {
 // ---------------------------------------------------------------------------
 
 static void process_state_shortcuts(void) {
-	int resetBtn = emu_frontend_get_shortcut("shortcut_reset");
-	if (emu_frontend_btn_just_pressed(resetBtn)) {
+	if (emu_frontend_shortcut_just_pressed(find_shortcut("shortcut_reset"))) {
 		if (s_coreAPI.core_cmd)
 			s_coreAPI.core_cmd(M64CMD_RESET, 0, NULL);
 	}
 
-	int saveBtn = emu_frontend_get_shortcut("shortcut_save_state");
-	if (emu_frontend_btn_just_pressed(saveBtn)) {
+	if (emu_frontend_shortcut_just_pressed(find_shortcut("shortcut_save_state"))) {
 		if (s_coreAPI.core_cmd) {
 			s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, s_currentSlot, NULL);
 			s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 0, NULL);
@@ -1065,22 +1412,19 @@ static void process_state_shortcuts(void) {
 			emu_ovl_save_slot_screenshot(&s_overlay, s_currentSlot);
 	}
 
-	int loadBtn = emu_frontend_get_shortcut("shortcut_load_state");
-	if (emu_frontend_btn_just_pressed(loadBtn)) {
+	if (emu_frontend_shortcut_just_pressed(find_shortcut("shortcut_load_state"))) {
 		if (s_coreAPI.core_cmd) {
 			s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, s_currentSlot, NULL);
 			s_coreAPI.core_cmd(M64CMD_STATE_LOAD, 0, NULL);
 		}
 	}
 
-	int screenshotBtn = emu_frontend_get_shortcut("shortcut_screenshot");
-	if (emu_frontend_btn_just_pressed(screenshotBtn)) {
+	if (emu_frontend_shortcut_just_pressed(find_shortcut("shortcut_screenshot"))) {
 		if (s_coreAPI.core_cmd)
 			s_coreAPI.core_cmd(M64CMD_TAKE_NEXT_SCREENSHOT, 0, NULL);
 	}
 
-	int gsBtn = emu_frontend_get_shortcut("shortcut_game_switcher");
-	if (emu_frontend_btn_just_pressed(gsBtn)) {
+	if (emu_frontend_shortcut_just_pressed(find_shortcut("shortcut_game_switcher"))) {
 		trigger_game_switcher();
 	}
 }
@@ -1097,13 +1441,11 @@ static void process_turbo_and_aspect_shortcuts(void) {
 		{"shortcut_turbo_r",  "r"},  {"shortcut_turbo_r2", "r2"},
 	};
 	for (int i = 0; i < 8; i++) {
-		int btn = emu_frontend_get_shortcut(turbo_map[i].key);
-		if (emu_frontend_btn_just_pressed(btn))
+		if (emu_frontend_shortcut_just_pressed(find_shortcut(turbo_map[i].key)))
 			toggle_turbo_file(turbo_map[i].file);
 	}
 
-	int aspectBtn = emu_frontend_get_shortcut("shortcut_cycle_aspect");
-	if (emu_frontend_btn_just_pressed(aspectBtn)) {
+	if (emu_frontend_shortcut_just_pressed(find_shortcut("shortcut_cycle_aspect"))) {
 		if (s_pluginOps.cycle_aspect)
 			s_pluginOps.cycle_aspect();
 	}
@@ -1193,6 +1535,19 @@ static void overlay_ensure_init(int w, int h) {
 
 		// Load the per-game input mode (Brick-only; no-op on other devices)
 		load_input_mode_from_file(&s_overlayConfig);
+
+		// Load saved button mappings: first from console config
+		// (mupen64plus.cfg), then per-game overrides on top.
+		load_button_mappings_from_file(s_overlayIniPath);
+		const char* pgp2 = get_per_game_path();
+		if (pgp2 && pgp2[0] != '\0')
+			load_button_mappings_from_file(pgp2);
+		emu_frontend_write_button_map_file();
+
+		// Load saved shortcuts: console config first, per-game on top
+		load_shortcuts_from_file(s_overlayIniPath);
+		if (pgp2 && pgp2[0] != '\0')
+			load_shortcuts_from_file(pgp2);
 	}
 
 	// Try GL init on the video thread (retries each frame until GL context is available)
@@ -1367,12 +1722,25 @@ static EmuOvlAction run_overlay_loop(void) {
 		// joystick polling works correctly and frames keep rendering.
 		// Three phases: cooldown (0-500ms, ignore input), listening
 		// (500-5500ms, edge-detect), timeout (>5500ms, cancel).
+		//
+		// SELECT, L2, and R2 are dual-purpose: modifier when combined
+		// with another button, standalone binding when pressed alone.
+		// A 200ms grace period after first detecting one of these
+		// inputs waits for a combo button before finalizing standalone.
+		// MENU remains modifier-only (reserved for opening the overlay).
 		#define BC_COOLDOWN_MS 500
 		#define BC_TIMEOUT_MS 5500
+		#define BC_GRACE_MS 200
 		if (s_overlay.bind_capture >= 0 && s_joy) {
 			static int bc_prev_btn[16];
 			static int bc_prev_axis[8];
 			static bool bc_baselines_set;
+			// Pending dual-purpose input (SELECT/L2/R2 with no combo yet).
+			// type: 0=none, 1=button (SELECT), 2=axis (L2/R2)
+			static int bc_pending_type;
+			static int bc_pending_id;      // button index or axis index
+			static int bc_pending_dir;     // axis direction (+1/-1), unused for buttons
+			static uint32_t bc_pending_at; // SDL_GetTicks when first detected
 
 			uint32_t elapsed = SDL_GetTicks() - s_overlay.bind_capture_start;
 
@@ -1380,9 +1748,11 @@ static EmuOvlAction run_overlay_loop(void) {
 				// Timeout — cancel capture, keep original binding
 				s_overlay.bind_capture = -1;
 				bc_baselines_set = false;
+				bc_pending_type = 0;
 			} else if (elapsed < BC_COOLDOWN_MS) {
 				// Cooldown — ignore all input (A button releases naturally)
 				bc_baselines_set = false;
+				bc_pending_type = 0;
 			} else {
 				// Listening — record baselines once, then edge-detect
 				if (!bc_baselines_set) {
@@ -1395,66 +1765,92 @@ static EmuOvlAction run_overlay_loop(void) {
 					for (int a = 0; a < na; a++)
 						bc_prev_axis[a] = SDL_JoystickGetAxis(s_joy, a);
 					bc_baselines_set = true;
+					bc_pending_type = 0;
 				}
 
 				N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
-				N64ButtonMapping* m = &mappings[s_overlay.bind_capture];
+				N64ButtonMapping tmp_mapping = {0};
+				N64ButtonMapping* m = (s_overlay.bind_capture < 1000)
+					? &mappings[s_overlay.bind_capture]
+					: &tmp_mapping;
 				bool bound = false;
 
-				// Detect modifier held simultaneously (MENU/SELECT/L2/R2).
-				// Computed once per frame; only applied if the captured
-				// button is DIFFERENT from the modifier itself.
+				// Detect modifiers held simultaneously.
+				// MENU: always modifier-only.
+				// SELECT/L2/R2: dual-purpose — modifier if a combo button
+				// is pressed, standalone after a grace period if not.
 				#define MOD_BTN_MENU   8
 				#define MOD_BTN_SELECT 6
 				#define MOD_AXIS_L2    2
 				#define MOD_AXIS_R2    5
 				int held_mod = 0;
+				bool select_active = false;
+				bool l2_active = false;
+				bool r2_active = false;
+
 				if (SDL_JoystickGetButton(s_joy, MOD_BTN_MENU))
 					held_mod = MOD_BTN_MENU;
-				else if (SDL_JoystickGetButton(s_joy, MOD_BTN_SELECT))
-					held_mod = MOD_BTN_SELECT;
-				else {
+				if (SDL_JoystickGetButton(s_joy, MOD_BTN_SELECT))
+					select_active = true;
+				{
 					int l2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_L2);
 					int r2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_R2);
 					int l2_delta = l2 - bc_prev_axis[MOD_AXIS_L2];
 					int r2_delta = r2 - bc_prev_axis[MOD_AXIS_R2];
 					if (l2_delta < 0) l2_delta = -l2_delta;
 					if (r2_delta < 0) r2_delta = -r2_delta;
-					if (l2_delta > 16000) held_mod = -(MOD_AXIS_L2 + 1); // negative = axis mod
-					else if (r2_delta > 16000) held_mod = -(MOD_AXIS_R2 + 1);
+					if (l2_delta > 16000) l2_active = true;
+					if (r2_delta > 16000) r2_active = true;
 				}
 
+				// Build held_mod: MENU takes priority, then SELECT, then L2/R2.
+				// For dual-purpose inputs, this is tentative — only applied
+				// if a different button is actually captured this frame.
+				if (!held_mod) {
+					if (select_active) held_mod = MOD_BTN_SELECT;
+					else if (l2_active) held_mod = -(MOD_AXIS_L2 + 1);
+					else if (r2_active) held_mod = -(MOD_AXIS_R2 + 1);
+				}
+
+				// --- Button scan ---
+				// Skip MENU (modifier-only). SELECT, L2, R2 are handled
+				// by the grace period logic below instead of being skipped.
 				int nb = SDL_JoystickNumButtons(s_joy);
 				if (nb > 16) nb = 16;
 				for (int b = 0; b < nb; b++) {
 					int cur = SDL_JoystickGetButton(s_joy, b);
-					// Fix 1: skip MENU and SELECT — they're modifier-only
-					// in capture. MENU is reserved (opens overlay), SELECT
-					// is a modifier key. Both can be held simultaneously
-					// with another button to create a combo binding.
-					if (b == MOD_BTN_MENU || b == MOD_BTN_SELECT) {
+					// MENU is always modifier-only (opens overlay)
+					if (b == MOD_BTN_MENU) {
 						bc_prev_btn[b] = cur;
+						continue;
+					}
+					// SELECT: skip if it's currently acting as modifier
+					// (another button will be the binding). Handled by
+					// grace period when pressed alone.
+					if (b == MOD_BTN_SELECT && select_active) {
 						continue;
 					}
 					if (cur && !bc_prev_btn[b]) {
 						m->physical = b;
 						m->is_axis = 0;
 						m->axis_dir = 0;
-						// Fix 2: held_mod != 0 (was > 0, excluded negative axis mods)
 						m->mod = (held_mod != 0 && b != held_mod) ? held_mod : 0;
 						bound = true;
 						break;
 					}
 					bc_prev_btn[b] = cur;
 				}
+
+				// --- Axis scan ---
+				// Skip L2/R2 when they're active as potential modifiers
+				// (handled by grace period). Other axes captured normally.
 				if (!bound) {
 					int na = SDL_JoystickNumAxes(s_joy);
 					if (na > 8) na = 8;
-					// Fix 3: skip the modifier's own axis so L2/R2 held as
-					// modifier don't get captured as the bound axis
-					int skip_axis = (held_mod < 0) ? -(held_mod + 1) : -1;
 					for (int a = 0; a < na; a++) {
-						if (a == skip_axis) continue;
+						if ((a == MOD_AXIS_L2 && l2_active) ||
+							(a == MOD_AXIS_R2 && r2_active))
+							continue;
 						int val = SDL_JoystickGetAxis(s_joy, a);
 						int delta = val - bc_prev_axis[a];
 						if (delta < 0) delta = -delta;
@@ -1462,23 +1858,97 @@ static EmuOvlAction run_overlay_loop(void) {
 							m->physical = a;
 							m->is_axis = 1;
 							m->axis_dir = (val > bc_prev_axis[a]) ? 1 : -1;
-							// Fix 2 (same): allow axis modifiers too
 							m->mod = (held_mod != 0) ? held_mod : 0;
 							bound = true;
 							break;
 						}
-						// Do NOT update bc_prev_axis — keep original baseline
 					}
 				}
+
+				// --- Grace period for dual-purpose inputs (SELECT/L2/R2) ---
+				// If a real button/axis was captured above, the dual-purpose
+				// input served as modifier — clear any pending and finalize.
 				if (bound) {
-					emu_frontend_write_button_map_file();
+					bc_pending_type = 0;
+				} else {
+					// No combo button pressed. Track the dual-purpose
+					// input as pending; finalize after grace period.
+					if (bc_pending_type == 0) {
+						if (select_active &&
+							SDL_JoystickGetButton(s_joy, MOD_BTN_SELECT) &&
+							!bc_prev_btn[MOD_BTN_SELECT]) {
+							// SELECT just pressed (edge)
+							bc_pending_type = 1;
+							bc_pending_id = MOD_BTN_SELECT;
+							bc_pending_at = SDL_GetTicks();
+						} else if (l2_active) {
+							bc_pending_type = 2;
+							bc_pending_id = MOD_AXIS_L2;
+							bc_pending_dir = (SDL_JoystickGetAxis(s_joy, MOD_AXIS_L2) > bc_prev_axis[MOD_AXIS_L2]) ? 1 : -1;
+							bc_pending_at = SDL_GetTicks();
+						} else if (r2_active) {
+							bc_pending_type = 2;
+							bc_pending_id = MOD_AXIS_R2;
+							bc_pending_dir = (SDL_JoystickGetAxis(s_joy, MOD_AXIS_R2) > bc_prev_axis[MOD_AXIS_R2]) ? 1 : -1;
+							bc_pending_at = SDL_GetTicks();
+						}
+					}
+					// Finalize pending after grace period
+					if (bc_pending_type != 0 &&
+						(SDL_GetTicks() - bc_pending_at) >= BC_GRACE_MS) {
+						if (bc_pending_type == 1) {
+							// SELECT as standalone button
+							m->physical = bc_pending_id;
+							m->is_axis = 0;
+							m->axis_dir = 0;
+							// MENU can still modify standalone SELECT
+							m->mod = (SDL_JoystickGetButton(s_joy, MOD_BTN_MENU)) ? MOD_BTN_MENU : 0;
+						} else {
+							// L2/R2 as standalone axis
+							m->physical = bc_pending_id;
+							m->is_axis = 1;
+							m->axis_dir = bc_pending_dir;
+							// Allow MENU or SELECT as modifier for standalone L2/R2
+							m->mod = 0;
+							if (SDL_JoystickGetButton(s_joy, MOD_BTN_MENU))
+								m->mod = MOD_BTN_MENU;
+							else if (SDL_JoystickGetButton(s_joy, MOD_BTN_SELECT))
+								m->mod = MOD_BTN_SELECT;
+						}
+						bound = true;
+						bc_pending_type = 0;
+					}
+				}
+
+				// Update SELECT baseline after scan (so edge detection
+				// works on subsequent frames even though we skip it above)
+				bc_prev_btn[MOD_BTN_SELECT] = SDL_JoystickGetButton(s_joy, MOD_BTN_SELECT);
+
+				if (bound) {
+					if (s_overlay.bind_capture < 1000) {
+						// Controls capture — write to button mappings
+						emu_frontend_write_button_map_file();
+						// Auto-advance to next remap row
+						EmuOvlSection* sec = &s_overlayConfig.sections[s_overlay.current_section];
+						int remap_end = sec->item_count + N64_REMAP_COUNT;
+						if (s_overlay.selected + 1 < remap_end)
+							s_overlay.selected++;
+					} else {
+						// Shortcut capture — store into ShortcutBinding
+						int sc_idx = s_overlay.bind_capture - 1000;
+						if (sc_idx >= 0 && sc_idx < SHORTCUT_COUNT) {
+							s_shortcuts[sc_idx].physical = m->physical;
+							s_shortcuts[sc_idx].is_axis = m->is_axis;
+							s_shortcuts[sc_idx].axis_dir = m->axis_dir;
+							s_shortcuts[sc_idx].mod = m->mod;
+						}
+						// Auto-advance
+						if (s_overlay.selected + 1 < SHORTCUT_COUNT)
+							s_overlay.selected++;
+					}
 					s_overlay.bind_capture = -1;
 					bc_baselines_set = false;
-					// Auto-advance to next remap row
-					EmuOvlSection* sec = &s_overlayConfig.sections[s_overlay.current_section];
-					int remap_end = sec->item_count + N64_REMAP_COUNT;
-					if (s_overlay.selected + 1 < remap_end)
-						s_overlay.selected++;
+					bc_pending_type = 0;
 				}
 			}
 		}
@@ -1573,6 +2043,7 @@ static void handle_save_for_console(void) {
 	if (target[0] != '\0') {
 		emu_ovl_cfg_write_ini(&s_overlayConfig, target);
 		write_bindings_to_ini(target);
+		write_shortcuts_to_ini(target);
 		apply_audio_quality_if_dirty(&s_overlayConfig);
 	}
 	emu_ovl_cfg_apply_staged(&s_overlayConfig);
@@ -1594,6 +2065,11 @@ static void handle_save_for_game(void) {
 		return;
 	}
 	emu_ovl_cfg_write_per_game(&s_overlayConfig, pgp);
+	// Append shortcuts to per-game file in flat format
+	{
+		FILE* pgf = fopen(pgp, "a");
+		if (pgf) { write_shortcuts_per_game(pgf); fclose(pgf); }
+	}
 	// Also write to the live mupen64plus.cfg so restart-required settings
 	// take effect on next launch of THIS same game (launch.sh will overlay
 	// the per-game file anyway, but if the user is still in-session it keeps
@@ -1601,6 +2077,7 @@ static void handle_save_for_game(void) {
 	if (s_overlayIniPath[0] != '\0') {
 		emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
 		write_bindings_to_ini(s_overlayIniPath);
+		write_shortcuts_to_ini(s_overlayIniPath);
 		apply_audio_quality_if_dirty(&s_overlayConfig);
 	}
 	emu_ovl_cfg_apply_staged(&s_overlayConfig);
@@ -1615,8 +2092,22 @@ static void handle_restore_defaults(void) {
 		const char* pgp = get_per_game_path();
 		if (pgp && pgp[0] != '\0') unlink(pgp);
 		// Reload values from the console config (mupen64plus.cfg)
-		if (s_overlayIniPath[0] != '\0')
+		if (s_overlayIniPath[0] != '\0') {
 			emu_ovl_cfg_read_ini(&s_overlayConfig, s_overlayIniPath);
+			// Reset controls to hardcoded defaults, then reload from console config
+			N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
+			for (int i = 0; i < N64_REMAP_COUNT; i++) {
+				mappings[i].physical = mappings[i].default_physical;
+				mappings[i].is_axis = mappings[i].default_is_axis;
+				mappings[i].axis_dir = mappings[i].default_axis_dir;
+				mappings[i].mod = 0;
+			}
+			load_button_mappings_from_file(s_overlayIniPath);
+			emu_frontend_write_button_map_file();
+			// Reset shortcuts to unbound, then reload from console config
+			reset_shortcuts_to_defaults();
+			load_shortcuts_from_file(s_overlayIniPath);
+		}
 		s_overlay.scope = compute_scope();
 		fprintf(stderr, "[Overlay] Restored console defaults.\n");
 	} else if (s_overlay.scope == EMU_SCOPE_CONSOLE) {
@@ -1625,6 +2116,18 @@ static void handle_restore_defaults(void) {
 		if (s_customizedPath[0] != '\0') unlink(s_customizedPath);
 		emu_ovl_cfg_reset_all_to_defaults(&s_overlayConfig);
 		emu_ovl_cfg_apply_staged(&s_overlayConfig);
+		reset_shortcuts_to_defaults();
+		// Reset controls to hardcoded defaults
+		{
+			N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
+			for (int i = 0; i < N64_REMAP_COUNT; i++) {
+				mappings[i].physical = mappings[i].default_physical;
+				mappings[i].is_axis = mappings[i].default_is_axis;
+				mappings[i].axis_dir = mappings[i].default_axis_dir;
+				mappings[i].mod = 0;
+			}
+			emu_frontend_write_button_map_file();
+		}
 		// Re-seed mupen64plus.cfg from default.cfg
 		const char* default_cfg = getenv("EMU_DEFAULT_CFG");
 		if (default_cfg && default_cfg[0] != '\0' && s_overlayIniPath[0] != '\0') {
@@ -1648,6 +2151,17 @@ static void handle_restore_defaults(void) {
 		// Already on defaults — reset staged values
 		emu_ovl_cfg_reset_all_to_defaults(&s_overlayConfig);
 		emu_ovl_cfg_apply_staged(&s_overlayConfig);
+		reset_shortcuts_to_defaults();
+		{
+			N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
+			for (int i = 0; i < N64_REMAP_COUNT; i++) {
+				mappings[i].physical = mappings[i].default_physical;
+				mappings[i].is_axis = mappings[i].default_is_axis;
+				mappings[i].axis_dir = mappings[i].default_axis_dir;
+				mappings[i].mod = 0;
+			}
+			emu_frontend_write_button_map_file();
+		}
 		fprintf(stderr, "[Overlay] Already on defaults; reset staged.\n");
 	}
 	// Re-apply runtime settings with the restored values

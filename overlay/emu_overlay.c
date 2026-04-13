@@ -429,8 +429,10 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 			break;
 		EmuOvlSection* sec = &ovl->config->sections[ovl->current_section];
 		bool is_input = (strcmp(sec->name, "Input") == 0);
+		bool is_shortcuts = (strcmp(sec->name, "Shortcuts") == 0);
 		int remap_rows = is_input ? N64_REMAP_COUNT : 0;
-		int total_rows = sec->item_count + remap_rows + 1; // items + [remaps] + reset
+		int shortcut_rows = is_shortcuts ? SHORTCUT_COUNT : 0;
+		int total_rows = sec->item_count + remap_rows + shortcut_rows + 1; // items + [remaps|shortcuts] + reset
 		if (input->up) {
 			ovl->selected = (ovl->selected - 1 + total_rows) % total_rows;
 			ensure_scroll(ovl, total_rows);
@@ -447,7 +449,6 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 			if (ovl->selected == total_rows - 1) {
 				// "Reset to Default" (last row)
 				emu_ovl_cfg_reset_section_to_defaults(sec);
-				// Also reset button mappings if in the Input section
 				if (is_input) {
 					N64ButtonMapping* mappings = emu_frontend_get_button_mappings();
 					for (int i = 0; i < N64_REMAP_COUNT; i++) {
@@ -458,12 +459,24 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 					}
 					emu_frontend_write_button_map_file();
 				}
+				if (is_shortcuts) {
+					ShortcutBinding* sc = emu_frontend_get_shortcuts();
+					for (int i = 0; i < SHORTCUT_COUNT; i++) {
+						sc[i].physical = -1;
+						sc[i].is_axis = 0;
+						sc[i].axis_dir = 0;
+						sc[i].mod = 0;
+					}
+				}
 			} else if (is_input && ovl->selected >= sec->item_count &&
 					   ovl->selected < sec->item_count + remap_rows) {
-				// Start bind capture — set the flag + timestamp. The actual
-				// input polling happens in run_overlay_loop on the main
-				// thread (not here on the GL thread, which would block).
+				// Start bind capture for controls
 				ovl->bind_capture = ovl->selected - sec->item_count;
+				ovl->bind_capture_start = SDL_GetTicks();
+			} else if (is_shortcuts && ovl->selected >= sec->item_count &&
+					   ovl->selected < sec->item_count + shortcut_rows) {
+				// Start bind capture for shortcuts (1000 + index)
+				ovl->bind_capture = 1000 + (ovl->selected - sec->item_count);
 				ovl->bind_capture_start = SDL_GetTicks();
 			} else if (ovl->selected < sec->item_count && sec->item_count > 0) {
 				cycle_item_next(&sec->items[ovl->selected]);
@@ -1007,8 +1020,10 @@ static void render_section_items(EmuOvl* ovl) {
 	int content_w = ovl->screen_w - PADDING_PX * 2;
 
 	bool is_input = (strcmp(sec->name, "Input") == 0);
+	bool is_shortcuts = (strcmp(sec->name, "Shortcuts") == 0);
 	int remap_rows = is_input ? N64_REMAP_COUNT : 0;
-	int total_rows = sec->item_count + remap_rows + 1; // items + [remaps] + reset
+	int shortcut_rows = is_shortcuts ? SHORTCUT_COUNT : 0;
+	int total_rows = sec->item_count + remap_rows + shortcut_rows + 1;
 
 	// Scroll
 	ensure_scroll(ovl, total_rows);
@@ -1018,6 +1033,7 @@ static void render_section_items(EmuOvl* ovl) {
 		vis_count = total_rows;
 
 	N64ButtonMapping* mappings = is_input ? emu_frontend_get_button_mappings() : NULL;
+	ShortcutBinding* shortcuts = is_shortcuts ? emu_frontend_get_shortcuts() : NULL;
 
 	for (int vi = 0; vi < vis_count; vi++) {
 		int idx = ovl->scroll_offset + vi;
@@ -1038,25 +1054,48 @@ static void render_section_items(EmuOvl* ovl) {
 		} else if (is_input && idx < sec->item_count + remap_rows) {
 			// Button remap row
 			int ri = idx - sec->item_count;
-			const char* label;
+			const char* val;
 			char countdown_buf[16];
 			if (ovl->bind_capture == ri) {
-				// Show capture state: cooldown or countdown
 				unsigned int elapsed = SDL_GetTicks() - ovl->bind_capture_start;
 				if (elapsed < 500) {
-					label = "...";
+					val = "...";
 				} else {
 					int remaining = (int)(5500 - elapsed) / 1000 + 1;
 					if (remaining < 1) remaining = 1;
 					if (remaining > 5) remaining = 5;
 					snprintf(countdown_buf, sizeof(countdown_buf), "%d...", remaining);
-					label = countdown_buf;
+					val = countdown_buf;
 				}
 			} else {
-				label = emu_frontend_binding_label(&mappings[ri]);
+				val = emu_frontend_binding_label(&mappings[ri]);
 			}
 			draw_settings_row(ovl, content_x, iy, content_w, row_h,
-							  mappings[ri].name, label, sel, false,
+							  mappings[ri].name, val, sel, false,
+							  EMU_OVL_FONT_SMALL);
+		} else if (is_shortcuts && idx >= sec->item_count &&
+				   idx < sec->item_count + shortcut_rows) {
+			// Shortcut binding row
+			int si = idx - sec->item_count;
+			const char* val;
+			char countdown_buf[16];
+			int bc_idx = ovl->bind_capture - 1000;
+			if (ovl->bind_capture >= 1000 && bc_idx == si) {
+				unsigned int elapsed = SDL_GetTicks() - ovl->bind_capture_start;
+				if (elapsed < 500) {
+					val = "...";
+				} else {
+					int remaining = (int)(5500 - elapsed) / 1000 + 1;
+					if (remaining < 1) remaining = 1;
+					if (remaining > 5) remaining = 5;
+					snprintf(countdown_buf, sizeof(countdown_buf), "%d...", remaining);
+					val = countdown_buf;
+				}
+			} else {
+				val = emu_frontend_shortcut_label(&shortcuts[si]);
+			}
+			draw_settings_row(ovl, content_x, iy, content_w, row_h,
+							  shortcuts[si].label, val, sel, false,
 							  EMU_OVL_FONT_SMALL);
 		} else {
 			// "Reset to Default" row (last)

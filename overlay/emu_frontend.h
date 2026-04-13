@@ -55,11 +55,31 @@ SDL_Joystick* emu_frontend_get_joystick(void);
 // to write back to the menu state, e.g. aspect ratio cycling).
 EmuOvlConfig* emu_frontend_get_overlay_config(void);
 
-// Shortcut system (button state tracking + config lookup)
+// Button state tracking (called every frame)
 void emu_frontend_update_buttons(void);
-int emu_frontend_get_shortcut(const char* key);
-bool emu_frontend_btn_just_pressed(int b);
-bool emu_frontend_btn_is_held(int b);
+
+// Shortcut binding (19 remappable shortcuts — same capture/modifier model as controls)
+#define SHORTCUT_COUNT 19
+typedef struct {
+	const char* key;       // config key: "shortcut_toggle_ff", etc.
+	const char* label;     // display name: "Toggle Fast Forward", etc.
+	int physical;          // SDL button index (-1 = unbound)
+	int is_axis;           // 0 = button, 1 = axis
+	int axis_dir;          // +1 or -1 for axes
+	int mod;               // modifier: 0=none, 8=MENU, 6=SELECT, -3=L2, -6=R2
+} ShortcutBinding;
+
+// Get the shortcuts array (owned by emu_frontend)
+ShortcutBinding* emu_frontend_get_shortcuts(void);
+
+// Get human-readable label for a shortcut (e.g., "R1", "MENU+A")
+const char* emu_frontend_shortcut_label(const ShortcutBinding* s);
+
+// Check if a shortcut was just activated (button pressed + modifier held)
+bool emu_frontend_shortcut_just_pressed(const ShortcutBinding* s);
+
+// Check if a shortcut's button is currently held (+ modifier)
+bool emu_frontend_shortcut_is_held(const ShortcutBinding* s);
 
 // Frame skip value (owned by emu_frontend, read by GLideN64 RSP.cpp via extern)
 extern int g_frameSkip;

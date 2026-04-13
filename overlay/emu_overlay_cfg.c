@@ -280,9 +280,11 @@ int emu_ovl_cfg_load(EmuOvlConfig* cfg, const char* json_path) {
 			parse_section(json_sec, &cfg->sections[cfg->section_count], active_plugin);
 			// Drop sections that ended up empty after per-item filtering,
 			// UNLESS they're dynamic sections with no JSON-defined items
-			// (Cheats = loaded from mupencheat.txt at runtime).
+			// (Cheats = loaded from mupencheat.txt at runtime,
+			//  Shortcuts = rendered from ShortcutBinding array in emu_frontend).
 			if (cfg->sections[cfg->section_count].item_count == 0 &&
-				strcmp(cfg->sections[cfg->section_count].name, "Cheats") != 0)
+				strcmp(cfg->sections[cfg->section_count].name, "Cheats") != 0 &&
+				strcmp(cfg->sections[cfg->section_count].name, "Shortcuts") != 0)
 				continue;
 			cfg->section_count++;
 		}
