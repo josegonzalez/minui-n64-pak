@@ -45,6 +45,9 @@ static char s_overlayIniPath[512] = "";
 static bool s_menuBtnPrev = false;
 static Uint8 s_prevHat = 0;
 static Uint32 s_prevButtons = 0;
+#define OVL_AXIS_DEADZONE 16000
+static int s_prevAxisX = 0;
+static int s_prevAxisY = 0;
 
 // ---------------------------------------------------------------------------
 // CPU mode (switchable via overlay menu)
@@ -1657,6 +1660,22 @@ static EmuOvlInput poll_overlay_input(void) {
 	if (hatPressed & SDL_HAT_LEFT)  input.left  = true;
 	if (hatPressed & SDL_HAT_RIGHT) input.right = true;
 
+	// Analog stick (axes 0/1) — edge detect on threshold crossing
+	int axisX = SDL_JoystickGetAxis(s_joy, 0);
+	int axisY = SDL_JoystickGetAxis(s_joy, 1);
+
+	if (axisX < -OVL_AXIS_DEADZONE && s_prevAxisX >= -OVL_AXIS_DEADZONE)
+		input.left  = true;
+	if (axisX >  OVL_AXIS_DEADZONE && s_prevAxisX <=  OVL_AXIS_DEADZONE)
+		input.right = true;
+	if (axisY < -OVL_AXIS_DEADZONE && s_prevAxisY >= -OVL_AXIS_DEADZONE)
+		input.up    = true;
+	if (axisY >  OVL_AXIS_DEADZONE && s_prevAxisY <=  OVL_AXIS_DEADZONE)
+		input.down  = true;
+
+	s_prevAxisX = axisX;
+	s_prevAxisY = axisY;
+
 	// Buttons — edge detect: only trigger on newly-pressed buttons
 	// SDL button indices: 0=A(hw), 1=B(hw), 2=X(hw), 3=Y(hw), 4=L1, 5=R1, 8=Menu
 	static const int btnMap[] = {0, 1, 4, 5, 8};
@@ -1696,22 +1715,15 @@ static EmuOvlAction run_overlay_loop(void) {
 	// Pause audio (stays on main thread)
 	SDL_PauseAudio(1);
 
-	// Temporarily restore d-pad for menu navigation. trimui_inputd's
-	// input_no_dpad suppresses hat events at the kernel level, which
-	// breaks poll_overlay_input (it reads SDL hat 0). Remove the flags
-	// while the menu is open; re-apply after close via apply_input_mode_if_dirty.
-	int saved_input_mode = -1;
-	EmuOvlItem* im_item = find_input_mode_item(&s_overlayConfig);
-	if (im_item) {
-		saved_input_mode = im_item->current_value;
-		apply_input_mode(1); // force d-pad passthrough for menu nav
-	}
+	// Menu reads both hat and axes 0/1, so no input mode swap is needed.
 
 	// Open overlay on video thread (captures current frame — needs GL)
 	s_pluginOps.exec_on_video_thread(overlay_open_on_gl_thread, NULL);
 
 	// Reset input edge detection state and drain pending SDL events
 	s_prevHat = SDL_JoystickGetHat(s_joy, 0);
+	s_prevAxisX = SDL_JoystickGetAxis(s_joy, 0);
+	s_prevAxisY = SDL_JoystickGetAxis(s_joy, 1);
 	s_prevButtons = 0;
 	static const int menu_btns[] = {0, 1, 4, 5, 8};
 	for (int i = 0; i < 5; i++) {
@@ -2004,12 +2016,6 @@ static EmuOvlAction run_overlay_loop(void) {
 	SDL_PauseAudio(0);
 
 	EmuOvlAction action = emu_ovl_get_action(&s_overlay);
-
-	// Restore the input mode that was active before the menu opened.
-	// If the user changed it in the menu, apply_input_mode_if_dirty will
-	// override with the new value below.
-	if (saved_input_mode >= 0)
-		apply_input_mode(saved_input_mode);
 
 	// Apply on-demand runtime settings (cpu_mode, frame_skip, input_mode)
 	// WITHOUT persisting to disk. Dirty flags stay set so the Save Changes
