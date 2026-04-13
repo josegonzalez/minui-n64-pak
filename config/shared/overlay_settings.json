@@ -11,21 +11,27 @@
       "ini_section": "Audio-SDL",
       "items": [
         {
-          "key": "audio_quality",
-          "label": "Audio Quality",
-          "description": "Resampling quality (restart required)",
+          "key": "RESAMPLE",
+          "label": "Resampling",
+          "description": "Audio resampling algorithm (restart required)",
           "type": "cycle",
           "values": [
             0,
             1,
-            2
+            2,
+            3,
+            4,
+            5
           ],
           "labels": [
-            "Low",
-            "Medium",
-            "High"
+            "Trivial",
+            "Zero-Order Hold",
+            "Linear",
+            "Sinc (Fast)",
+            "Sinc (Medium)",
+            "Sinc (Best)"
           ],
-          "default": 1
+          "default": 2
         }
       ]
     },
@@ -397,6 +403,17 @@
           "description": "Use full alpha channel for hi-res",
           "type": "bool",
           "default": true,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "txHiresVramLimit",
+          "label": "VRAM Limit",
+          "description": "Hi-res texture VRAM limit in MB (0=no limit)",
+          "type": "int",
+          "min": 0,
+          "max": 200,
+          "step": 50,
+          "default": 50,
           "plugin": "gliden64"
         },
         {
@@ -783,6 +800,14 @@
           "key": "EnableHybridFilter",
           "label": "Hybrid Filter",
           "description": "Hybrid integer scaling filter",
+          "type": "bool",
+          "default": false,
+          "plugin": "gliden64"
+        },
+        {
+          "key": "EnableLOD",
+          "label": "LOD Emulation",
+          "description": "Level-of-detail texture emulation",
           "type": "bool",
           "default": false,
           "plugin": "gliden64"

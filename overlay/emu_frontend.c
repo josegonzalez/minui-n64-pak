@@ -137,19 +137,22 @@ static void apply_frame_skip_if_dirty(EmuOvlConfig* cfg) {
 }
 
 // ---------------------------------------------------------------------------
-// Audio quality (maps numeric overlay value to RESAMPLE string in INI)
+// Resample (maps numeric overlay value to RESAMPLE string in INI)
 // ---------------------------------------------------------------------------
 
-static void apply_audio_quality_if_dirty(EmuOvlConfig* cfg) {
+static void apply_resample_if_dirty(EmuOvlConfig* cfg) {
 	for (int s = 0; s < cfg->section_count; s++)
 		for (int i = 0; i < cfg->sections[s].item_count; i++)
-			if (strcmp(cfg->sections[s].items[i].key, "audio_quality") == 0 &&
+			if (strcmp(cfg->sections[s].items[i].key, "RESAMPLE") == 0 &&
 			    cfg->sections[s].items[i].dirty) {
 				const char* resample;
 				switch (cfg->sections[s].items[i].staged_value) {
 					case 0:  resample = "trivial"; break;
-					case 1:  resample = "src-linear"; break;
-					default: resample = "src-sinc-fastest"; break;
+					case 1:  resample = "src-zero-order-hold"; break;
+					case 2:  resample = "src-linear"; break;
+					case 3:  resample = "src-sinc-fastest"; break;
+					case 4:  resample = "src-sinc-medium-quality"; break;
+					default: resample = "src-sinc-best-quality"; break;
 				}
 				if (s_overlayIniPath[0] != '\0') {
 					FILE* f = fopen(s_overlayIniPath, "r");
@@ -2095,7 +2098,7 @@ static void handle_save_for_console(void) {
 		emu_ovl_cfg_write_ini(&s_overlayConfig, target);
 		write_bindings_to_ini(target);
 		write_shortcuts_to_ini(target);
-		apply_audio_quality_if_dirty(&s_overlayConfig);
+		apply_resample_if_dirty(&s_overlayConfig);
 	}
 	emu_ovl_cfg_apply_staged(&s_overlayConfig);
 	emu_frontend_write_button_map_file();
@@ -2133,7 +2136,7 @@ static void handle_save_for_game(void) {
 		emu_ovl_cfg_write_ini(&s_overlayConfig, s_overlayIniPath);
 		write_bindings_to_ini(s_overlayIniPath);
 		write_shortcuts_to_ini(s_overlayIniPath);
-		apply_audio_quality_if_dirty(&s_overlayConfig);
+		apply_resample_if_dirty(&s_overlayConfig);
 	}
 	emu_ovl_cfg_apply_staged(&s_overlayConfig);
 	emu_frontend_write_button_map_file();
