@@ -11,7 +11,7 @@ Standalone mupen64plus built from upstream sources with custom overlay menu inte
 ## Quick start
 
 ```sh
-make clean build
+make clean build dist
 ```
 
 This clones upstream repos, applies patches, builds for both platforms sequentially, and assembles `dist/N64.pak/`.
@@ -20,7 +20,8 @@ This clones upstream repos, applies patches, builds for both platforms sequentia
 
 | Target | Description |
 |--------|-------------|
-| `make all` / `make build` | Full build: clone, patch, build both platforms, assemble dist |
+| `make build` | Clone, patch, build core + all plugins for both platforms |
+| `make all` | Assemble `dist/` for both platforms (assumes artifacts are already built) |
 | `make clone` | Clone upstream repos into `src/` |
 | `make patch` | Apply patches from `patches/shared/` |
 | `make tg5040` | Build core + audio/input/rsp plugins for tg5040 |
@@ -29,7 +30,7 @@ This clones upstream repos, applies patches, builds for both platforms sequentia
 | `make rice-tg5040` / `make rice-tg5050` | Build Rice video plugin per-toolchain |
 | `make patches` | Regenerate `patches/shared/*.patch` from the current source trees |
 | `make dist` | Assemble `dist/N64.pak/` from current build outputs |
-| `make clean` | Remove `src/`, `dist/`, and `include/` |
+| `make clean` | Remove `src/`, `dist/`, `include/`, and generated `mupen64plus-audio-sdl.patch` |
 
 ### Building a single platform
 
@@ -107,9 +108,7 @@ dist/N64.pak/
 │   ├── mupencheat.txt                  cheat codes
 │   ├── 7zzs                            7-Zip standalone (for .zip/.7z ROMs)
 │   ├── 7zzs.LICENSE                    7-Zip license
-│   ├── nav_button_a.png                button hint icon (A)
-│   ├── nav_button_b.png                button hint icon (B)
-│   ├── nav_dpad_horizontal.png         button hint icon (d-pad)
+│   ├── pak.json                        pak metadata
 │   ├── libpng16.so.16                  libpng runtime
 │   └── libz.so.1                       zlib runtime (libpng16 dep)
 └── tg5050/                            TrimUI Smart Pro S
@@ -159,11 +158,11 @@ Because the Brick has no analog stick, the physical d-pad has to stand in for on
 - **Joystick** (default for most games) — the physical d-pad routes through the N64 analog stick. The N64 d-pad is inactive.
 - **D-Pad** — the physical d-pad passes through as the N64 d-pad (the config-mapped hat). The N64 analog stick is inactive.
 
-Smart Pro and Smart Pro S both have a real left analog stick, so this remap is disabled on them — `launch.sh` leaves `$EMU_INPUT_MODE_FILE` unset and `plugin.c` gates the whole remap block on `$DEVICE=brick`. The **Input → Input Mode** overlay menu item is still visible on those devices but toggling it is a no-op.
+Smart Pro and Smart Pro S both have a real left analog stick, so this remap is disabled on them — `emu_frontend.c` gates the d-pad remap on `$DEVICE=brick` via trimui_inputd flag files at `/tmp/trimui_inputd/`. The **Input → Input Mode** overlay menu item is still visible on those devices but toggling it is a no-op.
 
 On the Brick, the setting is **per-ROM**: each game gets its own file at `$DEVICE_CONFIG_DIR/per-game/<rom>.cfg` containing `input_mode=joystick` or `input_mode=dpad`. On first launch the default is chosen by substring-matching the ROM's GoodName (resolved by mupen64plus-core from `mupen64plus.ini` by CRC/MD5) against a hardcoded list in `overlay/emu_frontend.c` — the following games default to **D-Pad**:
 
-Kirby 64: The Crystal Shards, Mischief Makers, Tetris 64, Tetrisphere, Ms. Pac-Man - Maze Madness, Mortal Kombat 4, Mortal Kombat Trilogy, Killer Instinct Gold, Pokémon Puzzle League, WWF No Mercy, ClayFighter 63⅓, ClayFighter - Sculptor's Cut, WWF WarZone.
+Kirby 64: The Crystal Shards, Hoshi no Kirby 64, Mischief Makers, Tetris 64, Tetrisphere, Ms. Pac-Man - Maze Madness, Mortal Kombat 4, Mortal Kombat Trilogy, Killer Instinct Gold, Pokémon Puzzle League, WWF No Mercy, ClayFighter 63⅓, ClayFighter - Sculptor's Cut, WWF WarZone.
 
 All other games default to **Joystick**. Change it live via the overlay menu's **Input → Input Mode** item, or by binding **Shortcuts → Toggle Input Mode** to any face/shoulder button — both write through to the per-game file and the input plugin picks up the change within a frame (stat-mtime polling).
 
@@ -199,7 +198,7 @@ The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagg
 
 | Section | Setting | Notes |
 |---|---|---|
-| Audio | Audio Quality | Resampler: Low / Medium / High (restart required) |
+| Audio | Resampling | Trivial / Zero-Order Hold / Linear / Sinc Fast / Sinc Medium / Sinc Best (restart required) |
 | Core | Video Plugin | Rice (default) / GLideN64 (restart required) |
 | Core | CPU Overclock | Off / 2× / 4× / 8× (restart required) |
 | Input | Input Mode | Joystick / D-Pad (Brick only, see [Per-game input mode](#per-game-input-mode-brick-only)) |
@@ -217,9 +216,9 @@ The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagg
 | Dithering | Dithering Pattern, Quantization, RDRAM Dithering, Hi-Res Noise Dithering | |
 | Frame Buffer | FB Emulation, Color to RDRAM, Depth to RDRAM, Color from RDRAM, N64 Depth Compare, Disable FB Info | |
 | Gamma | Force Gamma, Gamma Level | |
-| Hi-Res Textures | Enable Hi-Res, File Storage, Full Alpha Channel, Alt CRC | |
+| Hi-Res Textures | Enable Hi-Res, File Storage, Full Alpha Channel, Alt CRC, VRAM Limit | |
 | Performance | Inaccurate Tex Coords, Legacy Blending, Shader Cache, Fragment Depth Write, Backgrounds Mode, Threaded Video | |
-| Rendering | Resolution Factor, Aspect Ratio, FXAA, Multi-Sampling, Anisotropic Filtering, Bilinear Mode, Hybrid Filter, HW Lighting, Coverage, Clipping, Buffer Swap Mode | |
+| Rendering | Resolution Factor, Aspect Ratio, FXAA, Multi-Sampling, Anisotropic Filtering, Bilinear Mode, Hybrid Filter, HW Lighting, LOD Emulation, Coverage, Clipping, Buffer Swap Mode | |
 | Texture Enhancement | Filter Mode, Enhancement Mode, Deposterize, Ignore BG Textures, Texture Cache Size | |
 
 #### Rice-only settings
@@ -230,7 +229,7 @@ The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagg
 | Frame Buffer | FB Setting, Render To Texture, Screen Update | |
 | Hi-Res Textures | Load Hi-Res Textures, Hi-Res CRC Only | |
 | Performance | Fast Texture Loading, Skip Frame, Accurate Texture Mapping | |
-| Rendering | Multi-Sampling, Anisotropic Filtering, Color Quality, Depth Buffer, Fog | |
+| Rendering | Aspect Ratio, Multi-Sampling, Anisotropic Filtering, Color Quality, Depth Buffer, Fog | |
 | Texture Enhancement | Texture Enhancement, Force Texture Filter, Mipmapping, Texture Quality | |
 
 #### Save scope
@@ -252,6 +251,7 @@ The overlay menu's **Performance → CPU Mode** toggle controls the kernel CPU g
 | Powersave | `powersave` | 408 MHz | 408 MHz |
 | Ondemand | `ondemand` | 1.2 GHz | 1.8 GHz |
 | Performance (default) | `performance` | Platform max | Platform max |
+| Auto | Resolves to Performance | *(same as Performance)* | *(same as Performance)* |
 
 Applied immediately when changed. Persisted only via Options → Save Changes.
 

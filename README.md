@@ -6,7 +6,8 @@ A MinUI Emu Pak for N64, wrapping the standalone `mupen64plus` N64 emulator (ver
 
 This pak is designed and tested on the following MinUI Platforms and devices:
 
-- `tg5040`: Trimui Brick (formerly `tg3040`)
+- `tg5040`: TrimUI Brick (formerly `tg3040`) and TrimUI Smart Pro
+- `tg5050`: TrimUI Smart Pro S
 
 Use the correct platform for your device.
 
