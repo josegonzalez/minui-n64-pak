@@ -219,17 +219,28 @@ case "$VIDEO_PLUGIN_VALUE" in
         export EMU_VIDEO_PLUGIN=gliden64
         ;;
 esac
-# Font from NextUI system resources; pick font1.ttf or font2.ttf based on the
-# user's `font=` setting in minuisettings.txt (matching NextUI's CFG_setFontId).
+# Font: try NextUI's font1/font2.ttf (selected via minuisettings.txt font=),
+# then fall back to MinUI's BPreplayBold-unhinted.otf, then any .ttf/.otf in
+# the res directory. This keeps the overlay functional on both NextUI and MinUI.
+RES_DIR="$SDCARD_PATH/.system/res"
 MINUI_SETTINGS="$SDCARD_PATH/.userdata/shared/minuisettings.txt"
 FONT_ID=$(awk -F= '$1=="font"{print $2; exit}' "$MINUI_SETTINGS" 2>/dev/null)
 case "$FONT_ID" in
-    1) FONT_NAME="font1.ttf" ;;
-    *) FONT_NAME="font2.ttf" ;;
+    1) FONT_FILE="$RES_DIR/font1.ttf" ;;
+    *) FONT_FILE="$RES_DIR/font2.ttf" ;;
 esac
-FONT_FILE="$SDCARD_PATH/.system/res/$FONT_NAME"
-[ -f "$FONT_FILE" ] || FONT_FILE="$SDCARD_PATH/.system/res/font2.ttf"
-[ -f "$FONT_FILE" ] || FONT_FILE="$SDCARD_PATH/.system/res/font1.ttf"
+[ -f "$FONT_FILE" ] || FONT_FILE="$RES_DIR/font2.ttf"
+[ -f "$FONT_FILE" ] || FONT_FILE="$RES_DIR/font1.ttf"
+[ -f "$FONT_FILE" ] || FONT_FILE="$RES_DIR/BPreplayBold-unhinted.otf"
+if [ ! -f "$FONT_FILE" ]; then
+    # Last resort: pick the first .ttf or .otf in the res directory
+    for f in "$RES_DIR"/*.ttf "$RES_DIR"/*.otf; do
+        if [ -f "$f" ]; then
+            FONT_FILE="$f"
+            break
+        fi
+    done
+fi
 export EMU_OVERLAY_FONT="$FONT_FILE"
 export EMU_OVERLAY_RES="$BIN_DIR"
 # Screenshot directory (matches minarch's .minui path for game switcher)
