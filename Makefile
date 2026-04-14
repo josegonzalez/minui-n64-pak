@@ -70,7 +70,8 @@ DOCKER_SCRIPT := /build/src/.docker-env.sh
 # Top-level targets
 # ══════════════════════════════════════════════════════════════════════════════
 
-.PHONY: all build tg5040 tg5050 gliden64 rice dist clone patch patches clean
+.PHONY: all build tg5040 tg5050 gliden64 rice dist clone patch patches clean \
+       ini-tg5040 ini-tg5050
 
 build: clone patch
 	$(MAKE) tg5040
@@ -78,6 +79,8 @@ build: clone patch
 	$(MAKE) gliden64
 	$(MAKE) rice-tg5040
 	$(MAKE) rice-tg5050
+	$(MAKE) ini-tg5040
+	$(MAKE) ini-tg5050
 
 # Build both platforms sequentially, staging outputs between builds since they
 # share source directories.
@@ -258,6 +261,18 @@ rice-tg5040: $(PATCH_STAMP)
 rice-tg5050: $(PATCH_STAMP) tg5050-libpng-headers
 	$(DOCKER_RUN_5050) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) USE_GLES=1 CPPFLAGS="-I/build/include" LIBPNG_CFLAGS="-I/build/src/libpng-headers/libpng-1.6.37" LIBPNG_LDLIBS="-lpng16 -lz"'
 
+# ── INI CLI tool (pure C, no SDK dependencies) ──────────────────────────────
+
+ini-tg5040:
+	$(DOCKER_RUN_5040) bash -c 'cd /build/tools/ini && make clean all CROSS_COMPILE=$(CROSS)'
+	mkdir -p $(ROOT)/tools/ini/dist/tg5040
+	cp $(ROOT)/tools/ini/build/ini $(ROOT)/tools/ini/dist/tg5040/ini
+
+ini-tg5050:
+	$(DOCKER_RUN_5050) bash -c 'cd /build/tools/ini && make clean all CROSS_COMPILE=$(CROSS)'
+	mkdir -p $(ROOT)/tools/ini/dist/tg5050
+	cp $(ROOT)/tools/ini/build/ini $(ROOT)/tools/ini/dist/tg5050/ini
+
 # ── Dist assembly ─────────────────────────────────────────────────────────────
 
 .PHONY: dist dist-tg5040 dist-tg5050
@@ -290,6 +305,7 @@ dist-tg5040:
 	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5040/
 	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/tg5040/
 	$(call DIST_COMMON,$(DIST)/tg5040)
+	cp $(ROOT)/tools/ini/dist/tg5040/ini $(DIST)/tg5040/
 	$(DOCKER_RUN_5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5040/libpng16.so.16
 	$(DOCKER_RUN_5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5040/libz.so.1
 
@@ -303,6 +319,7 @@ dist-tg5050:
 	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5050/
 	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/tg5050/
 	$(call DIST_COMMON,$(DIST)/tg5050)
+	cp $(ROOT)/tools/ini/dist/tg5050/ini $(DIST)/tg5050/
 	$(DOCKER_RUN_5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
 	$(DOCKER_RUN_5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5050/libz.so.1
 
@@ -337,3 +354,5 @@ patches:
 clean:
 	rm -rf $(SRC) $(ROOT)/dist $(ROOT)/include
 	rm -f $(PATCHES)/mupen64plus-audio-sdl.patch
+	cd $(ROOT)/tools/ini && make clean
+	rm -rf $(ROOT)/tools/ini/dist
