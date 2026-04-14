@@ -58,8 +58,8 @@ EmuOvlConfig* emu_frontend_get_overlay_config(void);
 // Button state tracking (called every frame)
 void emu_frontend_update_buttons(void);
 
-// Shortcut binding (19 remappable shortcuts — same capture/modifier model as controls)
-#define SHORTCUT_COUNT 19
+// Shortcut binding (25 remappable shortcuts — same capture/modifier model as controls)
+#define SHORTCUT_COUNT 25
 typedef struct {
 	const char* key;       // config key: "shortcut_toggle_ff", etc.
 	const char* label;     // display name: "Toggle Fast Forward", etc.
@@ -83,6 +83,10 @@ bool emu_frontend_shortcut_is_held(const ShortcutBinding* s);
 
 // Frame skip value (owned by emu_frontend, read by GLideN64 RSP.cpp via extern)
 extern int g_frameSkip;
+
+// Analog sensitivity modifier (owned by ui-console main.c, written by emu_frontend)
+// 0 = 100% (default), 25/50/75 = output percentage
+extern int g_analogSensitivity;
 
 // N64 button mapping (10 remappable action buttons)
 #define N64_REMAP_COUNT 10

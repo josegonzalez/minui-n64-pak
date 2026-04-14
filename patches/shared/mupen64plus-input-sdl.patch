@@ -1,5 +1,5 @@
 diff --git a/src/plugin.c b/src/plugin.c
-index 974b1db..76efb35 100644
+index 974b1db..edaa2c3 100644
 --- a/src/plugin.c
 +++ b/src/plugin.c
 @@ -27,6 +27,7 @@
@@ -10,7 +10,29 @@ index 974b1db..76efb35 100644
  
  #define M64P_PLUGIN_PROTOTYPES 1
  #include "config.h"
-@@ -614,6 +615,149 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
+@@ -57,6 +58,10 @@
+ #define test_bit(bit, array)    ((array[LONG(bit)] >> OFF(bit)) & 1)
+ #endif //__linux__
+ 
++/* Analog sensitivity modifier (0=100%, 25/50/75=output %).
++ * Defined in mupen64plus (ui-console main.c); written by overlay. */
++extern int g_analogSensitivity;
++
+ /* definitions of pointers to Core config functions */
+ ptr_ConfigOpenSection      ConfigOpenSection = NULL;
+ ptr_ConfigDeleteSection    ConfigDeleteSection = NULL;
+@@ -510,6 +515,10 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
+     if (myKeyState[SDL_SCANCODE_RSHIFT])
+         axis_max_val -= 25;
+ 
++    // Analog sensitivity modifier from overlay shortcut
++    if (g_analogSensitivity > 0)
++        axis_max_val = axis_max_val * g_analogSensitivity / 100;
++
+     for ( b = 0; b < 4; ++b )
+     {
+         if (controller[b].device >= 0)
+@@ -614,6 +623,149 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
          controller[Control].buttons.Y_AXIS = iY;
      }
  
