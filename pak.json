@@ -7,7 +7,8 @@
   "release_filename": "N64.pak.zip",
   "platforms": [
     "tg5040",
-    "tg5050"
+    "tg5050",
+    "rg35xxplus"
   ],
   "launch": "launch.sh",
   "version": "0.6.1"

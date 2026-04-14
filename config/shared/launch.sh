@@ -33,6 +33,14 @@ case "$PLATFORM" in
         ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null)
         ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null)
         ;;
+    rg35xxplus)
+        ORIG_CPU1=$(cat /sys/devices/system/cpu/cpu1/online 2>/dev/null)
+        ORIG_CPU2=$(cat /sys/devices/system/cpu/cpu2/online 2>/dev/null)
+        ORIG_CPU3=$(cat /sys/devices/system/cpu/cpu3/online 2>/dev/null)
+        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)
+        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null)
+        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null)
+        ;;
 esac
 
 # ── CPU / GPU setup (platform-specific) ──────────────────────────────────────
@@ -51,11 +59,25 @@ case "$PLATFORM" in
         # GPU: lock to performance for GLideN64 rendering
         echo performance >/sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null
         ;;
+    rg35xxplus)
+        # Bring all cores online (single cluster: cpu0-3 Cortex-A53, Allwinner H700)
+        echo 1 >/sys/devices/system/cpu/cpu1/online 2>/dev/null
+        echo 1 >/sys/devices/system/cpu/cpu2/online 2>/dev/null
+        echo 1 >/sys/devices/system/cpu/cpu3/online 2>/dev/null
+        ;;
 esac
 
 # ── Memory management: swap + VM tuning for hi-res texture loading ────────────
-SWAPFILE="/mnt/UDISK/n64_swap"
+case "$PLATFORM" in
+    rg35xxplus)
+        SWAPFILE="/mnt/sdcard/.swap/n64_swap"
+        ;;
+    *)
+        SWAPFILE="/mnt/UDISK/n64_swap"
+        ;;
+esac
 if [ ! -f "$SWAPFILE" ]; then
+    mkdir -p "$(dirname "$SWAPFILE")"
     dd if=/dev/zero of="$SWAPFILE" bs=1M count=512 2>/dev/null
     mkswap "$SWAPFILE" 2>/dev/null
 fi
@@ -95,6 +117,25 @@ case "$PLATFORM" in
         # Mali-G57 (tg5050) can handle level 2; PowerVR GE8300 (tg5040) cannot.
         DEVICE_ANISOTROPY=2
         LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5050"
+        ;;
+    rg35xxplus)
+        # rg35xxplus family: DEVICE may be "cube", "wide", or "hdmi" (from
+        # hdmimon.sh). Default is standard RG35xx Plus at 640x480.
+        if [ "$DEVICE" = "hdmi" ]; then
+            DEVICE_CONFIG_DIR="$USERDATA_DIR/hdmi"
+            DEVICE_RESOLUTION="1280x720"
+        elif [ "$DEVICE" = "cube" ]; then
+            DEVICE_CONFIG_DIR="$USERDATA_DIR/cube"
+            DEVICE_RESOLUTION="720x720"
+        elif [ "$DEVICE" = "wide" ]; then
+            DEVICE_CONFIG_DIR="$USERDATA_DIR/wide"
+            DEVICE_RESOLUTION="720x480"
+        else
+            DEVICE_CONFIG_DIR="$USERDATA_DIR"
+            DEVICE_RESOLUTION="640x480"
+        fi
+        DEVICE_ANISOTROPY=0
+        LEGACY_CONFIG_DIR=""
         ;;
 esac
 MIGRATION_STAMP="$DEVICE_CONFIG_DIR/.migrated-from-shared"
@@ -378,6 +419,12 @@ case "$PLATFORM" in
         HELPER_MASK=0x3 # cpu0-1
         VIDEO_MASK=0x20 # cpu5
         ;;
+    rg35xxplus)
+        # cpu0-3 are all Cortex-A53 (Allwinner H700)
+        MAIN_MASK=1     # cpu0
+        HELPER_MASK=0xc # cpu2-3
+        VIDEO_MASK=2    # cpu1
+        ;;
 esac
 
 taskset -p $MAIN_MASK "$EMU_PID" 2>/dev/null
@@ -439,6 +486,14 @@ case "$PLATFORM" in
         [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor 2>/dev/null
         [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null
         [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null
+        ;;
+    rg35xxplus)
+        [ -n "$ORIG_CPU3" ] && echo "$ORIG_CPU3" >/sys/devices/system/cpu/cpu3/online 2>/dev/null
+        [ -n "$ORIG_CPU2" ] && echo "$ORIG_CPU2" >/sys/devices/system/cpu/cpu2/online 2>/dev/null
+        [ -n "$ORIG_CPU1" ] && echo "$ORIG_CPU1" >/sys/devices/system/cpu/cpu1/online 2>/dev/null
+        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
+        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null
+        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null
         ;;
 esac
 
