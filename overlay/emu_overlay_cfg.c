@@ -766,7 +766,9 @@ int emu_ovl_cfg_read_per_game(EmuOvlConfig* cfg, const char* path) {
 	if (!f)
 		return 0; // missing file is OK — no per-game overrides
 
+	char current_section[EMU_OVL_MAX_STR] = "";
 	char line[512];
+
 	while (fgets(line, sizeof(line), f)) {
 		// Trim trailing whitespace/newline
 		int len = (int)strlen(line);
@@ -775,42 +777,41 @@ int emu_ovl_cfg_read_per_game(EmuOvlConfig* cfg, const char* path) {
 		if (len == 0 || line[0] == '#')
 			continue;
 
-		// Parse "[section] key = value" OR bare "key = value"
-		char pg_section[EMU_OVL_MAX_STR] = "";
-		char* kv_start = line;
+		// Section header
 		if (line[0] == '[') {
 			char* close = strchr(line, ']');
 			if (close) {
 				int slen = (int)(close - line - 1);
 				if (slen > 0 && slen < EMU_OVL_MAX_STR) {
-					memcpy(pg_section, line + 1, slen);
-					pg_section[slen] = '\0';
+					memcpy(current_section, line + 1, slen);
+					current_section[slen] = '\0';
+				} else {
+					current_section[0] = '\0';
 				}
-				kv_start = close + 1;
-				while (*kv_start == ' ') kv_start++;
 			}
+			continue;
 		}
 
-		char* eq = strchr(kv_start, '=');
+		if (current_section[0] == '\0')
+			continue;
+
+		char* eq = strchr(line, '=');
 		if (!eq)
 			continue;
 		*eq = '\0';
-		char* key = strip(kv_start);
+		char* key = strip(line);
 		char* val = strip(eq + 1);
 
-		// Match against config items
+		// Match against config items in the current section
 		for (int s = 0; s < cfg->section_count; s++) {
 			EmuOvlSection* sec = &cfg->sections[s];
 			for (int i = 0; i < sec->item_count; i++) {
 				EmuOvlItem* item = &sec->items[i];
 				if (strcmp(item->key, key) != 0)
 					continue;
-				// If the per-game line has a [section], verify it matches
-				if (pg_section[0] != '\0') {
-					const char* target = get_ini_section_for_item(cfg, sec, item);
-					if (strcmp(target, pg_section) != 0)
-						continue;
-				}
+				const char* target = get_ini_section_for_item(cfg, sec, item);
+				if (strcmp(target, current_section) != 0)
+					continue;
 
 				int v;
 				switch (item->type) {
@@ -859,35 +860,33 @@ int emu_ovl_cfg_write_per_game(EmuOvlConfig* cfg, const char* path) {
 		return -1;
 	}
 
-	// Full snapshot: write every item's staged_value in [section] key = value form.
+	// Collect unique INI section names in first-seen order.
+	const char* seen[EMU_OVL_MAX_SECTIONS * EMU_OVL_MAX_ITEMS];
+	int seen_count = 0;
 	for (int s = 0; s < cfg->section_count; s++) {
 		EmuOvlSection* sec = &cfg->sections[s];
 		for (int i = 0; i < sec->item_count; i++) {
-			EmuOvlItem* item = &sec->items[i];
-			const char* ini_sec = get_ini_section_for_item(cfg, sec, item);
-			switch (item->type) {
-			case EMU_OVL_TYPE_BOOL:
-				fprintf(f, "[%s] %s = %s\n", ini_sec, item->key,
-						item->staged_value ? "True" : "False");
-				break;
-			case EMU_OVL_TYPE_CYCLE:
-				if (item->is_string_cycle) {
-					int idx = item->staged_value;
-					if (idx < 0 || idx >= item->value_count)
-						idx = 0;
-					fprintf(f, "[%s] %s = \"%s\"\n", ini_sec, item->key,
-							item->string_values[idx]);
-					break;
-				}
-				/* fall through for numeric cycles */
-			case EMU_OVL_TYPE_INT:
-				if (item->float_scale > 0)
-					fprintf(f, "[%s] %s = %f\n", ini_sec, item->key,
-							(double)item->staged_value / item->float_scale);
-				else
-					fprintf(f, "[%s] %s = %d\n", ini_sec, item->key,
-							item->staged_value);
-				break;
+			const char* ini_sec = get_ini_section_for_item(cfg, sec, &sec->items[i]);
+			int found = 0;
+			for (int j = 0; j < seen_count; j++) {
+				if (strcmp(seen[j], ini_sec) == 0) { found = 1; break; }
+			}
+			if (!found)
+				seen[seen_count++] = ini_sec;
+		}
+	}
+
+	// Write standard INI: [Section] header, then key = value lines.
+	for (int si = 0; si < seen_count; si++) {
+		if (si > 0) fprintf(f, "\n");
+		fprintf(f, "[%s]\n", seen[si]);
+		for (int s = 0; s < cfg->section_count; s++) {
+			EmuOvlSection* sec = &cfg->sections[s];
+			for (int i = 0; i < sec->item_count; i++) {
+				EmuOvlItem* item = &sec->items[i];
+				if (strcmp(get_ini_section_for_item(cfg, sec, item), seen[si]) != 0)
+					continue;
+				write_item_value(f, item);
 			}
 		}
 	}

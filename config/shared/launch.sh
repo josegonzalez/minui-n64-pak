@@ -126,11 +126,7 @@ SCREEN_H="${DEVICE_RESOLUTION#*x}"
 
 # Read the user's console-level anisotropy from the config file so we can
 # detect whether they customised it away from the device default.
-CONSOLE_ANISOTROPY=$(awk -F' = ' '
-    /^\[Video-GLideN64\]/ { in_section=1; next }
-    /^\[/                 { in_section=0 }
-    in_section && $1 == "anisotropy" { print $2; exit }
-' "$DEVICE_CFG" 2>/dev/null)
+CONSOLE_ANISOTROPY=$("$BIN_DIR/ini" get "$DEVICE_CFG" "Video-GLideN64" "anisotropy" 2>/dev/null)
 
 # Align save paths with NextUI conventions
 BATTERY_SAVE_DIR="$SAVES_PATH/$EMU_TAG"
@@ -184,8 +180,10 @@ fi
 # ── Environment ───────────────────────────────────────────────────────────────
 export HOME="$USERDATA_PATH"
 export XDG_DATA_HOME="$DEVICE_CONFIG_DIR"
-export LD_LIBRARY_PATH="$BIN_DIR:$SDCARD_PATH/.system/$PLATFORM/lib:/usr/trimui/lib:$LD_LIBRARY_PATH"
-export LD_PRELOAD="libEGL.so"
+# LD_LIBRARY_PATH and LD_PRELOAD are scoped to the mupen64plus invocation
+# below to avoid affecting sleepmon.elf, syncsettings.elf, and taskset.
+M64P_LD_LIBRARY_PATH="$BIN_DIR:$SDCARD_PATH/.system/$PLATFORM/lib:/usr/trimui/lib:$LD_LIBRARY_PATH"
+M64P_LD_PRELOAD="libEGL.so"
 # Relative ROM path for auto_resume.txt (strip /mnt/SDCARD prefix)
 export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
 # Pass resume slot to emulator if game switcher requested it
@@ -198,11 +196,7 @@ export EMU_OVERLAY_GAME="${ROM_BASE%.*}"
 export EMU_DEFAULT_CFG="$BIN_DIR/default.cfg"
 
 # ── Video plugin selection (reads [NextUI] VideoPlugin from mupen64plus.cfg) ─
-VIDEO_PLUGIN_VALUE=$(awk -F' = ' '
-    /^\[NextUI\]/ { in_section=1; next }
-    /^\[/         { in_section=0 }
-    in_section && $1 == "VideoPlugin" { gsub(/[[:space:]]+/, "", $2); print $2; exit }
-' "$DEVICE_CFG" 2>/dev/null)
+VIDEO_PLUGIN_VALUE=$("$BIN_DIR/ini" get "$DEVICE_CFG" "NextUI" "VideoPlugin" 2>/dev/null)
 case "$VIDEO_PLUGIN_VALUE" in
     0)
         GFX_PLUGIN="mupen64plus-video-GLideN64.so"
@@ -218,7 +212,7 @@ esac
 # the res directory. This keeps the overlay functional on both NextUI and MinUI.
 RES_DIR="$SDCARD_PATH/.system/res"
 MINUI_SETTINGS="$SDCARD_PATH/.userdata/shared/minuisettings.txt"
-FONT_ID=$(awk -F= '$1=="font"{print $2; exit}' "$MINUI_SETTINGS" 2>/dev/null)
+FONT_ID=$("$BIN_DIR/ini" get "$MINUI_SETTINGS" "" "font" 2>/dev/null)
 case "$FONT_ID" in
     1) FONT_CANDIDATES="font1.ttf font2.ttf" ;;
     *) FONT_CANDIDATES="font2.ttf font1.ttf" ;;
@@ -258,50 +252,13 @@ export EMU_PER_GAME_CFG="$PER_GAME_CFG"
 if [ -f "$PER_GAME_CFG" ]; then
     cp "$DEVICE_CFG" "$DEVICE_CFG.console-backup"
     export EMU_CONSOLE_CFG="$DEVICE_CFG.console-backup"
-    # Apply each "[section] key = value" line from the per-game file
-    awk '
-    NR == FNR {
-        if (substr($0,1,1) == "[") {
-            i = index($0, "]")
-            if (i > 0) {
-                sec = substr($0, 2, i - 2)
-                rest = substr($0, i + 1)
-                sub(/^ +/, "", rest)
-                j = index(rest, " = ")
-                if (j > 0) {
-                    k = substr(rest, 1, j - 1)
-                    v = substr(rest, j + 3)
-                    ovr[sec, k] = v
-                    okeys[sec, k] = 1
-                }
-            }
-        }
-        next
-    }
-    /^\[/ {
-        gsub(/[\[\]]/, "")
-        cur = $0
-    }
-    {
-        if (cur != "" && index($0, " = ") > 0) {
-            k = $0
-            sub(/ = .*/, "", k)
-            if (okeys[cur, k]) {
-                print k " = " ovr[cur, k]
-                delete okeys[cur, k]
-                next
-            }
-        }
-        print
-    }
-    ' "$PER_GAME_CFG" "$DEVICE_CFG" > "$DEVICE_CFG.tmp" && \
-    mv "$DEVICE_CFG.tmp" "$DEVICE_CFG"
+    "$BIN_DIR/ini" merge "$DEVICE_CFG" "$PER_GAME_CFG"
 fi
 
 # Determine anisotropy for --set: per-game override > user console setting > device default
 ANISO_SET=""
 if [ -f "$PER_GAME_CFG" ]; then
-    PER_GAME_ANISO=$(awk '/^\[Video-GLideN64\] anisotropy = / { sub(/.*= /, ""); print; exit }' "$PER_GAME_CFG" 2>/dev/null)
+    PER_GAME_ANISO=$("$BIN_DIR/ini" get "$PER_GAME_CFG" "Video-GLideN64" "anisotropy" 2>/dev/null)
 fi
 if [ -n "$PER_GAME_ANISO" ]; then
     # Per-game override takes highest priority
@@ -387,7 +344,8 @@ command -v sleepmon.elf >/dev/null && sleepmon.elf &
 
 # Launch from BIN_DIR so core library resolves via ./
 cd "$BIN_DIR"
-./mupen64plus --fullscreen --resolution "$DEVICE_RESOLUTION" \
+env LD_LIBRARY_PATH="$M64P_LD_LIBRARY_PATH" LD_PRELOAD="$M64P_LD_PRELOAD" \
+    ./mupen64plus --fullscreen --resolution "$DEVICE_RESOLUTION" \
     --configdir "$DEVICE_CONFIG_DIR" \
     --datadir "$BIN_DIR" \
     --plugindir "$BIN_DIR" \

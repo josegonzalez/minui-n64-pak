@@ -414,50 +414,6 @@ static void load_button_mappings_from_file(const char* path) {
 		// Check for section header
 		if (line[0] == '[') {
 			in_input_section = (strstr(line, "[Input-SDL-Control1]") != NULL);
-			// Also check per-game flat format: [Input-SDL-Control1] key = value
-			if (in_input_section && strchr(line, '=')) {
-				// Flat format — parse inline
-				char* rest = strstr(line, "]");
-				if (rest) {
-					rest++;
-					while (*rest == ' ') rest++;
-					char* eq = strchr(rest, '=');
-					if (eq) {
-						*eq = '\0';
-						char* key = rest;
-						while (key[strlen(key)-1] == ' ') key[strlen(key)-1] = '\0';
-						char* val = eq + 1;
-						while (*val == ' ') val++;
-						// Check for _mod suffix
-						int klen = (int)strlen(key);
-						if (klen > 4 && strcmp(key + klen - 4, "_mod") == 0) {
-							char base_key[128];
-							snprintf(base_key, sizeof(base_key), "%.*s", klen - 4, key);
-							for (int i = 0; i < N64_REMAP_COUNT; i++) {
-								if (strcmp(s_buttonMappings[i].cfg_key, base_key) == 0) {
-									s_buttonMappings[i].mod = atoi(val);
-									break;
-								}
-							}
-						} else {
-							for (int i = 0; i < N64_REMAP_COUNT; i++) {
-								if (strcmp(s_buttonMappings[i].cfg_key, key) == 0) {
-									int phys, is_ax, ax_dir;
-									if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
-										s_buttonMappings[i].physical = phys;
-										s_buttonMappings[i].is_axis = is_ax;
-										s_buttonMappings[i].axis_dir = ax_dir;
-										s_buttonMappings[i].mod = 0;
-									}
-									break;
-								}
-							}
-						}
-					}
-				}
-				in_input_section = false; // flat format is one-line
-				continue;
-			}
 			continue;
 		}
 		if (!in_input_section) continue;
@@ -839,44 +795,45 @@ static void write_shortcuts_to_ini(const char* ini_path) {
 	fclose(f);
 }
 
-// Persistence: write button mappings in per-game flat format
+// Persistence: write button mappings in standard INI format
 static void write_bindings_per_game(FILE* f) {
 	if (!f) return;
+	fprintf(f, "\n[Input-SDL-Control1]\n");
 	for (int i = 0; i < N64_REMAP_COUNT; i++) {
 		N64ButtonMapping* m = &s_buttonMappings[i];
 		if (m->physical < 0) {
-			fprintf(f, "[Input-SDL-Control1] %s = \"\"\n", m->cfg_key);
+			fprintf(f, "%s = \"\"\n", m->cfg_key);
 		} else if (m->is_axis) {
-			fprintf(f, "[Input-SDL-Control1] %s = \"axis(%d%s)\"\n", m->cfg_key,
+			fprintf(f, "%s = \"axis(%d%s)\"\n", m->cfg_key,
 					m->physical, m->axis_dir > 0 ? "+" : "-");
 		} else {
-			fprintf(f, "[Input-SDL-Control1] %s = \"button(%d)\"\n", m->cfg_key, m->physical);
+			fprintf(f, "%s = \"button(%d)\"\n", m->cfg_key, m->physical);
 		}
 		if (m->mod != 0)
-			fprintf(f, "[Input-SDL-Control1] %s_mod = %d\n", m->cfg_key, m->mod);
+			fprintf(f, "%s_mod = %d\n", m->cfg_key, m->mod);
 	}
 }
 
-// Persistence: write shortcuts in per-game flat format
+// Persistence: write shortcuts in standard INI format
 static void write_shortcuts_per_game(FILE* f) {
 	if (!f) return;
+	fprintf(f, "\n[NextUI-Shortcuts]\n");
 	for (int i = 0; i < SHORTCUT_COUNT; i++) {
 		ShortcutBinding* s = &s_shortcuts[i];
 		if (s->physical < 0) {
-			fprintf(f, "[NextUI-Shortcuts] %s = \"\"\n", s->key);
+			fprintf(f, "%s = \"\"\n", s->key);
 		} else if (s->is_axis) {
-			fprintf(f, "[NextUI-Shortcuts] %s = \"axis(%d%s)\"\n", s->key,
+			fprintf(f, "%s = \"axis(%d%s)\"\n", s->key,
 					s->physical, s->axis_dir > 0 ? "+" : "-");
 		} else {
-			fprintf(f, "[NextUI-Shortcuts] %s = \"button(%d)\"\n", s->key, s->physical);
+			fprintf(f, "%s = \"button(%d)\"\n", s->key, s->physical);
 		}
 		if (s->mod != 0)
-			fprintf(f, "[NextUI-Shortcuts] %s_mod = %d\n", s->key, s->mod);
+			fprintf(f, "%s_mod = %d\n", s->key, s->mod);
 	}
 }
 
-// Load shortcuts from a config file (INI or per-game flat format).
-// Handles both [NextUI-Shortcuts] section format and flat "[NextUI-Shortcuts] key = val".
+// Load shortcuts from a config file (standard INI with [NextUI-Shortcuts] section).
 static void load_shortcuts_from_file(const char* path) {
 	if (!path || path[0] == '\0') return;
 	FILE* f = fopen(path, "r");
@@ -888,49 +845,7 @@ static void load_shortcuts_from_file(const char* path) {
 		while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' || line[len-1] == ' '))
 			line[--len] = '\0';
 		if (line[0] == '[') {
-			// Check for flat format: [NextUI-Shortcuts] key = value
-			if (strstr(line, "[NextUI-Shortcuts]")) {
-				char* rest = strstr(line, "]");
-				if (rest) {
-					rest++;
-					while (*rest == ' ') rest++;
-					if (*rest != '\0') {
-						// Flat format — parse inline key = value
-						char* eq = strchr(rest, '=');
-						if (eq) {
-							*eq = '\0';
-							char* key = rest;
-							while (key[strlen(key)-1] == ' ') key[strlen(key)-1] = '\0';
-							char* val = eq + 1;
-							while (*val == ' ') val++;
-							// Check if this is a _mod key
-							int klen = (int)strlen(key);
-							if (klen > 4 && strcmp(key + klen - 4, "_mod") == 0) {
-								char base_key[128];
-								snprintf(base_key, sizeof(base_key), "%.*s", klen - 4, key);
-								ShortcutBinding* s = find_shortcut(base_key);
-								if (s) s->mod = atoi(val);
-							} else {
-								ShortcutBinding* s = find_shortcut(key);
-								if (s) {
-									int phys, is_ax, ax_dir;
-									if (parse_binding_string(val, &phys, &is_ax, &ax_dir)) {
-										s->physical = phys;
-										s->is_axis = is_ax;
-										s->axis_dir = ax_dir;
-										s->mod = 0; // reset mod; _mod line follows if needed
-									}
-								}
-							}
-						}
-						in_section = false;
-						continue;
-					}
-				}
-				in_section = true;
-			} else {
-				in_section = false;
-			}
+			in_section = (strstr(line, "[NextUI-Shortcuts]") != NULL);
 			continue;
 		}
 		if (!in_section) continue;

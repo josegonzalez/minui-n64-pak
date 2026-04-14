@@ -3,6 +3,8 @@ src/
 
 # Build output
 dist/
+tools/ini/build/
+tools/ini/dist/
 
 # Populated from nx-redux at build time
 include/

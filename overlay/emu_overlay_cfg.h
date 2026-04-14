@@ -64,15 +64,14 @@ void emu_ovl_cfg_free(EmuOvlConfig* cfg);
 int emu_ovl_cfg_read_ini(EmuOvlConfig* cfg, const char* ini_path);
 int emu_ovl_cfg_write_ini(EmuOvlConfig* cfg, const char* ini_path);
 
-// Per-game overrides: read a flat "[section] key = value" file and overlay
-// matching items' current_value/staged_value on top of whatever was already
-// loaded via emu_ovl_cfg_read_ini. Returns 0 on success, -1 on error (file
-// missing is not an error — returns 0 with no changes).
+// Per-game overrides: read a standard INI file and overlay matching items'
+// current_value/staged_value on top of whatever was already loaded via
+// emu_ovl_cfg_read_ini. Returns 0 on success, -1 on error (file missing
+// is not an error — returns 0 with no changes).
 int emu_ovl_cfg_read_per_game(EmuOvlConfig* cfg, const char* path);
 
-// Scoped write: writes ALL items (full snapshot) to `path` in the flat
-// "[section] key = value" per-game format. Used for both "Save for Game"
-// and (via a separate path) "Save for Console".
+// Scoped write: writes ALL items (full snapshot) to `path` in standard INI
+// format with [Section] headers. Used for "Save for Game".
 int emu_ovl_cfg_write_per_game(EmuOvlConfig* cfg, const char* path);
 
 void emu_ovl_cfg_reset_staged(EmuOvlConfig* cfg);
