@@ -6,7 +6,8 @@
   "repo_url": "https://github.com/josegonzalez/minui-n64-pak",
   "release_filename": "N64.pak.zip",
   "platforms": [
-    "tg5040"
+    "tg5040",
+    "tg5050"
   ],
   "launch": "launch.sh",
   "version": "0.6.0"
