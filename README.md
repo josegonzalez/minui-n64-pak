@@ -2,6 +2,8 @@
 
 A MinUI Emu Pak for N64, wrapping the standalone `mupen64plus` N64 emulator (version 2.6.0).
 
+![N64 for TrimUI](n64.png)
+
 ## Requirements
 
 This pak is designed and tested on the following MinUI Platforms and devices:
