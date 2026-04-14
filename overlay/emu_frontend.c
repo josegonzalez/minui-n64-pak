@@ -13,6 +13,9 @@
 // Frame skip: owned here, read by GLideN64 RSP.cpp via extern
 int g_frameSkip = 0;
 
+// Analog sensitivity: owned by ui-console main.c, written here, read by input-sdl
+extern int g_analogSensitivity;
+
 // Forward declarations for scope-aware save system
 static const char* get_per_game_path(void);
 static EmuConfigScope compute_scope(void);
@@ -707,29 +710,35 @@ static bool btn_is_held(int b) {
 }
 
 // ---------------------------------------------------------------------------
-// Shortcut bindings (19 remappable shortcuts — same model as controls)
+// Shortcut bindings (25 remappable shortcuts — same model as controls)
 // ---------------------------------------------------------------------------
 
 static ShortcutBinding s_shortcuts[SHORTCUT_COUNT] = {
-	{"shortcut_cycle_aspect",      "Cycle Aspect Ratio",   -1, 0, 0, 0},
-	{"shortcut_game_switcher",     "Game Switcher",        -1, 0, 0, 0},
-	{"shortcut_hold_ff",           "Hold Fast Forward",    -1, 0, 0, 0},
-	{"shortcut_hold_rewind",       "Hold Rewind",          -1, 0, 0, 0},
-	{"shortcut_load_state",        "Quick Load",           -1, 0, 0, 0},
-	{"shortcut_reset",             "Reset Game",           -1, 0, 0, 0},
-	{"shortcut_save_state",        "Quick Save",           -1, 0, 0, 0},
-	{"shortcut_screenshot",        "Screenshot",           -1, 0, 0, 0},
-	{"shortcut_toggle_ff",         "Toggle Fast Forward",  -1, 0, 0, 0},
-	{"shortcut_toggle_input_mode", "Toggle Input Mode",    -1, 0, 0, 0},
-	{"shortcut_toggle_rewind",     "Toggle Rewind",        -1, 0, 0, 0},
-	{"shortcut_turbo_a",           "Toggle Turbo A",       -1, 0, 0, 0},
-	{"shortcut_turbo_b",           "Toggle Turbo B",       -1, 0, 0, 0},
-	{"shortcut_turbo_l",           "Toggle Turbo L",       -1, 0, 0, 0},
-	{"shortcut_turbo_l2",          "Toggle Turbo L2",      -1, 0, 0, 0},
-	{"shortcut_turbo_r",           "Toggle Turbo R",       -1, 0, 0, 0},
-	{"shortcut_turbo_r2",          "Toggle Turbo R2",      -1, 0, 0, 0},
-	{"shortcut_turbo_x",           "Toggle Turbo X",       -1, 0, 0, 0},
-	{"shortcut_turbo_y",           "Toggle Turbo Y",       -1, 0, 0, 0},
+	{"shortcut_cycle_aspect",           "Cycle Aspect Ratio",      -1, 0, 0, 0},
+	{"shortcut_game_switcher",          "Game Switcher",           -1, 0, 0, 0},
+	{"shortcut_hold_ff",                "Hold Fast Forward",       -1, 0, 0, 0},
+	{"shortcut_hold_rewind",            "Hold Rewind",             -1, 0, 0, 0},
+	{"shortcut_hold_sensitivity_25",    "Hold Sensitivity 25%",    -1, 0, 0, 0},
+	{"shortcut_hold_sensitivity_50",    "Hold Sensitivity 50%",    -1, 0, 0, 0},
+	{"shortcut_hold_sensitivity_75",    "Hold Sensitivity 75%",    -1, 0, 0, 0},
+	{"shortcut_load_state",             "Quick Load",              -1, 0, 0, 0},
+	{"shortcut_reset",                  "Reset Game",              -1, 0, 0, 0},
+	{"shortcut_save_state",             "Quick Save",              -1, 0, 0, 0},
+	{"shortcut_screenshot",             "Screenshot",              -1, 0, 0, 0},
+	{"shortcut_toggle_ff",              "Toggle Fast Forward",     -1, 0, 0, 0},
+	{"shortcut_toggle_input_mode",      "Toggle Input Mode",       -1, 0, 0, 0},
+	{"shortcut_toggle_rewind",          "Toggle Rewind",           -1, 0, 0, 0},
+	{"shortcut_toggle_sensitivity_25",  "Toggle Sensitivity 25%",  -1, 0, 0, 0},
+	{"shortcut_toggle_sensitivity_50",  "Toggle Sensitivity 50%",  -1, 0, 0, 0},
+	{"shortcut_toggle_sensitivity_75",  "Toggle Sensitivity 75%",  -1, 0, 0, 0},
+	{"shortcut_turbo_a",                "Toggle Turbo A",          -1, 0, 0, 0},
+	{"shortcut_turbo_b",                "Toggle Turbo B",          -1, 0, 0, 0},
+	{"shortcut_turbo_l",                "Toggle Turbo L",          -1, 0, 0, 0},
+	{"shortcut_turbo_l2",               "Toggle Turbo L2",         -1, 0, 0, 0},
+	{"shortcut_turbo_r",                "Toggle Turbo R",          -1, 0, 0, 0},
+	{"shortcut_turbo_r2",               "Toggle Turbo R2",         -1, 0, 0, 0},
+	{"shortcut_turbo_x",                "Toggle Turbo X",          -1, 0, 0, 0},
+	{"shortcut_turbo_y",                "Toggle Turbo Y",          -1, 0, 0, 0},
 };
 
 ShortcutBinding* emu_frontend_get_shortcuts(void) {
@@ -1001,6 +1010,52 @@ static void process_fast_forward(void) {
 			set_fast_forward(s_ffToggledOn);
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Analog sensitivity modifier (toggle + hold shortcuts)
+// ---------------------------------------------------------------------------
+
+static int s_sensitivityToggleLevel = 0;  // 0=off, 25, 50, 75
+static int s_sensitivityHoldLevel = 0;
+static bool s_sensitivityHoldActive = false;
+
+static void process_sensitivity_shortcuts(void) {
+	static const int levels[] = {25, 50, 75};
+	static const char* toggle_keys[] = {
+		"shortcut_toggle_sensitivity_25",
+		"shortcut_toggle_sensitivity_50",
+		"shortcut_toggle_sensitivity_75",
+	};
+	static const char* hold_keys[] = {
+		"shortcut_hold_sensitivity_25",
+		"shortcut_hold_sensitivity_50",
+		"shortcut_hold_sensitivity_75",
+	};
+
+	// Toggles: same level = off, different level = switch
+	for (int i = 0; i < 3; i++) {
+		if (emu_frontend_shortcut_just_pressed(find_shortcut(toggle_keys[i])))
+			s_sensitivityToggleLevel = (s_sensitivityToggleLevel == levels[i]) ? 0 : levels[i];
+	}
+
+	// Holds: first-match wins, override toggle while active
+	int hold_level = 0;
+	bool any_held = false;
+	for (int i = 0; i < 3; i++) {
+		ShortcutBinding* s = find_shortcut(hold_keys[i]);
+		if (s && s->physical >= 0 && emu_frontend_shortcut_is_held(s)) {
+			hold_level = levels[i];
+			any_held = true;
+			break;
+		}
+	}
+	s_sensitivityHoldActive = any_held;
+	if (any_held) s_sensitivityHoldLevel = hold_level;
+
+	// Update shared global (read by input-sdl plugin)
+	g_analogSensitivity = s_sensitivityHoldActive
+		? s_sensitivityHoldLevel : s_sensitivityToggleLevel;
 }
 
 // ---------------------------------------------------------------------------
@@ -2242,6 +2297,7 @@ void emu_frontend_frame(int w, int h) {
 		process_rewind();
 		process_turbo_and_aspect_shortcuts();
 		process_input_mode_shortcut();
+		process_sensitivity_shortcuts();
 	}
 
 	// Overlay menu: ensure loaded, then handle menu button press
@@ -2255,6 +2311,7 @@ void emu_frontend_frame(int w, int h) {
 void emu_frontend_cleanup(void) {
 	rewind_cleanup();
 	clear_turbo_files();
+	g_analogSensitivity = 0;
 	// Clean up trimui_inputd flag files so we don't leak d-pad remap state
 	// to other emulators. launch.sh's exit trap also does this as a safety net.
 	unlink("/tmp/trimui_inputd/input_dpad_to_joystick");
