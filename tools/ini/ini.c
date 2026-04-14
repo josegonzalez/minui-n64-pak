@@ -102,6 +102,10 @@ static int merge_handler(void *user, const char *section,
     if (ctx->count >= MERGE_MAX_ENTRIES)
         return 0; /* stop parsing */
 
+    /* Skip entries with no section — they would produce [] in the output */
+    if (section[0] == '\0')
+        return 1;
+
     /* If the same section+key already exists (duplicate), update it. */
     for (int i = 0; i < ctx->count; i++) {
         if (strcmp(ctx->entries[i].section, section) == 0 &&

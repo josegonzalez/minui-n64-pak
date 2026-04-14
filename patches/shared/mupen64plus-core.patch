@@ -22,6 +22,36 @@ index 0a3c49b..183eead 100644
  /* local variables */
  static ptr_DebugCallback pDebugFunc = NULL;
  static ptr_StateCallback pStateFunc = NULL;
+diff --git a/src/api/config.c b/src/api/config.c
+index cff288d..05d7797 100644
+--- a/src/api/config.c
++++ b/src/api/config.c
+@@ -529,6 +529,11 @@ m64p_error ConfigInit(const char *ConfigDirOverride, const char *DataDirOverride
+                 break;
+ 
+             case INI_SECTION:
++                if (l.name == NULL || strlen(l.name) < 1)
++                {
++                    current_section = NULL;
++                    break;
++                }
+                 rval = ConfigOpenSection(l.name, (m64p_handle *) &current_section);
+                 if (rval != M64ERR_SUCCESS)
+                 {
+@@ -833,8 +838,11 @@ EXPORT int CALL ConfigHasUnsavedChanges(const char *SectionName)
+         curr_section = l_ConfigListActive;
+         while (curr_section != NULL)
+         {
+-            if (ConfigHasUnsavedChanges(curr_section->name))
+-                return 1;
++            if (curr_section->name != NULL && strlen(curr_section->name) > 0)
++            {
++                if (ConfigHasUnsavedChanges(curr_section->name))
++                    return 1;
++            }
+             curr_section = curr_section->next;
+             iNumActiveSections++;
+         }
 diff --git a/src/api/frontend.c b/src/api/frontend.c
 index 956f96f..b3d3235 100644
 --- a/src/api/frontend.c

@@ -220,7 +220,7 @@ static void apply_input_mode(int mode) {
 }
 
 // Read the per-game input_mode from the per-game config file.
-// Returns 1 for dpad, 0 for joystick, -1 if file missing.
+// Returns 1 for dpad, 0 for joystick, -1 if file missing or key absent.
 static int read_input_mode_file(void) {
 	const char* path = get_per_game_path();
 	if (!path || path[0] == '\0') return -1;
@@ -228,23 +228,85 @@ static int read_input_mode_file(void) {
 	if (!f) return -1;
 	char line[128];
 	int value = -1;
+	bool in_section = false;
 	while (fgets(line, sizeof(line), f)) {
-		if (strncmp(line, "input_mode=", 11) == 0) {
-			value = (strncmp(line + 11, "dpad", 4) == 0) ? 1 : 0;
-			break;
+		char* trimmed = line;
+		while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+		if (trimmed[0] == '[') {
+			in_section = (strncmp(trimmed, "[NextUI-Input]", 14) == 0);
+			continue;
+		}
+		if (in_section && strncmp(trimmed, "input_mode", 10) == 0) {
+			char* eq = strchr(trimmed, '=');
+			if (eq) {
+				char* val = eq + 1;
+				while (*val == ' ') val++;
+				value = (strncmp(val, "dpad", 4) == 0) ? 1 : 0;
+				break;
+			}
 		}
 	}
 	fclose(f);
 	return value;
 }
 
-// Write input_mode to the per-game config file.
+// Write input_mode to the per-game config file, preserving other settings.
 static void write_input_mode_file(int value) {
 	const char* path = get_per_game_path();
 	if (!path || path[0] == '\0') return;
-	FILE* f = fopen(path, "w");
+
+	// Read existing content
+	char buf[4096] = "";
+	int len = 0;
+	FILE* f = fopen(path, "r");
+	if (f) {
+		len = (int)fread(buf, 1, sizeof(buf) - 1, f);
+		buf[len] = '\0';
+		fclose(f);
+	}
+
+	f = fopen(path, "w");
 	if (!f) return;
-	fprintf(f, "input_mode=%s\n", value ? "dpad" : "joystick");
+
+	const char* new_val = value ? "dpad" : "joystick";
+	bool written = false;
+	bool in_section = false;
+
+	if (len > 0) {
+		// Replay existing content, replacing the key if found
+		char* line = buf;
+		while (line && *line) {
+			char* eol = strchr(line, '\n');
+			char linebuf[512];
+			int llen;
+			if (eol) {
+				llen = (int)(eol - line);
+				if (llen >= (int)sizeof(linebuf)) llen = (int)sizeof(linebuf) - 1;
+				memcpy(linebuf, line, llen);
+				linebuf[llen] = '\0';
+				line = eol + 1;
+			} else {
+				snprintf(linebuf, sizeof(linebuf), "%s", line);
+				line = NULL;
+			}
+			char* trimmed = linebuf;
+			while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+			if (trimmed[0] == '[') {
+				in_section = (strncmp(trimmed, "[NextUI-Input]", 14) == 0);
+				fprintf(f, "%s\n", linebuf);
+			} else if (in_section && strncmp(trimmed, "input_mode", 10) == 0 && strchr(trimmed, '=')) {
+				fprintf(f, "input_mode = %s\n", new_val);
+				written = true;
+			} else {
+				fprintf(f, "%s\n", linebuf);
+			}
+		}
+	}
+
+	if (!written) {
+		// Section or key didn't exist — append
+		fprintf(f, "\n[NextUI-Input]\ninput_mode = %s\n", new_val);
+	}
 	fclose(f);
 }
 
