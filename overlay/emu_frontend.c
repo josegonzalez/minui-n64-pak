@@ -1609,7 +1609,6 @@ static void overlay_ensure_init(int w, int h) {
 }
 
 static bool check_menu_button(void) {
-	SDL_JoystickUpdate();
 	if (!s_joy) return false;
 
 	bool pressed = SDL_JoystickGetButton(s_joy, 8) != 0;
