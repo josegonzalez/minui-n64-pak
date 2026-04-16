@@ -532,17 +532,61 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 		} else if (input->down) {
 			ovl->selected = (ovl->selected + 1) % count;
 		} else if (input->a) {
+			EmuOvlAction picked = EMU_OVL_ACTION_NONE;
 			switch (ovl->selected) {
-			case 0: ovl->action = EMU_OVL_ACTION_SAVE_CONSOLE; break;
-			case 1: ovl->action = EMU_OVL_ACTION_SAVE_GAME; break;
-			case 2: ovl->action = EMU_OVL_ACTION_RESTORE_DEFAULTS; break;
+			case 0: picked = EMU_OVL_ACTION_SAVE_CONSOLE; break;
+			case 1: picked = EMU_OVL_ACTION_SAVE_GAME; break;
+			case 2: picked = EMU_OVL_ACTION_RESTORE_DEFAULTS; break;
 			}
+			// If a Save was picked AND any dirty setting needs a restart,
+			// detour through the restart prompt instead of closing immediately.
+			if ((picked == EMU_OVL_ACTION_SAVE_CONSOLE ||
+				 picked == EMU_OVL_ACTION_SAVE_GAME) &&
+				emu_ovl_cfg_any_dirty_restart_required(ovl->config)) {
+				ovl->pending_save_action = picked;
+				ovl->state = EMU_OVL_STATE_RESTART_PROMPT;
+				ovl->selected = 0; // default to "Yes"
+				break;
+			}
+			ovl->action = picked;
 			// Return to main menu after action — emu_frontend handles the write
 			ovl->state = EMU_OVL_STATE_MAIN_MENU;
 			ovl->selected = 0;
 			break;
 		} else if (input->b || input->menu) {
 			ovl->state = EMU_OVL_STATE_MAIN_MENU;
+			ovl->selected = 0;
+			break;
+		}
+		break;
+	}
+
+	// ----- RESTART PROMPT (Yes/No after a Save with restart-required dirty) -----
+	case EMU_OVL_STATE_RESTART_PROMPT: {
+		int count = 2; // 0 = Yes, save and restart; 1 = No, just save
+		if (input->up) {
+			ovl->selected = (ovl->selected - 1 + count) % count;
+		} else if (input->down) {
+			ovl->selected = (ovl->selected + 1) % count;
+		} else if (input->a) {
+			if (ovl->selected == 0) {
+				// Yes — save and restart
+				ovl->action =
+					(ovl->pending_save_action == EMU_OVL_ACTION_SAVE_GAME)
+						? EMU_OVL_ACTION_SAVE_AND_RESTART_GAME
+						: EMU_OVL_ACTION_SAVE_AND_RESTART_CONSOLE;
+			} else {
+				// No — just save (settings will apply on next manual launch)
+				ovl->action = ovl->pending_save_action;
+			}
+			ovl->pending_save_action = EMU_OVL_ACTION_NONE;
+			ovl->state = EMU_OVL_STATE_MAIN_MENU;
+			ovl->selected = 0;
+			break;
+		} else if (input->b || input->menu) {
+			// Cancel — go back to Save Changes without saving
+			ovl->pending_save_action = EMU_OVL_ACTION_NONE;
+			ovl->state = EMU_OVL_STATE_SAVE_CHANGES;
 			ovl->selected = 0;
 			break;
 		}
@@ -1218,6 +1262,39 @@ static void render_save_changes(EmuOvl* ovl) {
 	draw_footer_hints(ovl, hints, 4);
 }
 
+static void render_restart_prompt(EmuOvl* ovl) {
+	EmuOvlRenderBackend* r = ovl->render;
+
+	draw_menu_bar(ovl, "Apply Restart-Required Settings?");
+
+	// Body text below the title bar — explains why this prompt appears.
+	const char* body =
+		"Some changed settings only take effect on relaunch.";
+	int body_y = PADDING_PX + S(PILL_SIZE) + S(2);
+	r->draw_text(body, PADDING_PX + S(BUTTON_PADDING), body_y,
+				 EMU_OVL_COLOR_GRAY, EMU_OVL_FONT_TINY);
+
+	// 2 rows: Yes (save and restart), No (just save)
+	static const char* items[] = {
+		"Yes, save and restart now",
+		"No, just save"
+	};
+	int row_h = S(PILL_SIZE);
+	int content_x = PADDING_PX;
+	int content_w = ovl->screen_w - PADDING_PX * 2;
+	int list_y = calc_centered_list_y(ovl, 2);
+
+	for (int i = 0; i < 2; i++) {
+		int iy = list_y + i * row_h;
+		bool sel = (i == ovl->selected);
+		draw_settings_row(ovl, content_x, iy, content_w, row_h,
+						  items[i], NULL, sel, false, EMU_OVL_FONT_LARGE);
+	}
+
+	const char* hints[] = {"B", "CANCEL", "A", "OKAY"};
+	draw_footer_hints(ovl, hints, 4);
+}
+
 void emu_ovl_render(EmuOvl* ovl) {
 	if (ovl->state == EMU_OVL_STATE_CLOSED)
 		return;
@@ -1244,6 +1321,9 @@ void emu_ovl_render(EmuOvl* ovl) {
 		break;
 	case EMU_OVL_STATE_SAVE_CHANGES:
 		render_save_changes(ovl);
+		break;
+	case EMU_OVL_STATE_RESTART_PROMPT:
+		render_restart_prompt(ovl);
 		break;
 	case EMU_OVL_STATE_CLOSED:
 		break;
