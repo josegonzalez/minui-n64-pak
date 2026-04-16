@@ -1062,6 +1062,22 @@ static void trigger_game_switcher(void) {
 	request_stop();
 }
 
+// Save a temporary state to /tmp (out of the user's save-state slots),
+// drop a marker so launch.sh re-launches mupen64plus, and stop the core.
+// launch.sh exports EMU_RESUME_PATH on the next iteration so the frontend
+// auto-loads the temp state, landing the user back where they were.
+// launch.sh is responsible for deleting the temp state on final exit.
+static void trigger_save_and_restart(void) {
+	const char* path = "/tmp/m64p_restart_state.m64p";
+	if (s_coreAPI.core_cmd) {
+		// format=1 = mupen64plus native save state, written to file at `path`
+		s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 1, (void*)path);
+	}
+	FILE* f = fopen("/tmp/m64p_restart_requested", "w");
+	if (f) fclose(f);
+	request_stop();
+}
+
 // ---------------------------------------------------------------------------
 // Rewind (tmpfs ring buffer of save states)
 // ---------------------------------------------------------------------------
@@ -1547,6 +1563,16 @@ static void overlay_ensure_init(int w, int h) {
 			s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, slot, NULL);
 			s_coreAPI.core_cmd(M64CMD_STATE_LOAD, 0, NULL);
 			unsetenv("EMU_RESUME_SLOT");
+		}
+
+		// Restart-resume: if relaunched from a "Save and Restart" action,
+		// load the temp state file written by trigger_save_and_restart().
+		// launch.sh owns the file's lifecycle (created here, removed on
+		// final exit), so we only load — never delete.
+		const char* resume_path = getenv("EMU_RESUME_PATH");
+		if (resume_path && resume_path[0] != '\0' && s_coreAPI.core_cmd) {
+			s_coreAPI.core_cmd(M64CMD_STATE_LOAD, 0, (void*)resume_path);
+			unsetenv("EMU_RESUME_PATH");
 		}
 
 		// Load cheats from mupencheat.txt for the current ROM
@@ -2231,6 +2257,14 @@ static void handle_overlay_action(EmuOvlAction action) {
 		break;
 	case EMU_OVL_ACTION_RESTORE_DEFAULTS:
 		handle_restore_defaults();
+		break;
+	case EMU_OVL_ACTION_SAVE_AND_RESTART_CONSOLE:
+		handle_save_for_console();
+		trigger_save_and_restart();
+		break;
+	case EMU_OVL_ACTION_SAVE_AND_RESTART_GAME:
+		handle_save_for_game();
+		trigger_save_and_restart();
 		break;
 	default:
 		break;
