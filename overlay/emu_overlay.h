@@ -13,7 +13,8 @@ typedef enum {
 	EMU_OVL_STATE_SECTION_LIST,
 	EMU_OVL_STATE_SECTION_ITEMS,
 	EMU_OVL_STATE_CHEATS,
-	EMU_OVL_STATE_SAVE_CHANGES
+	EMU_OVL_STATE_SAVE_CHANGES,
+	EMU_OVL_STATE_RESTART_PROMPT // Yes/No: apply restart-required settings now?
 } EmuOvlState;
 
 typedef enum {
@@ -22,9 +23,11 @@ typedef enum {
 	EMU_OVL_ACTION_SAVE_STATE,
 	EMU_OVL_ACTION_LOAD_STATE,
 	EMU_OVL_ACTION_QUIT,
-	EMU_OVL_ACTION_SAVE_CONSOLE,    // Save Changes → Save for Console
-	EMU_OVL_ACTION_SAVE_GAME,       // Save Changes → Save for Game
-	EMU_OVL_ACTION_RESTORE_DEFAULTS // Save Changes → Restore Defaults
+	EMU_OVL_ACTION_SAVE_CONSOLE,             // Save Changes → Save for Console
+	EMU_OVL_ACTION_SAVE_GAME,                // Save Changes → Save for Game
+	EMU_OVL_ACTION_RESTORE_DEFAULTS,         // Save Changes → Restore Defaults
+	EMU_OVL_ACTION_SAVE_AND_RESTART_CONSOLE, // Save for Console + relaunch emulator
+	EMU_OVL_ACTION_SAVE_AND_RESTART_GAME     // Save for Game + relaunch emulator
 } EmuOvlAction;
 
 typedef struct {
@@ -80,6 +83,11 @@ typedef struct {
 
 	EmuOvlAction action;
 	int action_param;
+
+	// Tracks which save action is queued while the restart prompt is shown.
+	// Set to SAVE_CONSOLE or SAVE_GAME on entry to RESTART_PROMPT; emitted
+	// (with or without the _AND_RESTART_ variant) once the user answers.
+	EmuOvlAction pending_save_action;
 
 	EmuConfigScope scope; // current save scope (none/console/game)
 	int bind_capture;            // -1 = not capturing, >= 0 = remap row index
