@@ -39,6 +39,7 @@ typedef struct {
 	int current_value;
 	int staged_value;
 	bool dirty;
+	bool restart_required; // taking effect requires relaunching the emulator
 } EmuOvlItem;
 
 typedef struct {
@@ -79,5 +80,11 @@ void emu_ovl_cfg_reset_section_to_defaults(EmuOvlSection* sec);
 void emu_ovl_cfg_reset_all_to_defaults(EmuOvlConfig* cfg);
 void emu_ovl_cfg_apply_staged(EmuOvlConfig* cfg);
 bool emu_ovl_cfg_has_changes(EmuOvlConfig* cfg);
+
+// Returns true if any item is both dirty (staged != current) AND tagged
+// restart_required in the JSON. Used to decide whether to show the
+// "Apply restart-required settings?" prompt after a Save.
+// Must be called BEFORE emu_ovl_cfg_apply_staged() since apply clears dirty.
+bool emu_ovl_cfg_any_dirty_restart_required(EmuOvlConfig* cfg);
 
 #endif

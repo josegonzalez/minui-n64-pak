@@ -170,13 +170,6 @@ if [ -d "$LEGACY_SCREENSHOT_DIR" ]; then
 fi
 # ScreenshotPath is set via --sshotdir on the mupen64plus command line.
 
-# ── Auto-resume: check if NextUI game switcher requested a state load ─────────
-RESUME_SLOT=""
-if [ -f /tmp/resume_slot.txt ]; then
-    RESUME_SLOT=$(cat /tmp/resume_slot.txt)
-    rm /tmp/resume_slot.txt
-fi
-
 # ── Environment ───────────────────────────────────────────────────────────────
 export HOME="$USERDATA_PATH"
 export XDG_DATA_HOME="$DEVICE_CONFIG_DIR"
@@ -186,8 +179,6 @@ M64P_LD_LIBRARY_PATH="$BIN_DIR:$SDCARD_PATH/.system/$PLATFORM/lib:/usr/trimui/li
 M64P_LD_PRELOAD="libEGL.so"
 # Relative ROM path for auto_resume.txt (strip /mnt/SDCARD prefix)
 export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
-# Pass resume slot to emulator if game switcher requested it
-[ -n "$RESUME_SLOT" ] && export EMU_RESUME_SLOT="$RESUME_SLOT"
 
 # ── Overlay menu config ──────────────────────────────────────────────────────
 export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"
@@ -240,36 +231,11 @@ mkdir -p "$MINUI_DIR"
 export EMU_OVERLAY_SCREENSHOT_DIR="$MINUI_DIR"
 export EMU_OVERLAY_ROMFILE="$ROM_BASE"
 
-# ── Per-game settings ────────────────────────────────────────────────────────
+# ── Per-game settings (paths are stable; overlay is re-applied per launch) ───
 PER_GAME_DIR="$DEVICE_CONFIG_DIR/per-game"
 mkdir -p "$PER_GAME_DIR"
 PER_GAME_CFG="$PER_GAME_DIR/$ROM_BASE.cfg"
 export EMU_PER_GAME_CFG="$PER_GAME_CFG"
-
-# If a per-game config exists, overlay its values onto mupen64plus.cfg for
-# this run. Back up the console config first so it can be restored on exit
-# and so the overlay can write Save for Console to the backup path.
-if [ -f "$PER_GAME_CFG" ]; then
-    cp "$DEVICE_CFG" "$DEVICE_CFG.console-backup"
-    export EMU_CONSOLE_CFG="$DEVICE_CFG.console-backup"
-    "$BIN_DIR/ini" merge "$DEVICE_CFG" "$PER_GAME_CFG"
-fi
-
-# Determine anisotropy for --set: per-game override > user console setting > device default
-ANISO_SET=""
-if [ -f "$PER_GAME_CFG" ]; then
-    PER_GAME_ANISO=$("$BIN_DIR/ini" get "$PER_GAME_CFG" "Video-GLideN64" "anisotropy" 2>/dev/null)
-fi
-if [ -n "$PER_GAME_ANISO" ]; then
-    # Per-game override takes highest priority
-    ANISO_SET="--set Video-GLideN64[anisotropy]=$PER_GAME_ANISO"
-elif [ "$CONSOLE_ANISOTROPY" != "$DEVICE_ANISOTROPY" ]; then
-    # User customised console anisotropy — don't override, let config file value win
-    ANISO_SET=""
-else
-    # No customisation — apply device-appropriate default
-    ANISO_SET="--set Video-GLideN64[anisotropy]=$DEVICE_ANISOTROPY"
-fi
 
 # D-pad↔joystick input mode is handled by trimui_inputd via flag files
 # in /tmp/trimui_inputd/. emu_frontend applies the per-game mode at init
@@ -278,7 +244,7 @@ fi
 # Runtime button remap file for immediate application in input-sdl
 export EMU_BUTTON_MAP_FILE="$PER_GAME_DIR/$ROM_BASE.buttons"
 
-# ── Archive extraction ───────────────────────────────────────────────────────
+# ── Archive extraction (one-time — extracted ROM path stable across restarts)
 # If the ROM is a .zip or .7z, extract the inner N64 ROM to a tmpfs directory
 # and hand that path to mupen64plus instead. We keep the *original* $ROM name
 # (archive name minus its .zip/.7z) as the extracted file's basename so the
@@ -333,91 +299,157 @@ case "$ROM" in
         ;;
 esac
 
-# ── Launch ────────────────────────────────────────────────────────────────────
-# Mute speaker before launch to prevent audio pop, then unmute after init
-echo 1 > /sys/class/speaker/mute 2>/dev/null || true
-(sleep 5; echo 0 > /sys/class/speaker/mute 2>/dev/null; command -v syncsettings.elf >/dev/null && syncsettings.elf) &
-SYNC_PID=$!
-
-# Start power button sleep/poweroff handler (if available — GLideN64 handles it natively)
+# Start power button sleep/poweroff handler (one-time; GLideN64 handles natively)
 command -v sleepmon.elf >/dev/null && sleepmon.elf &
 
-# Launch from BIN_DIR so core library resolves via ./
-cd "$BIN_DIR"
-env LD_LIBRARY_PATH="$M64P_LD_LIBRARY_PATH" LD_PRELOAD="$M64P_LD_PRELOAD" \
-    ./mupen64plus --fullscreen --resolution "$DEVICE_RESOLUTION" \
-    --configdir "$DEVICE_CONFIG_DIR" \
-    --datadir "$BIN_DIR" \
-    --plugindir "$BIN_DIR" \
-    --sshotdir "$SCREENSHOT_DIR" \
-    --cachedir "$DEVICE_CONFIG_DIR/cache" \
-    --set "Video-General[ScreenWidth]=$SCREEN_W" \
-    --set "Video-General[ScreenHeight]=$SCREEN_H" \
-    --set "Core[SaveSRAMPath]=$BATTERY_SAVE_DIR/" \
-    --set "Core[SaveStatePath]=$STATE_SAVE_DIR/" \
-    $ANISO_SET \
-    --gfx "$BIN_DIR/$GFX_PLUGIN" \
-    --audio mupen64plus-audio-sdl.so \
-    --input mupen64plus-input-sdl.so \
-    --rsp mupen64plus-rsp-hle.so \
-    "$ROM" > "$LOGS_PATH/$EMU_TAG.mupen64plus.txt" 2>&1 &
-EMU_PID=$!
-sleep 4
-
-# ── Thread pinning (platform-specific CPU topology) ──────────────────────────
-case "$PLATFORM" in
-    tg5040)
-        # cpu0-3 are all Cortex-A53 @ 2000 MHz
-        MAIN_MASK=1     # cpu0
-        HELPER_MASK=0xc # cpu2-3
-        VIDEO_MASK=2    # cpu1
-        ;;
-    tg5050)
-        # big.LITTLE: cpu4-5 BIG (A55), cpu0-1 LITTLE
-        MAIN_MASK=0x10  # cpu4
-        HELPER_MASK=0x3 # cpu0-1
-        VIDEO_MASK=0x20 # cpu5
-        ;;
-esac
-
-taskset -p $MAIN_MASK "$EMU_PID" 2>/dev/null
-
-# Pin known helper threads
-for TID in $(ls /proc/$EMU_PID/task/ 2>/dev/null); do
-    [ "$TID" = "$EMU_PID" ] && continue
-    TNAME=$(cat /proc/$EMU_PID/task/$TID/comm 2>/dev/null)
-    case "$TNAME" in
-        SDLAudioP2|SDLHotplug*|SDLTimer|mali-*|m64pwq)
-            taskset -p $HELPER_MASK "$TID" 2>/dev/null ;;
-    esac
-done
-
-# Find the busiest non-main mupen64plus thread (video thread) and pin it
-sleep 2
-BEST_TID=""
-BEST_UTIME=0
-for TID in $(ls /proc/$EMU_PID/task/ 2>/dev/null); do
-    [ "$TID" = "$EMU_PID" ] && continue
-    TNAME=$(cat /proc/$EMU_PID/task/$TID/comm 2>/dev/null)
-    [ "$TNAME" = "mupen64plus" ] || continue
-    UTIME=$(awk '{print $14}' /proc/$EMU_PID/task/$TID/stat 2>/dev/null)
-    UTIME=${UTIME:-0}
-    if [ "$UTIME" -gt "$BEST_UTIME" ]; then
-        BEST_UTIME=$UTIME
-        BEST_TID=$TID
+# ── Launch loop ──────────────────────────────────────────────────────────────
+# The overlay's "Save and Restart" feature drops /tmp/m64p_restart_requested
+# (and a temp save state at /tmp/m64p_restart_state.m64p), then stops the core.
+# We loop here to relaunch with the new config and auto-load the temp state,
+# so restart-required settings (CPU overclock, audio resampler, etc.) take
+# effect without bouncing the user back to the launcher.
+while true; do
+    # ── Auto-resume sources ─────────────────────────────────────────────────
+    # NextUI game switcher: /tmp/resume_slot.txt is created by NextUI before
+    # invoking us; rm-after-read makes it self-limiting to the first iteration.
+    unset EMU_RESUME_SLOT
+    if [ -f /tmp/resume_slot.txt ]; then
+        EMU_RESUME_SLOT=$(cat /tmp/resume_slot.txt)
+        rm /tmp/resume_slot.txt
+        export EMU_RESUME_SLOT
     fi
+    # Save-and-restart: load the temp state written before the previous iteration
+    # exited. emu_frontend reads EMU_RESUME_PATH on init and loads the file.
+    unset EMU_RESUME_PATH
+    if [ -f /tmp/m64p_restart_state.m64p ]; then
+        export EMU_RESUME_PATH=/tmp/m64p_restart_state.m64p
+    fi
+
+    # ── Per-game overlay onto mupen64plus.cfg (re-applied each iteration so
+    # newly saved per-game / console values take effect on restart) ─────────
+    if [ -f "$PER_GAME_CFG" ]; then
+        cp "$DEVICE_CFG" "$DEVICE_CFG.console-backup"
+        export EMU_CONSOLE_CFG="$DEVICE_CFG.console-backup"
+        "$BIN_DIR/ini" merge "$DEVICE_CFG" "$PER_GAME_CFG"
+    else
+        unset EMU_CONSOLE_CFG
+    fi
+
+    # Determine anisotropy for --set: per-game override > user console setting > device default
+    ANISO_SET=""
+    PER_GAME_ANISO=""
+    if [ -f "$PER_GAME_CFG" ]; then
+        PER_GAME_ANISO=$("$BIN_DIR/ini" get "$PER_GAME_CFG" "Video-GLideN64" "anisotropy" 2>/dev/null)
+    fi
+    if [ -n "$PER_GAME_ANISO" ]; then
+        # Per-game override takes highest priority
+        ANISO_SET="--set Video-GLideN64[anisotropy]=$PER_GAME_ANISO"
+    elif [ "$CONSOLE_ANISOTROPY" != "$DEVICE_ANISOTROPY" ]; then
+        # User customised console anisotropy — don't override, let config file value win
+        ANISO_SET=""
+    else
+        # No customisation — apply device-appropriate default
+        ANISO_SET="--set Video-GLideN64[anisotropy]=$DEVICE_ANISOTROPY"
+    fi
+
+    # ── Launch ──────────────────────────────────────────────────────────────
+    # Mute speaker before launch to prevent audio pop, then unmute after init
+    echo 1 > /sys/class/speaker/mute 2>/dev/null || true
+    (sleep 5; echo 0 > /sys/class/speaker/mute 2>/dev/null; command -v syncsettings.elf >/dev/null && syncsettings.elf) &
+    SYNC_PID=$!
+
+    # Launch from BIN_DIR so core library resolves via ./
+    cd "$BIN_DIR"
+    env LD_LIBRARY_PATH="$M64P_LD_LIBRARY_PATH" LD_PRELOAD="$M64P_LD_PRELOAD" \
+        ./mupen64plus --fullscreen --resolution "$DEVICE_RESOLUTION" \
+        --configdir "$DEVICE_CONFIG_DIR" \
+        --datadir "$BIN_DIR" \
+        --plugindir "$BIN_DIR" \
+        --sshotdir "$SCREENSHOT_DIR" \
+        --cachedir "$DEVICE_CONFIG_DIR/cache" \
+        --set "Video-General[ScreenWidth]=$SCREEN_W" \
+        --set "Video-General[ScreenHeight]=$SCREEN_H" \
+        --set "Core[SaveSRAMPath]=$BATTERY_SAVE_DIR/" \
+        --set "Core[SaveStatePath]=$STATE_SAVE_DIR/" \
+        $ANISO_SET \
+        --gfx "$BIN_DIR/$GFX_PLUGIN" \
+        --audio mupen64plus-audio-sdl.so \
+        --input mupen64plus-input-sdl.so \
+        --rsp mupen64plus-rsp-hle.so \
+        "$ROM" > "$LOGS_PATH/$EMU_TAG.mupen64plus.txt" 2>&1 &
+    EMU_PID=$!
+    sleep 4
+
+    # ── Thread pinning (platform-specific CPU topology) ─────────────────────
+    case "$PLATFORM" in
+        tg5040)
+            # cpu0-3 are all Cortex-A53 @ 2000 MHz
+            MAIN_MASK=1     # cpu0
+            HELPER_MASK=0xc # cpu2-3
+            VIDEO_MASK=2    # cpu1
+            ;;
+        tg5050)
+            # big.LITTLE: cpu4-5 BIG (A55), cpu0-1 LITTLE
+            MAIN_MASK=0x10  # cpu4
+            HELPER_MASK=0x3 # cpu0-1
+            VIDEO_MASK=0x20 # cpu5
+            ;;
+    esac
+
+    taskset -p $MAIN_MASK "$EMU_PID" 2>/dev/null
+
+    # Pin known helper threads
+    for TID in $(ls /proc/$EMU_PID/task/ 2>/dev/null); do
+        [ "$TID" = "$EMU_PID" ] && continue
+        TNAME=$(cat /proc/$EMU_PID/task/$TID/comm 2>/dev/null)
+        case "$TNAME" in
+            SDLAudioP2|SDLHotplug*|SDLTimer|mali-*|m64pwq)
+                taskset -p $HELPER_MASK "$TID" 2>/dev/null ;;
+        esac
+    done
+
+    # Find the busiest non-main mupen64plus thread (video thread) and pin it
+    sleep 2
+    BEST_TID=""
+    BEST_UTIME=0
+    for TID in $(ls /proc/$EMU_PID/task/ 2>/dev/null); do
+        [ "$TID" = "$EMU_PID" ] && continue
+        TNAME=$(cat /proc/$EMU_PID/task/$TID/comm 2>/dev/null)
+        [ "$TNAME" = "mupen64plus" ] || continue
+        UTIME=$(awk '{print $14}' /proc/$EMU_PID/task/$TID/stat 2>/dev/null)
+        UTIME=${UTIME:-0}
+        if [ "$UTIME" -gt "$BEST_UTIME" ]; then
+            BEST_UTIME=$UTIME
+            BEST_TID=$TID
+        fi
+    done
+    [ -n "$BEST_TID" ] && taskset -p $VIDEO_MASK "$BEST_TID" 2>/dev/null
+
+    # ── Wait for the emulator to exit ───────────────────────────────────────
+    wait $EMU_PID
+    kill $SYNC_PID 2>/dev/null || true
+
+    # Restore console-backup so the next iteration starts from a clean console
+    # cfg. If the user just did Save-and-Restart-Console while in game scope,
+    # handle_save_for_console wrote the new values into this backup, so the
+    # mv promotes them into mupen64plus.cfg before the next overlay step.
+    if [ -f "$DEVICE_CFG.console-backup" ]; then
+        mv "$DEVICE_CFG.console-backup" "$DEVICE_CFG"
+    fi
+
+    # If a Save-and-Restart was requested, loop and re-launch
+    if [ -f /tmp/m64p_restart_requested ]; then
+        rm /tmp/m64p_restart_requested
+        continue
+    fi
+    break
 done
-[ -n "$BEST_TID" ] && taskset -p $VIDEO_MASK "$BEST_TID" 2>/dev/null
 
 # ── Cleanup: restore all saved system settings ───────────────────────────────
-wait $EMU_PID
 killall sleepmon.elf 2>/dev/null || true
-kill $SYNC_PID 2>/dev/null || true
 
-# Restore console config backup if per-game overrides were applied
-if [ -f "$DEVICE_CFG.console-backup" ]; then
-    mv "$DEVICE_CFG.console-backup" "$DEVICE_CFG"
-fi
+# Discard the temporary save state (kept out of the user's regular save slots)
+rm -f /tmp/m64p_restart_state.m64p /tmp/m64p_restart_requested
 
 # Clean up trimui_inputd flag files so we don't leak d-pad remap state
 rm -f /tmp/trimui_inputd/input_dpad_to_joystick

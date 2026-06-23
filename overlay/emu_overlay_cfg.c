@@ -193,6 +193,8 @@ static void parse_item(const cJSON* json_item, EmuOvlItem* item) {
 	item->current_value = item->default_value;
 	item->staged_value = item->default_value;
 	item->dirty = false;
+
+	item->restart_required = json_get_bool(json_item, "restart_required", false);
 }
 
 // Returns true if an item/section tagged `plugin` should be visible for `active_plugin`.
@@ -742,6 +744,19 @@ bool emu_ovl_cfg_has_changes(EmuOvlConfig* cfg) {
 		EmuOvlSection* sec = &cfg->sections[s];
 		for (int i = 0; i < sec->item_count; i++) {
 			if (sec->items[i].dirty)
+				return true;
+		}
+	}
+	return false;
+}
+
+bool emu_ovl_cfg_any_dirty_restart_required(EmuOvlConfig* cfg) {
+	if (!cfg)
+		return false;
+	for (int s = 0; s < cfg->section_count; s++) {
+		EmuOvlSection* sec = &cfg->sections[s];
+		for (int i = 0; i < sec->item_count; i++) {
+			if (sec->items[i].dirty && sec->items[i].restart_required)
 				return true;
 		}
 	}
