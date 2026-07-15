@@ -33,6 +33,15 @@ case "$PLATFORM" in
         ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null)
         ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null)
         ;;
+    my355)
+        ORIG_CPU1=$(cat /sys/devices/system/cpu/cpu1/online 2>/dev/null)
+        ORIG_CPU2=$(cat /sys/devices/system/cpu/cpu2/online 2>/dev/null)
+        ORIG_CPU3=$(cat /sys/devices/system/cpu/cpu3/online 2>/dev/null)
+        ORIG_GPU_GOV=$(cat /sys/class/devfreq/fde60000.gpu/governor 2>/dev/null)
+        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)
+        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null)
+        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null)
+        ;;
 esac
 
 # ── CPU / GPU setup (platform-specific) ──────────────────────────────────────
@@ -50,6 +59,14 @@ case "$PLATFORM" in
         echo 1 >/sys/devices/system/cpu/cpu5/online 2>/dev/null
         # GPU: lock to performance for GLideN64 rendering
         echo performance >/sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null
+        ;;
+    my355)
+        # Bring all cores online (single cluster: cpu0-3 Cortex-A55)
+        echo 1 >/sys/devices/system/cpu/cpu1/online 2>/dev/null
+        echo 1 >/sys/devices/system/cpu/cpu2/online 2>/dev/null
+        echo 1 >/sys/devices/system/cpu/cpu3/online 2>/dev/null
+        # GPU: lock to performance for GLideN64 rendering
+        echo performance >/sys/class/devfreq/fde60000.gpu/governor 2>/dev/null
         ;;
 esac
 
@@ -95,6 +112,12 @@ case "$PLATFORM" in
         # Mali-G57 (tg5050) can handle level 2; PowerVR GE8300 (tg5040) cannot.
         DEVICE_ANISOTROPY=2
         LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5050"
+        ;;
+    my355)
+        DEVICE_CONFIG_DIR="$USERDATA_DIR"
+        DEVICE_RESOLUTION="640x480"
+        DEVICE_ANISOTROPY=2  # Mali-G52 handles level 2 anisotropy smoothly
+        LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/my355"
         ;;
 esac
 MIGRATION_STAMP="$DEVICE_CONFIG_DIR/.migrated-from-shared"
@@ -378,6 +401,12 @@ case "$PLATFORM" in
         HELPER_MASK=0x3 # cpu0-1
         VIDEO_MASK=0x20 # cpu5
         ;;
+    my355)
+        # cpu0-3 are all symmetric Cortex-A55 cores
+        MAIN_MASK=1     # cpu0
+        HELPER_MASK=0xc # cpu2-3
+        VIDEO_MASK=2    # cpu1
+        ;;
 esac
 
 taskset -p $MAIN_MASK "$EMU_PID" 2>/dev/null
@@ -439,6 +468,15 @@ case "$PLATFORM" in
         [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor 2>/dev/null
         [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null
         [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null
+        ;;
+    my355)
+        [ -n "$ORIG_GPU_GOV" ] && echo "$ORIG_GPU_GOV" >/sys/class/devfreq/fde60000.gpu/governor 2>/dev/null
+        [ -n "$ORIG_CPU3" ] && echo "$ORIG_CPU3" >/sys/devices/system/cpu/cpu3/online 2>/dev/null
+        [ -n "$ORIG_CPU2" ] && echo "$ORIG_CPU2" >/sys/devices/system/cpu/cpu2/online 2>/dev/null
+        [ -n "$ORIG_CPU1" ] && echo "$ORIG_CPU1" >/sys/devices/system/cpu/cpu1/online 2>/dev/null
+        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
+        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null
+        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null
         ;;
 esac
 
