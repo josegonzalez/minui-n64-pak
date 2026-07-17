@@ -182,9 +182,13 @@ static int ovl_sdl_init(int screen_w, int screen_h) {
 
 	// Scale factor: match NextUI's FIXED_SCALE
 	// Brick (1024x768) = 3x, Smart Pro / TG5050 (1280x720) = 2x
-	if (screen_w <= 1024)
+	// Miyoo Flip = 2x
+	const char* platform = getenv("PLATFORM");
+	if (strcmp(platform, "tg5040") == 0)
 		s_scale = 3;
-	else
+	else if (strcmp(platform, "tg5050") == 0)
+		s_scale = 2;
+	else if (strcmp(platform, "my355") == 0)
 		s_scale = 2;
 
 	// Initialize SDL_ttf

@@ -251,6 +251,7 @@ int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,
 	//   tg5040 Brick (1024x768) → FIXED_SCALE=3, desktop platform's PADDING=5
 	//   tg5050 (1280x720)       → FIXED_SCALE=2, default PADDING=10
 	//   tg5050 (1280x720)       → FIXED_SCALE=2, default PADDING=10
+	//   my355  (640x480)        → FIXED_SCALE=2, default PADDING=10
 	const char* platform = getenv("PLATFORM");
 	if (strcmp(platform, "tg5040") == 0) {
 		ovl_scale = 3;
@@ -263,7 +264,7 @@ int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,
 	} else if (strcmp(platform, "my355") == 0) {
 		ovl_scale = 2;
 		ovl_padding = 10;
-		ovl->items_per_page = 6;
+		ovl->items_per_page = 5;
 	}
 
 	build_main_menu(ovl);
