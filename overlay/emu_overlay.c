@@ -250,9 +250,9 @@ int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,
 	// Scale factor & outer padding — match NextUI per-platform:
 	//   tg5040 Brick (1024x768) → FIXED_SCALE=3, desktop platform's PADDING=5
 	//   tg5050 (1280x720)       → FIXED_SCALE=2, default PADDING=10
-	//   tg5050 (1280x720)       → FIXED_SCALE=2, default PADDING=10
 	//   my355  (640x480)        → FIXED_SCALE=2, default PADDING=10
 	const char* platform = getenv("PLATFORM");
+	if (!platform) platform = "";
 	if (strcmp(platform, "tg5040") == 0) {
 		ovl_scale = 3;
 		ovl_padding = 5;
@@ -265,6 +265,9 @@ int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,
 		ovl_scale = 2;
 		ovl_padding = 10;
 		ovl->items_per_page = 5;
+	} else {
+		// Initialize to tg5050 value as default
+		ovl->items_per_page = 8;
 	}
 
 	build_main_menu(ovl);
