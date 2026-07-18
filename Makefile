@@ -390,7 +390,7 @@ dist-my355:
 	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/my355/
 	$(call DIST_COMMON,$(DIST)/my355)
 	cp $(ROOT)/tools/ini/dist/my355/ini $(DIST)/my355/
-	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/my355/libz.so.1
+	$(DOCKER_RUN_MY355) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.3.1 /build/dist/N64.pak/my355/libz.so.1
 
 # ── Release ──────────────────────────────────────────────────────────────────
 
