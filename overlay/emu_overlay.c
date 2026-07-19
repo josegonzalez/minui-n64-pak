@@ -144,14 +144,14 @@ static const char* get_item_display_value(EmuOvlItem* item, char* buf, int buf_s
 	return "";
 }
 
-static void ensure_scroll(EmuOvl* ovl, int total_count) {
+static void ensure_scroll(EmuOvl* ovl, int total_count, int page_size) {
 	if (ovl->selected < ovl->scroll_offset)
 		ovl->scroll_offset = ovl->selected;
-	else if (ovl->selected >= ovl->scroll_offset + ovl->items_per_page)
-		ovl->scroll_offset = ovl->selected - ovl->items_per_page + 1;
+	else if (ovl->selected >= ovl->scroll_offset + page_size)
+		ovl->scroll_offset = ovl->selected - page_size + 1;
 	if (ovl->scroll_offset < 0)
 		ovl->scroll_offset = 0;
-	int max_scroll = total_count - ovl->items_per_page;
+	int max_scroll = total_count - page_size;
 	if (max_scroll < 0)
 		max_scroll = 0;
 	if (ovl->scroll_offset > max_scroll)
@@ -175,6 +175,28 @@ static int find_cheats_section_index(EmuOvl* ovl) {
 		if (strcmp(ovl->config->sections[i].name, "Cheats") == 0)
 			return i;
 	return -1;
+}
+
+// Calculates the position just below the title bar
+static int calc_list_top_y(EmuOvl* ovl) {
+	return PADDING_PX + S(PILL_SIZE) + PADDING_PX;
+}
+
+// Number of items per page on screens with description/hint.
+// Uses platform default except if space is missing. In this case,
+// drops one.
+static int list_page_size(EmuOvl* ovl) {
+	EmuOvlRenderBackend* r = ovl->render;
+	int row_h = S(PILL_SIZE);
+	int list_top = calc_list_top_y(ovl);
+	int footer_top = ovl->screen_h - PADDING_PX - S(PILL_SIZE);
+	int desc_strip_h = r->text_height(EMU_OVL_FONT_TINY) + S(8);
+
+	int full_list_bottom = list_top + ovl->items_per_page * row_h;
+	if (full_list_bottom + desc_strip_h <= footer_top)
+		return ovl->items_per_page; // full list already leaves enough room
+
+	return ovl->items_per_page > 1 ? ovl->items_per_page - 1 : ovl->items_per_page;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,16 +414,16 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 		int total_entries = ovl->config->section_count + 1;
 		if (input->up) {
 			ovl->selected = (ovl->selected - 1 + total_entries) % total_entries;
-			ensure_scroll(ovl, total_entries);
+			ensure_scroll(ovl, total_entries, list_page_size(ovl));
 		} else if (input->down) {
 			ovl->selected = (ovl->selected + 1) % total_entries;
-			ensure_scroll(ovl, total_entries);
+			ensure_scroll(ovl, total_entries, list_page_size(ovl));
 		} else if (input->l1) {
-			ovl->selected = page_jump(ovl->selected, total_entries, ovl->items_per_page, -1);
-			ensure_scroll(ovl, total_entries);
+			ovl->selected = page_jump(ovl->selected, total_entries, list_page_size(ovl), -1);
+			ensure_scroll(ovl, total_entries, list_page_size(ovl));
 		} else if (input->r1) {
-			ovl->selected = page_jump(ovl->selected, total_entries, ovl->items_per_page, +1);
-			ensure_scroll(ovl, total_entries);
+			ovl->selected = page_jump(ovl->selected, total_entries, list_page_size(ovl), +1);
+			ensure_scroll(ovl, total_entries, list_page_size(ovl));
 		} else if (input->a) {
 			if (ovl->selected == ovl->config->section_count) {
 				// "Save Changes" row
@@ -439,16 +461,16 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 		int total_rows = sec->item_count + remap_rows + shortcut_rows + 1; // items + [remaps|shortcuts] + reset
 		if (input->up) {
 			ovl->selected = (ovl->selected - 1 + total_rows) % total_rows;
-			ensure_scroll(ovl, total_rows);
+			ensure_scroll(ovl, total_rows, list_page_size(ovl));
 		} else if (input->down) {
 			ovl->selected = (ovl->selected + 1) % total_rows;
-			ensure_scroll(ovl, total_rows);
+			ensure_scroll(ovl, total_rows, list_page_size(ovl));
 		} else if (input->l1) {
-			ovl->selected = page_jump(ovl->selected, total_rows, ovl->items_per_page, -1);
-			ensure_scroll(ovl, total_rows);
+			ovl->selected = page_jump(ovl->selected, total_rows, list_page_size(ovl), -1);
+			ensure_scroll(ovl, total_rows, list_page_size(ovl));
 		} else if (input->r1) {
-			ovl->selected = page_jump(ovl->selected, total_rows, ovl->items_per_page, +1);
-			ensure_scroll(ovl, total_rows);
+			ovl->selected = page_jump(ovl->selected, total_rows, list_page_size(ovl), +1);
+			ensure_scroll(ovl, total_rows, list_page_size(ovl));
 		} else if (input->right || input->a) {
 			if (ovl->selected == total_rows - 1) {
 				// "Reset to Default" (last row)
@@ -492,7 +514,7 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 			ovl->state = EMU_OVL_STATE_SECTION_LIST;
 			ovl->selected = ovl->current_section;
 			ovl->scroll_offset = 0;
-			ensure_scroll(ovl, ovl->config->section_count);
+			ensure_scroll(ovl, ovl->config->section_count, list_page_size(ovl));
 		}
 		break;
 	}
@@ -504,21 +526,21 @@ bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input) {
 			int cheats_idx = find_cheats_section_index(ovl);
 			ovl->selected = (cheats_idx >= 0) ? cheats_idx : 0;
 			ovl->scroll_offset = 0;
-			ensure_scroll(ovl, ovl->config->section_count);
+			ensure_scroll(ovl, ovl->config->section_count, list_page_size(ovl));
 		} else if (count == 0) {
 			break;
 		} else if (input->up) {
 			ovl->selected = (ovl->selected - 1 + count) % count;
-			ensure_scroll(ovl, count);
+			ensure_scroll(ovl, count, list_page_size(ovl));
 		} else if (input->down) {
 			ovl->selected = (ovl->selected + 1) % count;
-			ensure_scroll(ovl, count);
+			ensure_scroll(ovl, count, list_page_size(ovl));
 		} else if (input->l1) {
-			ovl->selected = page_jump(ovl->selected, count, ovl->items_per_page, -1);
-			ensure_scroll(ovl, count);
+			ovl->selected = page_jump(ovl->selected, count, list_page_size(ovl), -1);
+			ensure_scroll(ovl, count, list_page_size(ovl));
 		} else if (input->r1) {
-			ovl->selected = page_jump(ovl->selected, count, ovl->items_per_page, +1);
-			ensure_scroll(ovl, count);
+			ovl->selected = page_jump(ovl->selected, count, list_page_size(ovl), +1);
+			ensure_scroll(ovl, count, list_page_size(ovl));
 		} else if (input->right || input->a) {
 			if (ovl->cheat_cb.cycle_variant)
 				ovl->cheat_cb.cycle_variant(ovl->selected, 1);
@@ -974,13 +996,13 @@ static void render_section_list(EmuOvl* ovl) {
 	// +1 for "Save Changes" row at the bottom
 	int total_count = ovl->config->section_count + 1;
 
-	// Scroll
-	ensure_scroll(ovl, total_count);
-
-	int vis_count = ovl->items_per_page;
+	int vis_count = list_page_size(ovl);
 	if (vis_count > total_count)
 		vis_count = total_count;
-	int list_y = calc_centered_list_y(ovl, vis_count);
+	int list_y = calc_list_top_y(ovl);
+
+	// Scroll
+	ensure_scroll(ovl, total_count, vis_count);
 
 	for (int vi = 0; vi < vis_count; vi++) {
 		int idx = ovl->scroll_offset + vi;
@@ -1018,8 +1040,8 @@ static void render_section_items(EmuOvl* ovl) {
 	draw_menu_bar(ovl, sec->name);
 
 	int row_h = S(PILL_SIZE);
-	int items_per_page = ovl->items_per_page;
-	int list_y = calc_centered_list_y(ovl, items_per_page);
+	int items_per_page = list_page_size(ovl);
+	int list_y = calc_list_top_y(ovl);
 	int content_x = PADDING_PX;
 	int content_w = ovl->screen_w - PADDING_PX * 2;
 
@@ -1030,7 +1052,7 @@ static void render_section_items(EmuOvl* ovl) {
 	int total_rows = sec->item_count + remap_rows + shortcut_rows + 1;
 
 	// Scroll
-	ensure_scroll(ovl, total_rows);
+	ensure_scroll(ovl, total_rows, items_per_page);
 
 	int vis_count = items_per_page;
 	if (vis_count > total_rows)
@@ -1142,13 +1164,13 @@ static void render_cheats(EmuOvl* ovl) {
 	}
 
 	int row_h = S(PILL_SIZE);
-	int items_per_page = ovl->items_per_page;
-	int list_y = calc_centered_list_y(ovl, items_per_page);
+	int items_per_page = list_page_size(ovl);
+	int list_y = calc_list_top_y(ovl);
 	int content_x = PADDING_PX;
 	int content_w = ovl->screen_w - PADDING_PX * 2;
 
 	// Scroll
-	ensure_scroll(ovl, count);
+	ensure_scroll(ovl, count, items_per_page);
 
 	int vis_count = items_per_page;
 	if (vis_count > count)
