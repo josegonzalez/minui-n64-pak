@@ -2,8 +2,8 @@ PAK_NAME := $(shell jq -r .name pak.json)
 PAK_TYPE := $(shell jq -r .type pak.json)
 PAK_FOLDER := $(shell echo $(PAK_TYPE) | cut -c1)$(shell echo $(PAK_TYPE) | tr '[:upper:]' '[:lower:]' | cut -c2-)s
 
-PUSH_SDCARD_PATH ?= /mnt/SDCARD
-PUSH_PLATFORM ?= tg5040
+PUSH_SDCARD_PATH ?= /mnt/sdcard
+PUSH_PLATFORM ?= my355
 
 SHELL := /bin/bash
 
@@ -56,6 +56,7 @@ MY355_CPUFLAGS  := -mcpu=cortex-a55 -mtune=cortex-a55
 ROOT     := $(shell pwd)
 SRC      := $(ROOT)/src
 DIST     := $(ROOT)/dist/N64.pak
+BUILD    := $(ROOT)/build
 PATCHES  := $(ROOT)/patches/shared
 CONFIG   := $(ROOT)/config
 
@@ -77,28 +78,18 @@ DOCKER_SCRIPT := /build/src/.docker-env.sh
 # ══════════════════════════════════════════════════════════════════════════════
 
 .PHONY: all build tg5040 tg5050 my355 gliden64 rice dist clone patch patches \
-	   clean ini-tg5040 ini-tg5050 ini-my355
+	   clean ini-tg5040 ini-tg5050 ini-my355 \
+	   stage-tg5040 stage-tg5050 stage-my355
 
-build: clone patch
-	$(MAKE) tg5040
-	$(MAKE) tg5050
-	$(MAKE) my355
-	$(MAKE) gliden64
-	$(MAKE) rice-tg5040
-	$(MAKE) rice-tg5050
-	$(MAKE) rice-my355
-	$(MAKE) ini-tg5040
-	$(MAKE) ini-tg5050
-	$(MAKE) ini-my355
+# The emulator components share source output paths.  Build and stage each
+# platform before compiling the next one so dist never copies another
+# platform's binaries.
+build: clone patch gliden64
+	$(MAKE) stage-tg5040
+	$(MAKE) stage-tg5050
+	$(MAKE) stage-my355
 
-# Build both platforms sequentially, staging outputs between builds since they
-# share source directories.
-all:
-	$(MAKE) dist-tg5040
-	$(MAKE) dist-tg5050
-	$(MAKE) dist-my355
-	@echo "=== Build complete. dist/N64.pak/ assembled ==="
-	@find $(DIST) -type f | sort
+all: dist
 
 # ── Clone ─────────────────────────────────────────────────────────────────────
 
@@ -219,11 +210,11 @@ tg5040-rsp: $(PATCH_STAMP)
 .PHONY: tg5050 tg5050-core tg5050-ui tg5050-audio tg5050-input tg5050-rsp tg5050-libpng-headers
 
 # libpng headers workaround for broken TG5050 toolchain symlinks
-LIBPNG_DIR := $(SRC)/libpng-headers/libpng-1.6.37
+TG5050_LIBPNG_DIR := $(SRC)/libpng-headers/libpng-1.6.37
 
-tg5050-libpng-headers: $(LIBPNG_DIR)/pnglibconf.h
+tg5050-libpng-headers: $(TG5050_LIBPNG_DIR)/pnglibconf.h
 
-$(LIBPNG_DIR)/pnglibconf.h:
+$(TG5050_LIBPNG_DIR)/pnglibconf.h:
 	mkdir -p $(SRC)/libpng-headers
 	cd $(SRC)/libpng-headers && \
 		curl -sL https://github.com/glennrp/libpng/archive/refs/tags/v1.6.37.tar.gz -o libpng.tar.gz && \
@@ -251,11 +242,11 @@ tg5050-rsp: $(PATCH_STAMP)
 
 .PHONY: my355 my355-core my355-ui my355-audio my355-input my355-rsp my355-libpng
 
-LIBPNG_DIR := $(SRC)/libpng-build/libpng-1.6.37
+MY355_LIBPNG_DIR := $(SRC)/libpng-build/libpng-1.6.37
 
-my355-libpng: $(LIBPNG_DIR)/.libs/libpng16.a
+my355-libpng: $(MY355_LIBPNG_DIR)/.libs/libpng16.a
 
-$(LIBPNG_DIR)/.libs/libpng16.a:
+$(MY355_LIBPNG_DIR)/.libs/libpng16.a:
 	mkdir -p $(SRC)/libpng-build
 	cd $(SRC)/libpng-build && \
 		curl -sL https://github.com/glennrp/libpng/archive/refs/tags/v1.6.37.tar.gz -o libpng.tar.gz && \
@@ -274,16 +265,16 @@ my355-core: $(PATCH_STAMP) my355-libpng
 	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="-O3 $(MY355_CPUFLAGS)" LIBPNG_CFLAGS="-I/build/src/libpng-build/libpng-1.6.37" LIBPNG_LDLIBS="/build/src/libpng-build/libpng-1.6.37/.libs/libpng16.a -lz"'
 
 my355-ui: $(PATCH_STAMP)
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)" COREDIR="./" PLUGINDIR="./"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)" COREDIR="./" PLUGINDIR="./"'
 
 my355-audio: $(PATCH_STAMP)
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
 
 my355-input: $(PATCH_STAMP)
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
 
 my355-rsp: $(PATCH_STAMP)
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
 
 # ── GLideN64 (shared — built with tg5040 toolchain) ──────────────────────────
 
@@ -329,6 +320,28 @@ ini-my355:
 	mkdir -p $(ROOT)/tools/ini/dist/my355
 	cp $(ROOT)/tools/ini/build/ini $(ROOT)/tools/ini/dist/my355/ini
 
+# ── Platform artifact staging ────────────────────────────────────────────────
+
+define STAGE_PLATFORM
+	mkdir -p $(BUILD)/$(1)
+	cp $(SRC)/mupen64plus-core/projects/unix/libmupen64plus.so.2.0.0 $(BUILD)/$(1)/libmupen64plus.so.2
+	cp $(SRC)/mupen64plus-ui-console/projects/unix/mupen64plus       $(BUILD)/$(1)/
+	cp $(SRC)/mupen64plus-audio-sdl/projects/unix/mupen64plus-audio-sdl.so $(BUILD)/$(1)/
+	cp $(SRC)/mupen64plus-input-sdl/projects/unix/mupen64plus-input-sdl.so $(BUILD)/$(1)/
+	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(BUILD)/$(1)/
+	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(BUILD)/$(1)/
+	cp $(ROOT)/tools/ini/dist/$(1)/ini $(BUILD)/$(1)/
+endef
+
+stage-tg5040: tg5040 rice-tg5040 ini-tg5040
+	$(call STAGE_PLATFORM,tg5040)
+
+stage-tg5050: tg5050 rice-tg5050 ini-tg5050
+	$(call STAGE_PLATFORM,tg5050)
+
+stage-my355: my355 rice-my355 ini-my355
+	$(call STAGE_PLATFORM,my355)
+
 # ── Dist assembly ─────────────────────────────────────────────────────────────
 
 .PHONY: dist dist-tg5040 dist-tg5050 dist-my355
@@ -347,49 +360,52 @@ define DIST_COMMON
 	cp pak.json $(1)/
 endef
 
-dist: dist-tg5040 dist-tg5050 dist-my355
+dist:
+	$(MAKE) dist-tg5040
+	$(MAKE) dist-tg5050
+	$(MAKE) dist-my355
 	@echo "=== dist/N64.pak/ assembled ==="
 	@find $(DIST) -type f | sort
 
-dist-tg5040:
+dist-tg5040: stage-tg5040 gliden64
 	mkdir -p $(DIST)/tg5040
 	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
-	cp $(SRC)/mupen64plus-core/projects/unix/libmupen64plus.so.2.0.0 $(DIST)/tg5040/libmupen64plus.so.2
-	cp $(SRC)/mupen64plus-ui-console/projects/unix/mupen64plus       $(DIST)/tg5040/
-	cp $(SRC)/mupen64plus-audio-sdl/projects/unix/mupen64plus-audio-sdl.so $(DIST)/tg5040/
-	cp $(SRC)/mupen64plus-input-sdl/projects/unix/mupen64plus-input-sdl.so $(DIST)/tg5040/
-	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5040/
-	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/tg5040/
+	cp $(BUILD)/tg5040/libmupen64plus.so.2 $(DIST)/tg5040/
+	cp $(BUILD)/tg5040/mupen64plus $(DIST)/tg5040/
+	cp $(BUILD)/tg5040/mupen64plus-audio-sdl.so $(DIST)/tg5040/
+	cp $(BUILD)/tg5040/mupen64plus-input-sdl.so $(DIST)/tg5040/
+	cp $(BUILD)/tg5040/mupen64plus-rsp-hle.so $(DIST)/tg5040/
+	cp $(BUILD)/tg5040/mupen64plus-video-rice.so $(DIST)/tg5040/
 	$(call DIST_COMMON,$(DIST)/tg5040)
-	cp $(ROOT)/tools/ini/dist/tg5040/ini $(DIST)/tg5040/
+	cp $(BUILD)/tg5040/ini $(DIST)/tg5040/
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5040/libpng16.so.16
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5040/libz.so.1
 
-dist-tg5050:
+dist-tg5050: stage-tg5050 gliden64
 	mkdir -p $(DIST)/tg5050
 	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
-	cp $(SRC)/mupen64plus-core/projects/unix/libmupen64plus.so.2.0.0 $(DIST)/tg5050/libmupen64plus.so.2
-	cp $(SRC)/mupen64plus-ui-console/projects/unix/mupen64plus       $(DIST)/tg5050/
-	cp $(SRC)/mupen64plus-audio-sdl/projects/unix/mupen64plus-audio-sdl.so $(DIST)/tg5050/
-	cp $(SRC)/mupen64plus-input-sdl/projects/unix/mupen64plus-input-sdl.so $(DIST)/tg5050/
-	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/tg5050/
-	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/tg5050/
+	cp $(BUILD)/tg5050/libmupen64plus.so.2 $(DIST)/tg5050/
+	cp $(BUILD)/tg5050/mupen64plus $(DIST)/tg5050/
+	cp $(BUILD)/tg5050/mupen64plus-audio-sdl.so $(DIST)/tg5050/
+	cp $(BUILD)/tg5050/mupen64plus-input-sdl.so $(DIST)/tg5050/
+	cp $(BUILD)/tg5050/mupen64plus-rsp-hle.so $(DIST)/tg5050/
+	cp $(BUILD)/tg5050/mupen64plus-video-rice.so $(DIST)/tg5050/
 	$(call DIST_COMMON,$(DIST)/tg5050)
-	cp $(ROOT)/tools/ini/dist/tg5050/ini $(DIST)/tg5050/
+	cp $(BUILD)/tg5050/ini $(DIST)/tg5050/
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5050/libz.so.1
 
-dist-my355:
+dist-my355: stage-my355 gliden64
 	mkdir -p $(DIST)/my355
 	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
-	cp $(SRC)/mupen64plus-core/projects/unix/libmupen64plus.so.2.0.0 $(DIST)/my355/libmupen64plus.so.2
-	cp $(SRC)/mupen64plus-ui-console/projects/unix/mupen64plus       $(DIST)/my355/
-	cp $(SRC)/mupen64plus-audio-sdl/projects/unix/mupen64plus-audio-sdl.so $(DIST)/my355/
-	cp $(SRC)/mupen64plus-input-sdl/projects/unix/mupen64plus-input-sdl.so $(DIST)/my355/
-	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(DIST)/my355/
-	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(DIST)/my355/
+	cp $(BUILD)/my355/libmupen64plus.so.2 $(DIST)/my355/
+	cp $(BUILD)/my355/mupen64plus $(DIST)/my355/
+	cp $(BUILD)/my355/mupen64plus-audio-sdl.so $(DIST)/my355/
+	cp $(BUILD)/my355/mupen64plus-input-sdl.so $(DIST)/my355/
+	cp $(BUILD)/my355/mupen64plus-rsp-hle.so $(DIST)/my355/
+	cp $(BUILD)/my355/mupen64plus-video-rice.so $(DIST)/my355/
 	$(call DIST_COMMON,$(DIST)/my355)
-	cp $(ROOT)/tools/ini/dist/my355/ini $(DIST)/my355/
+	cp $(BUILD)/my355/ini $(DIST)/my355/
 	$(DOCKER_RUN_MY355) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.3.1 /build/dist/N64.pak/my355/libz.so.1
 
 # ── Release ──────────────────────────────────────────────────────────────────
@@ -421,7 +437,7 @@ patches:
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
 clean:
-	rm -rf $(SRC) $(ROOT)/dist $(ROOT)/include
+	rm -rf $(SRC) $(ROOT)/build $(ROOT)/dist $(ROOT)/include
 	rm -f $(PATCHES)/mupen64plus-audio-sdl.patch
 	cd $(ROOT)/tools/ini && make clean
 	rm -rf $(ROOT)/tools/ini/dist
