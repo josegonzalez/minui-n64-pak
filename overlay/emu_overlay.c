@@ -270,25 +270,21 @@ int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,
 		snprintf(ovl->game_name, sizeof(ovl->game_name), "%s", game_name);
 
 	// Scale factor & outer padding — match NextUI per-platform:
-	//   tg5040 Brick (1024x768) → FIXED_SCALE=3, desktop platform's PADDING=5
-	//   tg5050 (1280x720)       → FIXED_SCALE=2, default PADDING=10
-	//   my355  (640x480)        → FIXED_SCALE=2, default PADDING=10
-	const char* platform = getenv("PLATFORM");
-	if (!platform) platform = "";
-	if (strcmp(platform, "tg5040") == 0) {
+	//   Brick (1024x768)     → FIXED_SCALE=3, desktop platform's PADDING=5
+	//   Smart Pro / S        → FIXED_SCALE=2, default PADDING=10
+	//   Miyoo Flip (640x480) → FIXED_SCALE=2, default PADDING=10
+	if (screen_w == 1024 && screen_h == 768) {
 		ovl_scale = 3;
 		ovl_padding = 5;
 		ovl->items_per_page = 5;
-	} else if (strcmp(platform, "tg5050") == 0) {
-		ovl_scale = 2;
-		ovl_padding = 10;
-		ovl->items_per_page = 8;
-	} else if (strcmp(platform, "my355") == 0) {
+	} else if (screen_w == 640 && screen_h == 480) {
 		ovl_scale = 2;
 		ovl_padding = 10;
 		ovl->items_per_page = 5;
 	} else {
-		// Initialize to tg5050 value as default
+		// 1280x720 platforms and unknown future displays use the standard layout.
+		ovl_scale = 2;
+		ovl_padding = 10;
 		ovl->items_per_page = 8;
 	}
 
