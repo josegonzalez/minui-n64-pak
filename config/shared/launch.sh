@@ -81,6 +81,10 @@ case "$PLATFORM" in
             DEVICE_CONFIG_DIR="$USERDATA_DIR/brick"
             DEVICE_RESOLUTION="1024x768"
             LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5040-brick"
+        elif [ "$DEVICE" = "brickpro" ]; then
+            DEVICE_CONFIG_DIR="$USERDATA_DIR/brick-pro"
+            DEVICE_RESOLUTION="1024x768"
+            LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5040-brick-pro"
         else
             DEVICE_CONFIG_DIR="$USERDATA_DIR/smart-pro"
             DEVICE_RESOLUTION="1280x720"
