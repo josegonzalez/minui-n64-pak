@@ -132,6 +132,35 @@ run_docker_env() { # <UNION_PLATFORM> <PREFIX_LOCAL>
     [[ "$output" == *"SDL2 from PREFIX_LOCAL"* ]]
 }
 
+# ── each platform bundles the libpng its binaries actually link ─────────────
+#
+# The toolchains disagree: the tg5040 and h700 sysroots carry libpng12, tg5050
+# carries libpng16, and my355 links libpng statically. Bundling the wrong one is
+# invisible at build time and only shows up as a missing library on the device.
+
+@test "h700 bundles libpng12, which is what its sysroot links" {
+    run grep -q 'libpng12.so.0.56.0 /build/dist/N64.pak/h700/libpng12.so.0' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+    run grep -q 'N64.pak/h700/libpng16' "$REPO_ROOT/Makefile"
+    [ "$status" -ne 0 ]
+}
+
+@test "h700 pulls that libpng from its own toolchain, not another platform's" {
+    run grep -n 'libpng12.so.0.56.0' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"DOCKER_RUN_H700"* ]]
+}
+
+@test "tg5050 bundles libpng16, which is what its sysroot links" {
+    run grep -q 'libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+}
+
+@test "my355 bundles no libpng at all, it is linked statically" {
+    run grep -q 'N64.pak/my355/libpng' "$REPO_ROOT/Makefile"
+    [ "$status" -ne 0 ]
+}
+
 # ── the pak ships the launcher and its profile helper ───────────────────────
 
 @test "every dist target ships launch.sh and platform.sh at the pak root" {

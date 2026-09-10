@@ -460,9 +460,13 @@ dist-h700: stage-h700 gliden64
 	cp $(BUILD)/h700/mupen64plus-video-rice.so $(DIST)/h700/
 	$(call DIST_COMMON,$(DIST)/h700)
 	cp $(BUILD)/h700/ini $(DIST)/h700/
-	@# Same sysroot as tg5040, which only carries libpng12 — take libpng16 and a
-	@# matching zlib from the tg5050 sysroot, exactly as dist-tg5040 does.
-	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/h700/libpng16.so.16
+	@# The h700 sysroot carries libpng12, so that is what the core and Rice link
+	@# against. Bundle it: the H700 stock OS only ships a 32-bit libpng12 under
+	@# /mnt/vendor/lib, and relying on NextUI to supply the 64-bit one would make
+	@# the pak depend on which NextUI build the user installed.
+	$(DOCKER_RUN_H700) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng12.so.0.56.0 /build/dist/N64.pak/h700/libpng12.so.0
+	@# libpng12 wants libz.so.1; the h700 sysroot has 1.2.8, so take the newer
+	@# tg5050 copy as the other platforms do.
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/h700/libz.so.1
 
 # ── Release ──────────────────────────────────────────────────────────────────
