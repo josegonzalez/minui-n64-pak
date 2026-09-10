@@ -343,7 +343,9 @@ Applied immediately when changed. Persisted only via Options → Save Changes.
 
 ### Docker environment
 
-Every `docker run` in the Makefile invokes `scripts/docker-env.sh`, which sets up the cross-compile environment inside the container and then execs the requested command. It is checked in rather than generated so it survives `make clean` and shows up in review. Its one conditional is the h700 SDL2 lookup above: the toolchain's `sdl2.pc` records an absolute in-image prefix, so `PKG_CONFIG_SYSROOT_DIR` has to be cleared for that query or pkg-config rewrites every path under the sysroot. Toolchains that leave `$PREFIX_LOCAL` empty fall through to the sysroot unchanged.
+Every `docker run` in the Makefile invokes `scripts/docker-env.sh`, which sets up the cross-compile environment inside the container and then execs the requested command. It is checked in rather than generated so it survives `make clean` and shows up in review.
+
+Its one conditional is the h700 SDL2 lookup above: the toolchain's `sdl2.pc` records an absolute in-image prefix, so `PKG_CONFIG_SYSROOT_DIR` has to be cleared for that query or pkg-config rewrites every path under the sysroot. Toolchains that leave `$PREFIX_LOCAL` empty fall through to the sysroot unchanged. It logs which SDL2 it selected, and on `h700` a missing `$PREFIX_LOCAL/lib/pkgconfig/sdl2.pc` is a hard error — falling back to the SDK copy there would build cleanly but link against an SDL2 the device does not run.
 
 ### Shared source trees
 

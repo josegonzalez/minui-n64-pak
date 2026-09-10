@@ -94,6 +94,21 @@ mk() { # <VAR>
     [ "$status" -eq 0 ]
 }
 
+# The h700 binaries have to link the patched SDL2 NextUI installs on the device.
+# Falling back to the TrimUI SDK copy still builds, so the helper must refuse.
+@test "the env helper refuses to build h700 against the sysroot SDL2" {
+    run env -i PATH="$PATH" HOME="$HOME" UNION_PLATFORM=h700 PREFIX_LOCAL=/nonexistent         bash "$REPO_ROOT/scripts/docker-env.sh" true
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"missing the patched SDL2"* ]]
+}
+
+@test "the env helper still falls back to the sysroot on the other platforms" {
+    for platform in tg5040 tg5050 my355; do
+        run env -i PATH="$PATH" HOME="$HOME" UNION_PLATFORM="$platform" PREFIX_LOCAL=/nonexistent             bash "$REPO_ROOT/scripts/docker-env.sh" true
+        [[ "$output" == *"SDL2 from sysroot"* ]]
+    done
+}
+
 # ── the pak ships the launcher and its profile helper ───────────────────────
 
 @test "every dist target ships launch.sh and platform.sh at the pak root" {
