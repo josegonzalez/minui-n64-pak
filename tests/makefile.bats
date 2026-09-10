@@ -136,29 +136,58 @@ run_docker_env() { # <UNION_PLATFORM> <PREFIX_LOCAL>
 #
 # The toolchains disagree: the tg5040 and h700 sysroots carry libpng12, tg5050
 # carries libpng16, and my355 links libpng statically. Bundling the wrong one is
-# invisible at build time and only shows up as a missing library on the device.
+# invisible at build time and only shows up as a missing library on the device,
+# so pin each platform's choice here.
 
-@test "h700 bundles libpng12, which is what its sysroot links" {
-    run grep -q 'libpng12.so.0.56.0 /build/dist/N64.pak/h700/libpng12.so.0' "$REPO_ROOT/Makefile"
+# bundles <platform> <soname> — the dist target installs this library.
+bundles() {
+    run grep -q "/build/dist/N64.pak/$1/$2\$" "$REPO_ROOT/Makefile"
     [ "$status" -eq 0 ]
-    run grep -q 'N64.pak/h700/libpng16' "$REPO_ROOT/Makefile"
+}
+
+# omits <platform> <pattern> — no library matching this is installed.
+omits() {
+    run grep -q "N64.pak/$1/$2" "$REPO_ROOT/Makefile"
     [ "$status" -ne 0 ]
 }
 
-@test "h700 pulls that libpng from its own toolchain, not another platform's" {
-    run grep -n 'libpng12.so.0.56.0' "$REPO_ROOT/Makefile"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"DOCKER_RUN_H700"* ]]
+@test "tg5040 bundles libpng12, which is what its sysroot links" {
+    bundles tg5040 libpng12.so.0
+    omits tg5040 libpng16
 }
 
 @test "tg5050 bundles libpng16, which is what its sysroot links" {
-    run grep -q 'libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16' "$REPO_ROOT/Makefile"
-    [ "$status" -eq 0 ]
+    bundles tg5050 libpng16.so.16
+    omits tg5050 libpng12
 }
 
 @test "my355 bundles no libpng at all, it is linked statically" {
-    run grep -q 'N64.pak/my355/libpng' "$REPO_ROOT/Makefile"
-    [ "$status" -ne 0 ]
+    omits my355 libpng
+}
+
+@test "h700 bundles libpng12, which is what its sysroot links" {
+    bundles h700 libpng12.so.0
+    omits h700 libpng16
+}
+
+# Each libpng has to come from the toolchain whose sysroot the binaries were
+# linked against, or the bundled copy will not match what they reference.
+@test "each platform takes its libpng from its own toolchain" {
+    for platform in tg5040 h700; do
+        upper="$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
+        run grep "N64.pak/$platform/libpng12.so.0\$" "$REPO_ROOT/Makefile"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"DOCKER_RUN_${upper}"* ]]
+    done
+}
+
+# libpng16 is the only thing in the tree that needs ZLIB_1.2.9, so tg5050 is the
+# one platform that genuinely depends on the newer zlib. Every platform still
+# links libz.so.1 through libmupen64plus, so all of them ship it.
+@test "every platform ships the libz its core links" {
+    for platform in $(jq -r '.platforms[]' "$REPO_ROOT/pak.json"); do
+        bundles "$platform" libz.so.1
+    done
 }
 
 # ── the pak ships the launcher and its profile helper ───────────────────────

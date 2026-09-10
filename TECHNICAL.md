@@ -157,8 +157,8 @@ dist/N64.pak/
 │   ├── 7zzs                            7-Zip standalone (for .zip/.7z ROMs)
 │   ├── 7zzs.LICENSE                    7-Zip license
 │   ├── pak.json                        pak metadata
-│   ├── libpng16.so.16                  libpng runtime
-│   └── libz.so.1                       zlib runtime (libpng16 dep)
+│   ├── libpng12.so.0                   libpng runtime (see Bundled libpng)
+│   └── libz.so.1                       zlib runtime
 ├── tg5050/                            TrimUI Smart Pro S
 │   └── (same files, built with tg5050 toolchain)
 ├── my355/                             Miyoo Flip
@@ -335,22 +335,28 @@ Applied immediately when changed. Persisted only via Options → Save Changes.
 ## Platform differences
 
 - **tg5040**: Uses `ghcr.io/loveretro/tg5040-toolchain:latest`. No special setup needed.
-- **tg5050**: Uses `ghcr.io/loveretro/tg5050-toolchain:latest`. The toolchain has broken libpng header symlinks — the Makefile automatically downloads libpng 1.6.37 headers as a workaround. Also bundles `libpng16.so.16` and `libz.so.1` (from the tg5050 sysroot) in the tg5040, tg5050 and h700 dirs because the tg5040 device ships zlib 1.2.8, which is too old for the `ZLIB_1.2.9` symbols referenced by libpng16.
+- **tg5050**: Uses `ghcr.io/loveretro/tg5050-toolchain:latest`. The toolchain has broken libpng header symlinks — the Makefile automatically downloads libpng 1.6.37 headers as a workaround. It is also the source of the `libz.so.1` every platform bundles; see [Bundled zlib](#bundled-zlib).
 - **my355**: Uses `ghcr.io/loveretro/my355-toolchain:latest`. Cross-compiles libpng 1.6.37 from source and links it statically, so it bundles only `libz.so.1` (1.3.1, from its own sysroot).
-- **h700**: Uses `ghcr.io/loveretro/h700-toolchain:latest`. That image is the tg5040 image plus a patched mali-fbdev SDL2 installed at `PREFIX_LOCAL=/opt/nextui` — same gcc 8.3 `aarch64-nextui-linux-gnu` cross compiler, same TrimUI TG5040 SDK sysroot, so no libpng build workaround is needed. `scripts/docker-env.sh` detects that SDL2 and points `SDL_CFLAGS`/`SDL_LDLIBS` at it, because that is the build NextUI installs on the device at `$SYSTEM_PATH/lib`. GLES symbols resolve straight from `-lGLESv2` with no standalone mali blob. Bundles `libpng12.so.0` from its own sysroot plus `libz.so.1` from the tg5050 one.
+- **h700**: Uses `ghcr.io/loveretro/h700-toolchain:latest`. That image is the tg5040 image plus a patched mali-fbdev SDL2 installed at `PREFIX_LOCAL=/opt/nextui` — same gcc 8.3 `aarch64-nextui-linux-gnu` cross compiler, same TrimUI TG5040 SDK sysroot, so no libpng build workaround is needed. `scripts/docker-env.sh` detects that SDL2 and points `SDL_CFLAGS`/`SDL_LDLIBS` at it, because that is the build NextUI installs on the device at `$SYSTEM_PATH/lib`. GLES symbols resolve straight from `-lGLESv2` with no standalone mali blob.
 
 ### Bundled libpng
 
 Which libpng a platform needs follows its sysroot, and the three differ:
 
-| Platform | Links | Bundled |
-|---|---|---|
-| `tg5040` | `libpng12.so.0` | `libpng16.so.16` (unused; the device supplies libpng12) |
-| `tg5050` | `libpng16.so.16` | `libpng16.so.16` |
-| `my355` | *(static)* | none |
-| `h700` | `libpng12.so.0` | `libpng12.so.0` |
+| Platform | Links | Bundled | From |
+|---|---|---|---|
+| `tg5040` | `libpng12.so.0` | `libpng12.so.0` | tg5040 sysroot |
+| `tg5050` | `libpng16.so.16` | `libpng16.so.16` | tg5050 sysroot |
+| `my355` | *(static)* | none | — |
+| `h700` | `libpng12.so.0` | `libpng12.so.0` | h700 sysroot |
 
-Getting this wrong is invisible at build time and only surfaces as a missing library on the device, so `tests/makefile.bats` pins each platform's choice. h700 has to bundle its own: the stock OS ships only a 32-bit libpng12 under `/mnt/vendor/lib`, and the 64-bit copy in `$SYSTEM_PATH/lib` is there because NextUI puts it there, which would tie the pak to a particular NextUI build.
+Each copy comes from the toolchain its binaries were linked against. Getting this wrong is invisible at build time and only surfaces as a missing library on the device, so `tests/makefile.bats` pins every platform's choice.
+
+h700 has to bundle its own: the stock OS ships only a 32-bit libpng12 under `/mnt/vendor/lib`, and the 64-bit copy in `$SYSTEM_PATH/lib` is there because NextUI puts it there, which would otherwise tie the pak to a particular NextUI build. tg5040 shipped an unused `libpng16.so.16` until it was corrected; its binaries had always linked libpng12 and picked it up from the device.
+
+### Bundled zlib
+
+Every platform links `libz.so.1` through `libmupen64plus`, and all of them ship the tg5050 sysroot's 1.2.12 rather than the 1.2.8 the tg5040 and h700 sysroots carry. Only tg5050 strictly needs the newer one: `libpng16.so.16` is the sole library in the tree referencing `ZLIB_1.2.9`, and the pak's own binaries reference no versioned zlib symbols at all.
 - **GLideN64**: Built once using the tg5040 toolchain. The resulting `.so` is shared across every platform. It dlopens `libGLESv2.so.2` and `libEGL.so.1` at runtime rather than linking them.
 - **Rice**: Built per-toolchain (one `.so` per platform) because it links against the platform-specific libpng. The overlay sources are injected into its Makefile by `patches/shared/mupen64plus-video-rice.patch`.
 

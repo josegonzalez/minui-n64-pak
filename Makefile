@@ -416,7 +416,11 @@ dist-tg5040: stage-tg5040 gliden64
 	cp $(BUILD)/tg5040/mupen64plus-video-rice.so $(DIST)/tg5040/
 	$(call DIST_COMMON,$(DIST)/tg5040)
 	cp $(BUILD)/tg5040/ini $(DIST)/tg5040/
-	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5040/libpng16.so.16
+	@# The tg5040 sysroot carries libpng12, so that is what the core and Rice link
+	@# against. The libpng16 shipped here previously was never loaded.
+	$(DOCKER_RUN_TG5040) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng12.so.0.56.0 /build/dist/N64.pak/tg5040/libpng12.so.0
+	@# libmupen64plus links libz.so.1; ship the tg5050 sysroot's 1.2.12 rather than
+	@# the 1.2.8 in this one.
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5040/libz.so.1
 
 dist-tg5050: stage-tg5050 gliden64
