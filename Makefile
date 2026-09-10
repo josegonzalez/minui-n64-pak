@@ -46,11 +46,15 @@ SEVENZ_SHA256  := aa8f3d0a19af9674d3af0ec788b4e261501071e626cd75ad149f1c2c176cc8
 TG5040_IMAGE := ghcr.io/loveretro/tg5040-toolchain:latest
 TG5050_IMAGE := ghcr.io/loveretro/tg5050-toolchain:latest
 MY355_IMAGE  := ghcr.io/loveretro/my355-toolchain:latest
+# The h700 image is the tg5040 image plus a patched mali-fbdev SDL2 under
+# /opt/nextui: same cross compiler, same TrimUI SDK sysroot.
+H700_IMAGE   := ghcr.io/loveretro/h700-toolchain:latest
 
 # ── Platform specific CPU flags ───────────────────────────────────────────────
 TG5040_CPUFLAGS := -mcpu=cortex-a53 -mtune=cortex-a53
 TG5050_CPUFLAGS := -mcpu=cortex-a55 -mtune=cortex-a55
 MY355_CPUFLAGS  := -mcpu=cortex-a55 -mtune=cortex-a55
+H700_CPUFLAGS   := -mcpu=cortex-a53 -mtune=cortex-a53
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 ROOT     := $(shell pwd)
@@ -70,16 +74,15 @@ CORE_FLAGS := CROSS_COMPILE=$(CROSS) HOST_CPU=$(HOST_CPU) \
 	PKG_CONFIG=pkg-config
 
 # Docker run helper script — sets up env, then runs the given command.
-# Written to src/.docker-env.sh during clone phase.
-DOCKER_SCRIPT := /build/src/.docker-env.sh
+DOCKER_SCRIPT := /build/scripts/docker-env.sh
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Top-level targets
 # ══════════════════════════════════════════════════════════════════════════════
 
-.PHONY: all build tg5040 tg5050 my355 gliden64 rice dist clone patch patches \
-	   clean ini-tg5040 ini-tg5050 ini-my355 \
-	   stage-tg5040 stage-tg5050 stage-my355
+.PHONY: all build tg5040 tg5050 my355 h700 gliden64 rice dist clone patch patches \
+	   clean ini-tg5040 ini-tg5050 ini-my355 ini-h700 \
+	   stage-tg5040 stage-tg5050 stage-my355 stage-h700
 
 # The emulator components share source output paths.  Build and stage each
 # platform before compiling the next one so dist never copies another
@@ -88,6 +91,7 @@ build: clone patch gliden64
 	$(MAKE) stage-tg5040
 	$(MAKE) stage-tg5050
 	$(MAKE) stage-my355
+	$(MAKE) stage-h700
 
 all: dist
 
@@ -98,9 +102,6 @@ clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
        $(SRC)/mupen64plus-rsp-hle $(SRC)/GLideN64 \
        $(SRC)/mupen64plus-video-rice $(SRC)/nx-redux \
        $(SRC)/zlib $(SRC)/7zip/7zzs
-	@# Write Docker env helper script (sets up cross-compile env, then exec's args)
-	@printf '#!/bin/bash\nsource ~/.bashrc\nexport PKG_CONFIG_PATH=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/pkgconfig\nexport PKG_CONFIG_SYSROOT_DIR=/opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc\nexport SDL_CFLAGS="$$(pkg-config --cflags sdl2)"\nexport SDL_LDLIBS="$$(pkg-config --libs sdl2)"\nexec "$$@"\n' > $(SRC)/.docker-env.sh
-	@chmod +x $(SRC)/.docker-env.sh
 	@# Populate GLES headers and unmodified patches from nx-redux
 	@# (overlay/ sources are vendored in the repo — not pulled from nx-redux)
 	@mkdir -p $(ROOT)/include
@@ -178,6 +179,7 @@ $(PATCH_STAMP): | clone
 DOCKER_RUN_TG5040  := docker run --rm -v $(ROOT):/build $(TG5040_IMAGE) $(DOCKER_SCRIPT)
 DOCKER_RUN_TG5050  := docker run --rm -v $(ROOT):/build $(TG5050_IMAGE) $(DOCKER_SCRIPT)
 DOCKER_RUN_MY355   := docker run --rm -v $(ROOT):/build $(MY355_IMAGE) $(DOCKER_SCRIPT)
+DOCKER_RUN_H700    := docker run --rm -v $(ROOT):/build $(H700_IMAGE) $(DOCKER_SCRIPT)
 
 # Common plugin make flags (SDL_CFLAGS/SDL_LDLIBS exported by docker-env.sh)
 PLUGIN_MAKE := CROSS_COMPILE=$(CROSS) HOST_CPU=$(HOST_CPU) PIE=1 \
@@ -191,19 +193,19 @@ PLUGIN_MAKE := CROSS_COMPILE=$(CROSS) HOST_CPU=$(HOST_CPU) PIE=1 \
 tg5040: tg5040-core tg5040-ui tg5040-audio tg5040-input tg5040-rsp
 
 tg5040-core: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-core/projects/unix && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
 
 tg5040-ui: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)" COREDIR="./" PLUGINDIR="./"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)" COREDIR="./" PLUGINDIR="./"'
 
 tg5040-audio: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
 
 tg5040-input: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
 
 tg5040-rsp: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
 
 # ── TG5050 build ──────────────────────────────────────────────────────────────
 
@@ -276,6 +278,29 @@ my355-input: $(PATCH_STAMP)
 my355-rsp: $(PATCH_STAMP)
 	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
 
+# ── H700 build ───────────────────────────────────────────────────────────────
+# Same cross compiler and sysroot as tg5040, so no libpng workaround is needed.
+# docker-env.sh points SDL at the toolchain's patched /opt/nextui build.
+
+.PHONY: h700 h700-core h700-ui h700-audio h700-input h700-rsp
+
+h700: h700-core h700-ui h700-audio h700-input h700-rsp
+
+h700-core: $(PATCH_STAMP)
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="-O3 $(H700_CPUFLAGS)"'
+
+h700-ui: $(PATCH_STAMP)
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)" COREDIR="./" PLUGINDIR="./"'
+
+h700-audio: $(PATCH_STAMP)
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)"'
+
+h700-input: $(PATCH_STAMP)
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)"'
+
+h700-rsp: $(PATCH_STAMP)
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)"'
+
 # ── GLideN64 (shared — built with tg5040 toolchain) ──────────────────────────
 
 .PHONY: gliden64
@@ -292,7 +317,7 @@ gliden64: $(PATCH_STAMP)
 
 # ── Rice video plugin (built per-platform toolchain) ─────────────────────────
 
-.PHONY: rice-tg5040 rice-tg5050 rice-my355
+.PHONY: rice-tg5040 rice-tg5050 rice-my355 rice-h700
 
 rice-tg5040: $(PATCH_STAMP)
 	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)" USE_GLES=1'
@@ -302,6 +327,9 @@ rice-tg5050: $(PATCH_STAMP) tg5050-libpng-headers
 
 rice-my355: $(PATCH_STAMP) my355-libpng
 	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)" USE_GLES=1 CPPFLAGS="-I/build/include" LIBPNG_CFLAGS="-I/build/src/libpng-build/libpng-1.6.37" LIBPNG_LDLIBS="/build/src/libpng-build/libpng-1.6.37/.libs/libpng16.a -lz"'
+
+rice-h700: $(PATCH_STAMP)
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)" USE_GLES=1'
 
 # ── INI CLI tool (pure C, no SDK dependencies) ──────────────────────────────
 
@@ -319,6 +347,11 @@ ini-my355:
 	$(DOCKER_RUN_MY355) bash -c 'cd /build/tools/ini && make clean all CROSS_COMPILE=$(CROSS)'
 	mkdir -p $(ROOT)/tools/ini/dist/my355
 	cp $(ROOT)/tools/ini/build/ini $(ROOT)/tools/ini/dist/my355/ini
+
+ini-h700:
+	$(DOCKER_RUN_H700) bash -c 'cd /build/tools/ini && make clean all CROSS_COMPILE=$(CROSS)'
+	mkdir -p $(ROOT)/tools/ini/dist/h700
+	cp $(ROOT)/tools/ini/build/ini $(ROOT)/tools/ini/dist/h700/ini
 
 # ── Platform artifact staging ────────────────────────────────────────────────
 
@@ -342,9 +375,12 @@ stage-tg5050: tg5050 rice-tg5050 ini-tg5050
 stage-my355: my355 rice-my355 ini-my355
 	$(call STAGE_PLATFORM,my355)
 
+stage-h700: h700 rice-h700 ini-h700
+	$(call STAGE_PLATFORM,h700)
+
 # ── Dist assembly ─────────────────────────────────────────────────────────────
 
-.PHONY: dist dist-tg5040 dist-tg5050 dist-my355
+.PHONY: dist dist-tg5040 dist-tg5050 dist-my355 dist-h700
 
 # Shared data/config files copied into each platform dir
 define DIST_COMMON
@@ -364,12 +400,14 @@ dist:
 	$(MAKE) dist-tg5040
 	$(MAKE) dist-tg5050
 	$(MAKE) dist-my355
+	$(MAKE) dist-h700
 	@echo "=== dist/N64.pak/ assembled ==="
 	@find $(DIST) -type f | sort
 
 dist-tg5040: stage-tg5040 gliden64
 	mkdir -p $(DIST)/tg5040
 	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
+	cp $(CONFIG)/shared/platform.sh $(DIST)/platform.sh
 	cp $(BUILD)/tg5040/libmupen64plus.so.2 $(DIST)/tg5040/
 	cp $(BUILD)/tg5040/mupen64plus $(DIST)/tg5040/
 	cp $(BUILD)/tg5040/mupen64plus-audio-sdl.so $(DIST)/tg5040/
@@ -378,12 +416,17 @@ dist-tg5040: stage-tg5040 gliden64
 	cp $(BUILD)/tg5040/mupen64plus-video-rice.so $(DIST)/tg5040/
 	$(call DIST_COMMON,$(DIST)/tg5040)
 	cp $(BUILD)/tg5040/ini $(DIST)/tg5040/
-	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5040/libpng16.so.16
+	@# The tg5040 sysroot carries libpng12, so that is what the core and Rice link
+	@# against. The libpng16 shipped here previously was never loaded.
+	$(DOCKER_RUN_TG5040) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng12.so.0.56.0 /build/dist/N64.pak/tg5040/libpng12.so.0
+	@# libmupen64plus links libz.so.1; ship the tg5050 sysroot's 1.2.12 rather than
+	@# the 1.2.8 in this one.
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/tg5040/libz.so.1
 
 dist-tg5050: stage-tg5050 gliden64
 	mkdir -p $(DIST)/tg5050
 	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
+	cp $(CONFIG)/shared/platform.sh $(DIST)/platform.sh
 	cp $(BUILD)/tg5050/libmupen64plus.so.2 $(DIST)/tg5050/
 	cp $(BUILD)/tg5050/mupen64plus $(DIST)/tg5050/
 	cp $(BUILD)/tg5050/mupen64plus-audio-sdl.so $(DIST)/tg5050/
@@ -398,6 +441,7 @@ dist-tg5050: stage-tg5050 gliden64
 dist-my355: stage-my355 gliden64
 	mkdir -p $(DIST)/my355
 	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
+	cp $(CONFIG)/shared/platform.sh $(DIST)/platform.sh
 	cp $(BUILD)/my355/libmupen64plus.so.2 $(DIST)/my355/
 	cp $(BUILD)/my355/mupen64plus $(DIST)/my355/
 	cp $(BUILD)/my355/mupen64plus-audio-sdl.so $(DIST)/my355/
@@ -407,6 +451,27 @@ dist-my355: stage-my355 gliden64
 	$(call DIST_COMMON,$(DIST)/my355)
 	cp $(BUILD)/my355/ini $(DIST)/my355/
 	$(DOCKER_RUN_MY355) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.3.1 /build/dist/N64.pak/my355/libz.so.1
+
+dist-h700: stage-h700 gliden64
+	mkdir -p $(DIST)/h700
+	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
+	cp $(CONFIG)/shared/platform.sh $(DIST)/platform.sh
+	cp $(BUILD)/h700/libmupen64plus.so.2 $(DIST)/h700/
+	cp $(BUILD)/h700/mupen64plus $(DIST)/h700/
+	cp $(BUILD)/h700/mupen64plus-audio-sdl.so $(DIST)/h700/
+	cp $(BUILD)/h700/mupen64plus-input-sdl.so $(DIST)/h700/
+	cp $(BUILD)/h700/mupen64plus-rsp-hle.so $(DIST)/h700/
+	cp $(BUILD)/h700/mupen64plus-video-rice.so $(DIST)/h700/
+	$(call DIST_COMMON,$(DIST)/h700)
+	cp $(BUILD)/h700/ini $(DIST)/h700/
+	@# The h700 sysroot carries libpng12, so that is what the core and Rice link
+	@# against. Bundle it: the H700 stock OS only ships a 32-bit libpng12 under
+	@# /mnt/vendor/lib, and relying on NextUI to supply the 64-bit one would make
+	@# the pak depend on which NextUI build the user installed.
+	$(DOCKER_RUN_H700) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng12.so.0.56.0 /build/dist/N64.pak/h700/libpng12.so.0
+	@# libpng12 wants libz.so.1; the h700 sysroot has 1.2.8, so take the newer
+	@# tg5050 copy as the other platforms do.
+	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/h700/libz.so.1
 
 # ── Release ──────────────────────────────────────────────────────────────────
 
@@ -424,6 +489,12 @@ push: release
 	rm -rf "dist/$(PAK_NAME).pak"
 	cd dist && unzip "$(PAK_NAME).pak.zip" -d "$(PAK_NAME).pak"
 	adb push "dist/$(PAK_NAME).pak/." "$(PUSH_SDCARD_PATH)/$(PAK_FOLDER)/$(PUSH_PLATFORM)/$(PAK_NAME).pak"
+
+# ── Introspection ────────────────────────────────────────────────────────────
+# Print the value of any make variable, e.g. `make print-H700_IMAGE`.
+# Used by tests/makefile.bats to assert the per-platform build wiring.
+print-%:
+	@echo '$*=$($*)'
 
 # ── Regenerate patches from current source trees ─────────────────────────────
 

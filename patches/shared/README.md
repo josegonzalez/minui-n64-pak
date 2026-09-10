@@ -34,7 +34,7 @@ Empty placeholder — pulled from the nx-redux build system at `make clone` time
 
 **Target**: `src/mupen64plus-input-sdl/` (upstream tag 2.6.0)
 
-Brick-specific input remapping, gated on `$DEVICE=brick` at runtime (Smart Pro and Smart Pro S are unaffected):
+Brick-specific input remapping, gated on `$DEVICE=brick` at runtime (every other device, Brick Pro included, is unaffected):
 
 1. **Per-game d-pad ↔ joystick mode**: reads the per-game config file at `$EMU_INPUT_MODE_FILE` (managed by `emu_frontend.c` in the overlay) on every `GetKeys()` call via `stat()` mtime caching. When the file contains `input_mode=joystick`, the physical d-pad (SDL hat 0) is routed through the N64 analog stick (`X_AXIS`/`Y_AXIS` set to ±80) and the N64 d-pad bits are cleared. When `input_mode=dpad` (or file missing), the default hat→d-pad config mapping is left intact. This lets the user toggle d-pad vs joystick mode live via the overlay menu or a shortcut, with the input plugin picking up changes within a single frame.
 

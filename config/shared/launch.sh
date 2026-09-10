@@ -14,116 +14,91 @@ ROM_BASE="$(basename "$ROM")"
 
 mkdir -p "$SAVES_PATH/$EMU_TAG"
 
+# ── Platform / device profile ────────────────────────────────────────────────
+# Every per-platform and per-device fact lives in platform.sh so it can be unit
+# tested without a device; everything below reads the PROFILE_* variables it sets.
+. "$PAK_DIR/platform.sh"
+n64_platform_profile "$PLATFORM" "$DEVICE"
+
+# Resolve the GPU devfreq governor node. Some platforms name that directory after
+# the SoC's GPU node, so the profile is allowed to hand back a glob.
+GPU_GOVERNOR=""
+GPU_DEVFREQ_DIR=""
+for candidate in $PROFILE_GPU_GOVERNOR_GLOB; do
+    if [ -w "$candidate" ]; then
+        GPU_GOVERNOR="$candidate"
+        GPU_DEVFREQ_DIR="$(dirname "$candidate")"
+        break
+    fi
+done
+
 # ── Save original system settings (restored on exit) ─────────────────────────
 ORIG_SPEAKER_MUTE=$(cat /sys/class/speaker/mute 2>/dev/null)
 ORIG_VFS_CACHE=$(cat /proc/sys/vm/vfs_cache_pressure 2>/dev/null)
-case "$PLATFORM" in
-    tg5040)
-        ORIG_CPU1=$(cat /sys/devices/system/cpu/cpu1/online 2>/dev/null)
-        ORIG_CPU2=$(cat /sys/devices/system/cpu/cpu2/online 2>/dev/null)
-        ORIG_CPU3=$(cat /sys/devices/system/cpu/cpu3/online 2>/dev/null)
-        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)
-        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null)
-        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null)
-        ;;
-    tg5050)
-        ORIG_CPU5=$(cat /sys/devices/system/cpu/cpu5/online 2>/dev/null)
-        ORIG_GPU_GOV=$(cat /sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null)
-        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_governor 2>/dev/null)
-        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null)
-        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null)
-        ;;
-    my355)
-        ORIG_CPU1=$(cat /sys/devices/system/cpu/cpu1/online 2>/dev/null)
-        ORIG_CPU2=$(cat /sys/devices/system/cpu/cpu2/online 2>/dev/null)
-        ORIG_CPU3=$(cat /sys/devices/system/cpu/cpu3/online 2>/dev/null)
-        ORIG_GPU_GOV=$(cat /sys/class/devfreq/fde60000.gpu/governor 2>/dev/null)
-        ORIG_CPU_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)
-        ORIG_CPU_MIN=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null)
-        ORIG_CPU_MAX=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null)
-        ;;
-esac
+# CPU online state is stored as "<cpu>:<0|1>" pairs so the restore below can put
+# each core back exactly as it was found.
+ORIG_CPU_ONLINE=""
+for cpu in $PROFILE_ONLINE_CPUS; do
+    ORIG_CPU_ONLINE="$ORIG_CPU_ONLINE $cpu:$(cat /sys/devices/system/cpu/cpu$cpu/online 2>/dev/null)"
+done
+ORIG_CPU_GOV=$(cat "$PROFILE_CPUFREQ_PATH/scaling_governor" 2>/dev/null)
+ORIG_CPU_MIN=$(cat "$PROFILE_CPUFREQ_PATH/scaling_min_freq" 2>/dev/null)
+ORIG_CPU_MAX=$(cat "$PROFILE_CPUFREQ_PATH/scaling_max_freq" 2>/dev/null)
+ORIG_GPU_GOV=""
+ORIG_GPU_MIN=""
+if [ -n "$GPU_GOVERNOR" ]; then
+    ORIG_GPU_GOV=$(cat "$GPU_GOVERNOR" 2>/dev/null)
+    ORIG_GPU_MIN=$(cat "$GPU_DEVFREQ_DIR/min_freq" 2>/dev/null)
+fi
 
-# ── CPU / GPU setup (platform-specific) ──────────────────────────────────────
+# ── CPU / GPU setup (from the platform profile) ──────────────────────────────
 # CPU governor and frequency may be changed at runtime by the emulator (overlay
 # menu CPU Mode). Original values are saved above and restored on exit.
-case "$PLATFORM" in
-    tg5040)
-        # Bring all cores online (single cluster: cpu0-3 Cortex-A53)
-        echo 1 >/sys/devices/system/cpu/cpu1/online 2>/dev/null
-        echo 1 >/sys/devices/system/cpu/cpu2/online 2>/dev/null
-        echo 1 >/sys/devices/system/cpu/cpu3/online 2>/dev/null
-        ;;
-    tg5050)
-        # Bring BIG core online (cpu4-5 Cortex-A55)
-        echo 1 >/sys/devices/system/cpu/cpu5/online 2>/dev/null
-        # GPU: lock to performance for GLideN64 rendering
-        echo performance >/sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null
-        ;;
-    my355)
-        # Bring all cores online (single cluster: cpu0-3 Cortex-A55)
-        echo 1 >/sys/devices/system/cpu/cpu1/online 2>/dev/null
-        echo 1 >/sys/devices/system/cpu/cpu2/online 2>/dev/null
-        echo 1 >/sys/devices/system/cpu/cpu3/online 2>/dev/null
-        # GPU: lock to performance for GLideN64 rendering
-        echo performance >/sys/class/devfreq/fde60000.gpu/governor 2>/dev/null
-        ;;
-esac
+for cpu in $PROFILE_ONLINE_CPUS; do
+    echo 1 >/sys/devices/system/cpu/cpu$cpu/online 2>/dev/null
+done
+# GPU: lock to performance for GLideN64 rendering. Where the devfreq node has no
+# performance governor, pin its floor to the top available frequency instead.
+if [ -n "$GPU_GOVERNOR" ]; then
+    if ! echo performance >"$GPU_GOVERNOR" 2>/dev/null; then
+        GPU_TOP_FREQ=$(tr ' ' '\n' <"$GPU_DEVFREQ_DIR/available_frequencies" 2>/dev/null | grep -v '^$' | sort -n | tail -1)
+        [ -n "$GPU_TOP_FREQ" ] && echo "$GPU_TOP_FREQ" >"$GPU_DEVFREQ_DIR/min_freq" 2>/dev/null
+    fi
+fi
 
 # ── Memory management: swap + VM tuning for hi-res texture loading ────────────
-SWAPFILE="/mnt/UDISK/n64_swap"
-if [ ! -f "$SWAPFILE" ]; then
-    dd if=/dev/zero of="$SWAPFILE" bs=1M count=512 2>/dev/null
-    mkswap "$SWAPFILE" 2>/dev/null
+# Platforms with no writable non-FAT partition report an empty swapfile path and
+# skip swap entirely.
+if [ -n "$PROFILE_SWAPFILE" ]; then
+    if [ ! -f "$PROFILE_SWAPFILE" ]; then
+        dd if=/dev/zero of="$PROFILE_SWAPFILE" bs=1M count=512 2>/dev/null
+        mkswap "$PROFILE_SWAPFILE" 2>/dev/null
+    fi
+    swapon "$PROFILE_SWAPFILE" 2>/dev/null
 fi
-swapon "$SWAPFILE" 2>/dev/null
 echo 200 >/proc/sys/vm/vfs_cache_pressure 2>/dev/null
 sync
 echo 3 >/proc/sys/vm/drop_caches 2>/dev/null
 
 # ── User data and device-specific config ─────────────────────────────────────
 # Config lives under per-platform userdata (NextUI canonical — `minarch.c`
-# uses `$USERDATA_PATH/<tag>-<name>/`). The tg5040 toolchain is shared between
-# the Brick and Smart Pro variants, so those two need a suffix within the
-# tg5040 platform dir. tg5050 has no variants.
+# uses `$USERDATA_PATH/<tag>-<name>/`). Platforms whose toolchain covers several
+# devices need a per-device suffix within the platform dir; the profile supplies
+# it. tg5050 and my355 have no variants.
 USERDATA_DIR="$USERDATA_PATH/$EMU_TAG-mupen64plus"
 # Migrate from the legacy shared-userdata path if present. This moves the
 # user's mupen64plus.cfg, .initialized marker, per-game/ overrides, and
 # anything else into the new per-platform location. Kept for one release;
 # can be removed afterwards.
 LEGACY_USERDATA_DIR="$SHARED_USERDATA_PATH/N64-mupen64plus"
-case "$PLATFORM" in
-    tg5040)
-        if [ "$DEVICE" = "brick" ]; then
-            DEVICE_CONFIG_DIR="$USERDATA_DIR/brick"
-            DEVICE_RESOLUTION="1024x768"
-            LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5040-brick"
-        elif [ "$DEVICE" = "brickpro" ]; then
-            DEVICE_CONFIG_DIR="$USERDATA_DIR/brick-pro"
-            DEVICE_RESOLUTION="1024x768"
-            LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5040-brick-pro"
-        else
-            DEVICE_CONFIG_DIR="$USERDATA_DIR/smart-pro"
-            DEVICE_RESOLUTION="1280x720"
-            LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5040-smart-pro"
-        fi
-        DEVICE_ANISOTROPY=0
-        ;;
-    tg5050)
-        DEVICE_CONFIG_DIR="$USERDATA_DIR"
-        DEVICE_RESOLUTION="1280x720"
-        # Anisotropic filtering: sharpens textures viewed at oblique angles.
-        # Mali-G57 (tg5050) can handle level 2; PowerVR GE8300 (tg5040) cannot.
-        DEVICE_ANISOTROPY=2
-        LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/tg5050"
-        ;;
-    my355)
-        DEVICE_CONFIG_DIR="$USERDATA_DIR"
-        DEVICE_RESOLUTION="640x480"
-        DEVICE_ANISOTROPY=2  # Mali-G52 handles level 2 anisotropy smoothly
-        LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/my355"
-        ;;
-esac
+# Platforms whose toolchain covers several devices (tg5040, h700) get a per-device
+# subdirectory; single-variant platforms use the userdata dir as-is.
+DEVICE_CONFIG_DIR="$USERDATA_DIR${PROFILE_CONFIG_SUBDIR:+/$PROFILE_CONFIG_SUBDIR}"
+DEVICE_RESOLUTION="$PROFILE_RESOLUTION"
+# Anisotropic filtering: sharpens textures viewed at oblique angles. Weaker GPUs
+# get 0; platform.sh carries the per-device reasoning.
+DEVICE_ANISOTROPY="$PROFILE_ANISOTROPY"
+LEGACY_CONFIG_DIR="$LEGACY_USERDATA_DIR/config/$PROFILE_LEGACY_SUBDIR"
 MIGRATION_STAMP="$DEVICE_CONFIG_DIR/.migrated-from-shared"
 if [ -d "$LEGACY_CONFIG_DIR" ] && [ ! -f "$MIGRATION_STAMP" ]; then
     mkdir -p "$DEVICE_CONFIG_DIR"
@@ -209,8 +184,12 @@ export HOME="$USERDATA_PATH"
 export XDG_DATA_HOME="$DEVICE_CONFIG_DIR"
 # LD_LIBRARY_PATH and LD_PRELOAD are scoped to the mupen64plus invocation
 # below to avoid affecting sleepmon.elf, syncsettings.elf, and taskset.
-M64P_LD_LIBRARY_PATH="$BIN_DIR:$SDCARD_PATH/.system/$PLATFORM/lib:/usr/trimui/lib:$LD_LIBRARY_PATH"
-M64P_LD_PRELOAD="libEGL.so"
+M64P_LD_LIBRARY_PATH="$BIN_DIR:$SDCARD_PATH/.system/$PLATFORM/lib"
+for dir in $PROFILE_LD_EXTRA_DIRS; do
+    M64P_LD_LIBRARY_PATH="$M64P_LD_LIBRARY_PATH:$dir"
+done
+M64P_LD_LIBRARY_PATH="$M64P_LD_LIBRARY_PATH:$LD_LIBRARY_PATH"
+M64P_LD_PRELOAD="$PROFILE_LD_PRELOAD"
 # Relative ROM path for auto_resume.txt (strip /mnt/SDCARD prefix)
 export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
 # Pass resume slot to emulator if game switcher requested it
@@ -391,27 +370,10 @@ env LD_LIBRARY_PATH="$M64P_LD_LIBRARY_PATH" LD_PRELOAD="$M64P_LD_PRELOAD" \
 EMU_PID=$!
 sleep 4
 
-# ── Thread pinning (platform-specific CPU topology) ──────────────────────────
-case "$PLATFORM" in
-    tg5040)
-        # cpu0-3 are all Cortex-A53 @ 2000 MHz
-        MAIN_MASK=1     # cpu0
-        HELPER_MASK=0xc # cpu2-3
-        VIDEO_MASK=2    # cpu1
-        ;;
-    tg5050)
-        # big.LITTLE: cpu4-5 BIG (A55), cpu0-1 LITTLE
-        MAIN_MASK=0x10  # cpu4
-        HELPER_MASK=0x3 # cpu0-1
-        VIDEO_MASK=0x20 # cpu5
-        ;;
-    my355)
-        # cpu0-3 are all symmetric Cortex-A55 cores
-        MAIN_MASK=1     # cpu0
-        HELPER_MASK=0xc # cpu2-3
-        VIDEO_MASK=2    # cpu1
-        ;;
-esac
+# ── Thread pinning (CPU topology from the platform profile) ──────────────────
+MAIN_MASK="$PROFILE_MAIN_MASK"
+HELPER_MASK="$PROFILE_HELPER_MASK"
+VIDEO_MASK="$PROFILE_VIDEO_MASK"
 
 taskset -p $MAIN_MASK "$EMU_PID" 2>/dev/null
 
@@ -457,34 +419,25 @@ rm -f /tmp/trimui_inputd/input_dpad_to_joystick
 rm -f /tmp/trimui_inputd/input_no_dpad
 
 # Restore CPU online state, CPU governor/frequency, and GPU governor
-case "$PLATFORM" in
-    tg5040)
-        [ -n "$ORIG_CPU3" ] && echo "$ORIG_CPU3" >/sys/devices/system/cpu/cpu3/online 2>/dev/null
-        [ -n "$ORIG_CPU2" ] && echo "$ORIG_CPU2" >/sys/devices/system/cpu/cpu2/online 2>/dev/null
-        [ -n "$ORIG_CPU1" ] && echo "$ORIG_CPU1" >/sys/devices/system/cpu/cpu1/online 2>/dev/null
-        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
-        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null
-        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null
-        ;;
-    tg5050)
-        [ -n "$ORIG_GPU_GOV" ] && echo "$ORIG_GPU_GOV" >/sys/devices/platform/soc@3000000/1800000.gpu/devfreq/1800000.gpu/governor 2>/dev/null
-        [ -n "$ORIG_CPU5" ] && echo "$ORIG_CPU5" >/sys/devices/system/cpu/cpu5/online 2>/dev/null
-        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor 2>/dev/null
-        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq 2>/dev/null
-        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq 2>/dev/null
-        ;;
-    my355)
-        [ -n "$ORIG_GPU_GOV" ] && echo "$ORIG_GPU_GOV" >/sys/class/devfreq/fde60000.gpu/governor 2>/dev/null
-        [ -n "$ORIG_CPU3" ] && echo "$ORIG_CPU3" >/sys/devices/system/cpu/cpu3/online 2>/dev/null
-        [ -n "$ORIG_CPU2" ] && echo "$ORIG_CPU2" >/sys/devices/system/cpu/cpu2/online 2>/dev/null
-        [ -n "$ORIG_CPU1" ] && echo "$ORIG_CPU1" >/sys/devices/system/cpu/cpu1/online 2>/dev/null
-        [ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
-        [ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null
-        [ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null
-        ;;
-esac
+if [ -n "$GPU_GOVERNOR" ]; then
+    [ -n "$ORIG_GPU_GOV" ] && echo "$ORIG_GPU_GOV" >"$GPU_GOVERNOR" 2>/dev/null
+    [ -n "$ORIG_GPU_MIN" ] && echo "$ORIG_GPU_MIN" >"$GPU_DEVFREQ_DIR/min_freq" 2>/dev/null
+fi
+# Walk the cores back in reverse so the highest-numbered one goes offline first.
+REVERSED_CPU_ONLINE=""
+for pair in $ORIG_CPU_ONLINE; do
+    REVERSED_CPU_ONLINE="$pair $REVERSED_CPU_ONLINE"
+done
+for pair in $REVERSED_CPU_ONLINE; do
+    cpu="${pair%%:*}"
+    cpu_state="${pair#*:}"
+    [ -n "$cpu_state" ] && echo "$cpu_state" >/sys/devices/system/cpu/cpu$cpu/online 2>/dev/null
+done
+[ -n "$ORIG_CPU_GOV" ] && echo "$ORIG_CPU_GOV" >"$PROFILE_CPUFREQ_PATH/scaling_governor" 2>/dev/null
+[ -n "$ORIG_CPU_MIN" ] && echo "$ORIG_CPU_MIN" >"$PROFILE_CPUFREQ_PATH/scaling_min_freq" 2>/dev/null
+[ -n "$ORIG_CPU_MAX" ] && echo "$ORIG_CPU_MAX" >"$PROFILE_CPUFREQ_PATH/scaling_max_freq" 2>/dev/null
 
 # Restore speaker, swap, VM settings
 [ -n "$ORIG_SPEAKER_MUTE" ] && echo "$ORIG_SPEAKER_MUTE" >/sys/class/speaker/mute 2>/dev/null
-swapoff "$SWAPFILE" 2>/dev/null
+[ -n "$PROFILE_SWAPFILE" ] && swapoff "$PROFILE_SWAPFILE" 2>/dev/null
 [ -n "$ORIG_VFS_CACHE" ] && echo "$ORIG_VFS_CACHE" >/proc/sys/vm/vfs_cache_pressure 2>/dev/null
