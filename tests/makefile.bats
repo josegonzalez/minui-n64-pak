@@ -94,19 +94,42 @@ mk() { # <VAR>
     [ "$status" -eq 0 ]
 }
 
+# Run docker-env.sh outside a container with a stubbed pkg-config, so the SDL
+# selection can be exercised on a host that has no cross toolchain and no SDL2.
+run_docker_env() { # <UNION_PLATFORM> <PREFIX_LOCAL>
+    stub_dir="$BATS_TEST_TMPDIR/stub"
+    mkdir -p "$stub_dir"
+    printf '#!/bin/sh\necho "stub-pkg-config $*"\n' > "$stub_dir/pkg-config"
+    chmod +x "$stub_dir/pkg-config"
+
+    run env UNION_PLATFORM="$1" PREFIX_LOCAL="$2" PATH="$stub_dir:$PATH" \
+        bash "$REPO_ROOT/scripts/docker-env.sh" true
+}
+
 # The h700 binaries have to link the patched SDL2 NextUI installs on the device.
 # Falling back to the TrimUI SDK copy still builds, so the helper must refuse.
 @test "the env helper refuses to build h700 against the sysroot SDL2" {
-    run env -i PATH="$PATH" HOME="$HOME" UNION_PLATFORM=h700 PREFIX_LOCAL=/nonexistent         bash "$REPO_ROOT/scripts/docker-env.sh" true
+    run_docker_env h700 "$BATS_TEST_TMPDIR/absent"
     [ "$status" -ne 0 ]
     [[ "$output" == *"missing the patched SDL2"* ]]
 }
 
 @test "the env helper still falls back to the sysroot on the other platforms" {
     for platform in tg5040 tg5050 my355; do
-        run env -i PATH="$PATH" HOME="$HOME" UNION_PLATFORM="$platform" PREFIX_LOCAL=/nonexistent             bash "$REPO_ROOT/scripts/docker-env.sh" true
+        run_docker_env "$platform" "$BATS_TEST_TMPDIR/absent"
+        [ "$status" -eq 0 ]
         [[ "$output" == *"SDL2 from sysroot"* ]]
     done
+}
+
+@test "the env helper takes the toolchain SDL2 when the pkgconfig file is there" {
+    prefix_local="$BATS_TEST_TMPDIR/nextui"
+    mkdir -p "$prefix_local/lib/pkgconfig"
+    touch "$prefix_local/lib/pkgconfig/sdl2.pc"
+
+    run_docker_env h700 "$prefix_local"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SDL2 from PREFIX_LOCAL"* ]]
 }
 
 # ── the pak ships the launcher and its profile helper ───────────────────────
