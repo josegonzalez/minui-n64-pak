@@ -57,46 +57,47 @@ static int s_prevAxisY = 0;
 // ---------------------------------------------------------------------------
 
 static void apply_cpu_mode(int mode) {
-	// Detect platform: try tg5050 cpu4 path first, fall back to tg5040 cpu0
-	const char* cpu_path = "/sys/devices/system/cpu/cpu4/cpufreq";
-	FILE* f = fopen("/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor", "r");
-	int is_tg5050 = (f != NULL);
-	if (f) fclose(f);
-	if (!is_tg5050) cpu_path = "/sys/devices/system/cpu/cpu0/cpufreq";
+	const char* platform = getenv("PLATFORM");
+	const char* cpu_path;
+	int powersave_freq;
+	int ondemand_min, ondemand_max;
+	int performance_min, performance_max;
 
-	// Auto (3) = Performance for N64 (CPU demands are high enough)
-	if (mode == 3) mode = 2;
-
-	char path[256];
-	if (mode == 0) { // Powersave
-		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
-		f = fopen(path, "w"); if (f) { fprintf(f, "powersave"); fclose(f); }
-		snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
-		f = fopen(path, "w"); if (f) { fprintf(f, "408000"); fclose(f); }
-		snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
-		f = fopen(path, "w"); if (f) { fprintf(f, "408000"); fclose(f); }
-	} else if (mode == 1) { // Ondemand
-		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
-		f = fopen(path, "w"); if (f) { fprintf(f, "ondemand"); fclose(f); }
-		snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
-		f = fopen(path, "w"); if (f) { fprintf(f, "1200000"); fclose(f); }
-		snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
-		f = fopen(path, "w"); if (f) { fprintf(f, "1800000"); fclose(f); }
-	} else { // Performance (2) or Auto (3, remapped above)
-		snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
-		f = fopen(path, "w"); if (f) { fprintf(f, "performance"); fclose(f); }
-		if (is_tg5050) {
-			snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
-			f = fopen(path, "w"); if (f) { fprintf(f, "1992000"); fclose(f); }
-			snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
-			f = fopen(path, "w"); if (f) { fprintf(f, "2160000"); fclose(f); }
-		} else {
-			snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
-			f = fopen(path, "w"); if (f) { fprintf(f, "1608000"); fclose(f); }
-			snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
-			f = fopen(path, "w"); if (f) { fprintf(f, "2000000"); fclose(f); }
-		}
+	if (platform && strcmp(platform, "tg5050") == 0) {
+		cpu_path = "/sys/devices/system/cpu/cpu4/cpufreq";
+		powersave_freq = 408000;
+		ondemand_min = 1200000, ondemand_max = 1800000;
+		performance_min = 1992000, performance_max = 2160000;
+	} else if (platform && strcmp(platform, "my355") == 0) {
+		cpu_path = "/sys/devices/system/cpu/cpu0/cpufreq";
+		powersave_freq = 408000;
+		ondemand_min = 1200000, ondemand_max = 1608000;
+		performance_min = 1800000, performance_max = 1992000;
+	} else { // tg5040
+		cpu_path = "/sys/devices/system/cpu/cpu0/cpufreq";
+		powersave_freq = 408000;
+		ondemand_min = 1104000, ondemand_max = 1800000;
+		performance_min = 1608000, performance_max = 2000000;
 	}
+
+	// Auto (3) = Performance for N64 (CPU demands are high enough).
+	if (mode == 3)
+		mode = 2;
+	if (mode < 0 || mode > 2)
+		return;
+
+	const char* governor = mode == 0 ? "powersave" : mode == 1 ? "ondemand" : "performance";
+	int min_freq = mode == 0 ? powersave_freq : mode == 1 ? ondemand_min : performance_min;
+	int max_freq = mode == 0 ? powersave_freq : mode == 1 ? ondemand_max : performance_max;
+	char path[256];
+	FILE* f;
+
+	snprintf(path, sizeof(path), "%s/scaling_governor", cpu_path);
+	f = fopen(path, "w"); if (f) { fprintf(f, "%s", governor); fclose(f); }
+	snprintf(path, sizeof(path), "%s/scaling_min_freq", cpu_path);
+	f = fopen(path, "w"); if (f) { fprintf(f, "%d", min_freq); fclose(f); }
+	snprintf(path, sizeof(path), "%s/scaling_max_freq", cpu_path);
+	f = fopen(path, "w"); if (f) { fprintf(f, "%d", max_freq); fclose(f); }
 }
 
 static int find_cpu_mode_value(EmuOvlConfig* cfg) {

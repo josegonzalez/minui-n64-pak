@@ -3,6 +3,7 @@ src/
 
 # Build output
 dist/
+build/
 tools/ini/build/
 tools/ini/dist/
 
