@@ -1,17 +1,24 @@
-# N64 for TrimUI
+# N64 for MinUI
 
 A MinUI Emu Pak for N64, wrapping the standalone `mupen64plus` N64 emulator (version 2.6.0).
 
-![N64 for TrimUI](n64.png)
+![N64 for MinUI](n64.png)
 
 ## Requirements
 
-This pak is designed and tested on the following MinUI Platforms and devices:
+This pak supports the following MinUI Platforms and devices:
 
-- `tg5040`: TrimUI Brick (formerly `tg3040`) and TrimUI Smart Pro
+- `tg5040`: TrimUI Brick (formerly `tg3040`), TrimUI Brick Pro and TrimUI Smart Pro
 - `tg5050`: TrimUI Smart Pro S
+- `my355`: Miyoo Flip
+- `h700`: Anbernic RG28XX, RG34XX, RG34XXSP, RG35XX Plus, RG35XXH, RG35XXPro, RG35XXSP, RG40XXH, RG40XXV, RGcubeXX and RGSP, running [NextUI for H700](https://github.com/pvaibhav/NextUI)
 
 Use the correct platform for your device.
+
+The H700 devices are the slowest hardware this pak targets: a quad Cortex-A53 with a
+Mali-G31 MP1 and 1 GB of RAM on a 32-bit memory bus. Expect the Rice plugin and modest
+settings to be necessary, and avoid hi-res texture packs — unlike the other platforms
+there is no swapfile to fall back on.
 
 ## Installation
 
@@ -103,6 +110,13 @@ C-buttons are accessed by holding **R2** and pressing a face button:
 ### Controls (Smart Pro / Smart Pro S)
 
 Both analog sticks and the d-pad work natively — left stick controls the N64 analog, right stick controls C-buttons, and the d-pad maps to the N64 d-pad. No special configuration needed.
+
+### Controls (Brick Pro, Miyoo Flip and Anbernic H700)
+
+These use the stock mapping: the d-pad maps to the N64 d-pad, and where the device has a
+right analog stick it drives the C-buttons. The per-game Input Mode switch and the
+R2 + face button C-button combos described above are Brick-only. On a device without a
+right stick, bind C-buttons yourself under Options → Shortcuts.
 
 ### Shortcuts
 

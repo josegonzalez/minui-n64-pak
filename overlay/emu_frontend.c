@@ -73,6 +73,13 @@ static void apply_cpu_mode(int mode) {
 		powersave_freq = 408000;
 		ondemand_min = 1200000, ondemand_max = 1608000;
 		performance_min = 1800000, performance_max = 1992000;
+	} else if (platform && strcmp(platform, "h700") == 0) {
+		// Allwinner H700 steps at 480/720/936/1008/1104/1200/1320/1416/1512 MHz.
+		// 408 MHz is not in its OPP table, so powersave uses the real bottom step.
+		cpu_path = "/sys/devices/system/cpu/cpu0/cpufreq";
+		powersave_freq = 480000;
+		ondemand_min = 1008000, ondemand_max = 1512000;
+		performance_min = 1200000, performance_max = 1512000;
 	} else { // tg5040
 		cpu_path = "/sys/devices/system/cpu/cpu0/cpufreq";
 		powersave_freq = 408000;
