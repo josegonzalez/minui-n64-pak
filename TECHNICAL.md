@@ -1,6 +1,6 @@
-# trimui-mupen64plus
+# minui-mupen64plus
 
-Standalone mupen64plus built from upstream sources with custom overlay menu integration for TrimUI devices (tg5040 and tg5050).
+Standalone mupen64plus built from upstream sources with custom overlay menu integration for TrimUI (`tg5040`, `tg5050`), Miyoo (`my355`) and Anbernic H700 (`h700`) devices.
 
 ## Prerequisites
 
@@ -14,23 +14,32 @@ Standalone mupen64plus built from upstream sources with custom overlay menu inte
 make clean build dist
 ```
 
-This clones upstream repos, applies patches, builds for both platforms sequentially, and assembles `dist/N64.pak/`.
+This clones upstream repos, applies patches, builds each platform sequentially, and assembles `dist/N64.pak/`.
 
 ## Build targets
 
 | Target | Description |
 |--------|-------------|
-| `make build` | Clone, patch, build core + all plugins for both platforms |
-| `make all` | Assemble `dist/` for both platforms (assumes artifacts are already built) |
+| `make build` | Clone, patch, build core + all plugins for every platform |
+| `make all` | Assemble `dist/` for every platform (assumes artifacts are already built) |
 | `make clone` | Clone upstream repos into `src/` |
 | `make patch` | Apply patches from `patches/shared/` |
 | `make tg5040` | Build core + audio/input/rsp plugins for tg5040 |
 | `make tg5050` | Build core + audio/input/rsp plugins for tg5050 |
+| `make my355` | Build core + audio/input/rsp plugins for my355 |
+| `make h700` | Build core + audio/input/rsp plugins for h700 |
 | `make gliden64` | Build GLideN64 video plugin (shared across platforms) |
-| `make rice-tg5040` / `make rice-tg5050` | Build Rice video plugin per-toolchain |
+| `make rice-<platform>` | Build Rice video plugin per-toolchain |
+| `make ini-<platform>` | Cross-compile the `ini` CLI helper per-toolchain |
+| `make stage-<platform>` | Collect one platform's artifacts into `build/<platform>/` |
+| `make dist-<platform>` | Assemble `dist/N64.pak/<platform>/` |
+| `make print-<VAR>` | Print any make variable; used by `tests/makefile.bats` |
 | `make patches` | Regenerate `patches/shared/*.patch` from the current source trees |
 | `make dist` | Assemble `dist/N64.pak/` from current build outputs |
 | `make clean` | Remove `src/`, `dist/`, `include/`, and generated `mupen64plus-audio-sdl.patch` |
+
+Every platform has the same target family, so `<platform>` above is one of `tg5040`,
+`tg5050`, `my355` or `h700` — the same list `pak.json` declares.
 
 ### Building a single platform
 
@@ -39,6 +48,17 @@ make clone patch
 make tg5040
 make dist-tg5040
 ```
+
+## Tests
+
+Two suites, both host-only — no toolchain, no Docker, no cloned upstream tree:
+
+```sh
+make -C tools/ini test   # C unit tests for the ini CLI helper
+bats tests/              # shell tests
+```
+
+`tests/platform.bats` unit-tests `n64_platform_profile` (see [Platform profile](#platform-profile)) across every platform and device variant. `tests/makefile.bats` asserts the per-platform build wiring by introspecting the Makefile through `make print-<VAR>`; several of its cases walk `pak.json`'s platform list, so a platform added there without its build targets fails the suite. CI runs both on every pull request.
 
 ## Components
 
@@ -76,7 +96,7 @@ Slot screenshots are stored as BMP files at `$SHARED_USERDATA_PATH/.minui/N64/<r
 
 All paths are set via CLI flags or `--set` on the mupen64plus command line — `launch.sh` does not `sed` the config file for these.
 
-| Purpose | Mechanism | Path on Brick |
+| Purpose | Mechanism | Example path (Brick) |
 |---|---|---|
 | User config | `--configdir` | `.userdata/tg5040/N64-mupen64plus/brick/` |
 | Shared data (ROM DB, INI) | `--datadir` | `Emus/tg5040/N64.pak/tg5040/` |
@@ -87,12 +107,129 @@ All paths are set via CLI flags or `--set` on the mupen64plus command line — `
 | User cache (shaders, textures) | `--cachedir` (patched into ui-console) | `.userdata/tg5040/N64-mupen64plus/brick/cache/` |
 | User data | `XDG_DATA_HOME` env var | `.userdata/tg5040/N64-mupen64plus/brick/` |
 
+## Pad layout
+
+SDL button indices are not the same across platforms, and `default.cfg` can only hold one
+layout. It holds the TrimUI one; devices whose pad differs name a fragment in the platform
+profile, which `launch.sh` merges over the seeded config once per device using the bundled
+`ini merge`. The merge is additive, so a user's own rebinding survives it, and it runs on
+installs seeded before the fragment existed as well as fresh ones (stamped
+`.input-mapped-v1`).
+
+### Why h700 differs
+
+NextUI's h700 SDL2 enumerates a pad's buttons in ascending evdev keycode order. The Anbernic
+pad reports `ESC` (1) and the two volume keys (114/115) before the gamepad codes (304-316),
+so its gamepad buttons start at index 3. It is not a uniform shift — TrimUI has `A=1 B=0`
+swapped where h700 has `A=3 B=4` in order — and h700 has no analog triggers at all, so L2
+and R2 are plain buttons and `Z Trig` cannot be an axis there.
+
+The stick-click codes 313 (`BTN_TR2`, L3) and 316 (`BTN_MODE`, R3) only exist on a model
+that has the corresponding stick, and each one present shifts L2/R2 up, which is why there
+are three h700 classes rather than one:
+
+| evdev | label | no sticks | left stick only | both sticks |
+|---|---|---|---|---|
+| 304-311 | A, B, Y, X, L1, R1, Select, Start | 3-10 | 3-10 | 3-10 |
+| 312 `BTN_TL2` | Menu | 11 | 11 | 11 |
+| 313 `BTN_TR2` | L3 | — | 12 | 12 |
+| 314 `BTN_SELECT` | L2 | 12 | 13 | 13 |
+| 315 `BTN_START` | R2 | 13 | 14 | 14 |
+| 316 `BTN_MODE` | R3 | — | — | 15 |
+| 354 `KEY_GOTO` | Menu echo | 14 | 15 | 16 |
+
+The pad emits Menu twice, so `PROFILE_BTN_COUNT` stops one short of the echo. The d-pad is
+SDL hat 0; sticks are axes 0/1 (left) and 2/3 (right), negative being left and up.
+
+These indices were measured on hardware by the
+[nextui-portmaster-h700](https://github.com/Logarythms/nextui-portmaster-h700) project and
+corroborated by the `NextCommander-h700` patch in the NextUI h700 fork. That project records
+that deriving them from evtest keycodes instead of measuring produced a different, wrong
+table, so they should be re-measured with `jstest` rather than recomputed. The left-stick-only
+column is the one class no published measurement covers; it follows the same shift rule.
+
+### Stick presence per model
+
+From `workspace/h700/platform/platform.c` in the NextUI h700 fork. Its `settings.cpp` holds
+a second copy that is wrong about RG40XXV, so platform.c is the one to follow. Nothing
+exports these at runtime — `dev_has_lstick` is a plain global compiled into each NextUI
+binary — so `$DEVICE` is the supported hook, as `PAKS.md` documents, and the pak carries its
+own copy of the table.
+
+| Left + right | Left only | None |
+|---|---|---|
+| `rg35xxh`, `rg35xxpro`, `rg40xxh`, `rgcubexx`, `rg34xxsp` | `rg40xxv` | `rg28xx`, `rg34xx`, `rg35xxplus`, `rg35xxsp`, `rgsp` |
+
+### The overlay has its own input path
+
+The in-game mapping described above lives in `mupen64plus.cfg` and reaches the emulator
+through the input plugin. The overlay menu does not use any of it: `poll_overlay_input()`
+and `check_menu_button()` in `overlay/emu_frontend.c` read the pad directly with
+`SDL_JoystickGetButton`, because `SDL_PollEvent` is unreliable inside mupen64plus's threaded
+plugin context. So the overlay needs the layout separately, and it reads the same profile
+values `launch.sh` exports.
+
+That is why fixing the in-game mapping alone left the menu wrong on h700: the overlay was
+still using the TrimUI indices, where Menu is 8. On h700 button 8 is R1, so the menu opened
+on R1, and confirm and back landed on the pad's ESC and volume keys. The indices now come
+from `PROFILE_BTN_A`, `_B`, `_L1`, `_R1` and `_MENU`.
+
+Anything reading the pad directly has to go through the layout. Adding a new direct read
+with a literal index will work on TrimUI and silently misbehave on h700.
+
+### C-buttons without a right stick
+
+The Brick and the stickless h700 models reach the C-buttons by holding R2 and pressing a
+face button by position. That combo is data, not a special case: the overlay's config loader
+understands a `<key>_mod` suffix, writes the pair into `$EMU_BUTTON_MAP_FILE`, and the
+patched input plugin applies the modifier from there. A non-negative modifier is an SDL
+button index; a negative one is `-(axis index + 1)` for an analog shoulder, which is how the
+Brick's axis-5 R2 is expressed.
+
+This replaced a `$DEVICE=brick` block in the input-sdl patch that had stopped working: it
+set the C-button bits, and the button-map block that runs after it cleared every C-button
+bit and re-derived them from right-stick axes the Brick does not have. Fixing it also
+required correcting the axis-modifier test, which checked `|value| >= 24000` and so read a
+trigger resting at -32768 as permanently held.
+
+## Platform profile
+
+Every per-platform and per-device fact lives in one function, `n64_platform_profile` in `config/shared/platform.sh`, which `launch.sh` sources at startup and calls once with `$PLATFORM` and `$DEVICE`. It does no I/O — it reads only those two arguments plus `$SDL_VIDEO_EGL_DRIVER` — so it can be unit tested without a device.
+
+It sets the following, and everything downstream in `launch.sh` reads them rather than switching on the platform again:
+
+| Variable | Purpose |
+|---|---|
+| `PROFILE_CPUFREQ_PATH` | cpufreq directory to save, set and restore |
+| `PROFILE_ONLINE_CPUS` | CPU numbers to bring online |
+| `PROFILE_GPU_GOVERNOR_GLOB` | GPU devfreq governor path or glob; empty where the platform exposes none |
+| `PROFILE_RESOLUTION` | `WxH` passed to `--resolution` |
+| `PROFILE_ANISOTROPY` | device default for GLideN64 anisotropic filtering |
+| `PROFILE_CONFIG_SUBDIR` | per-device subdirectory under the userdata dir; empty on single-variant platforms |
+| `PROFILE_LEGACY_SUBDIR` | name under `$LEGACY_USERDATA_DIR/config/` for the migration block |
+| `PROFILE_MAIN_MASK` / `PROFILE_HELPER_MASK` / `PROFILE_VIDEO_MASK` | taskset masks |
+| `PROFILE_SWAPFILE` | swapfile path; empty skips swap entirely |
+| `PROFILE_LD_EXTRA_DIRS` | extra loader directories for the mupen64plus invocation |
+| `PROFILE_LD_PRELOAD` | EGL library to preload |
+| `PROFILE_HAS_LSTICK` / `PROFILE_HAS_RSTICK` | analog sticks the device carries |
+| `PROFILE_INPUT_CFG` | pad mapping to merge at first run; empty when default.cfg already fits |
+| `PROFILE_BTN_MENU` / `PROFILE_BTN_SELECT` | SDL button indices the overlay treats as shortcut modifiers |
+| `PROFILE_MOD_L2` / `PROFILE_MOD_R2` | shoulder modifiers, `aN` for an axis or `bN` for a button |
+| `PROFILE_BTN_COUNT` | how many buttons the overlay polls |
+
+`platform.sh` ships in the pak root next to `launch.sh`.
+
+### Swap
+
+`launch.sh` builds a 512 MB swapfile to back hi-res texture loading. It lives on `/mnt/UDISK` on the TrimUI and Miyoo devices. H700 has no equivalent: its SD card is FAT, which cannot host a swapfile, and its stock Ubuntu rootfs is too small to give up half a gigabyte. `PROFILE_SWAPFILE` is therefore empty on `h700` and the whole block is skipped.
+
 ## Dist layout
 
 ```
 dist/N64.pak/
 ├── launch.sh                          shared launch script (uses $PLATFORM)
-├── tg5040/                            TrimUI Brick / Smart Pro
+├── platform.sh                        per-platform/device profile sourced by launch.sh
+├── tg5040/                            TrimUI Brick / Brick Pro / Smart Pro
 │   ├── mupen64plus                     emulator binary
 │   ├── libmupen64plus.so.2             core library
 │   ├── mupen64plus-audio-sdl.so        audio plugin
@@ -106,13 +243,18 @@ dist/N64.pak/
 │   ├── RiceVideoLinux.ini              Rice per-ROM rendering hints
 │   ├── InputAutoCfg.ini                input auto-config
 │   ├── mupencheat.txt                  cheat codes
+│   ├── ini                             INI get/merge helper used by launch.sh
 │   ├── 7zzs                            7-Zip standalone (for .zip/.7z ROMs)
 │   ├── 7zzs.LICENSE                    7-Zip license
 │   ├── pak.json                        pak metadata
-│   ├── libpng16.so.16                  libpng runtime
-│   └── libz.so.1                       zlib runtime (libpng16 dep)
-└── tg5050/                            TrimUI Smart Pro S
-    └── (same files, built with tg5050 toolchain)
+│   ├── libpng12.so.0                   libpng runtime (see Bundled libpng)
+│   └── libz.so.1                       zlib runtime
+├── tg5050/                            TrimUI Smart Pro S
+│   └── (same files, built with tg5050 toolchain)
+├── my355/                             Miyoo Flip
+│   └── (same files, built with my355 toolchain; no libpng16, it is linked statically)
+└── h700/                              Anbernic H700 handhelds
+    └── (same files, built with h700 toolchain)
 ```
 
 ## Button mapping
@@ -132,6 +274,10 @@ dist/N64.pak/
 | R3 (right stick click) | — | — | Yes |
 | Power | Yes | Yes | Yes |
 
+Analog stick presence varies across the Brick Pro, the Miyoo Flip and the eleven H700
+models, and the pak branches on it through the platform profile. See
+[Pad layout](#pad-layout) below.
+
 ### N64 controller mapping
 
 | N64 Button | Smart Pro / Smart Pro S | Brick (no analog sticks) |
@@ -149,7 +295,7 @@ dist/N64.pak/
 | C-Right | Right analog right | R2 + A (right) |
 | D-Pad | D-pad (hat) | D-pad (see Input Mode below) |
 
-On Smart Pro and Smart Pro S both the left analog stick *and* the d-pad work independently and simultaneously — the config maps SDL axis 0/1 to the N64 analog and SDL hat 0 to the N64 d-pad, and the Brick-specific remap below is gated on `$DEVICE=brick` so it never touches those devices.
+On every device with a real left analog stick both that stick *and* the d-pad work independently and simultaneously — the config maps SDL axis 0/1 to the N64 analog and SDL hat 0 to the N64 d-pad, and the Brick-specific remap below is gated on `$DEVICE=brick` so it never touches them.
 
 ### Per-game input mode (Brick only)
 
@@ -158,13 +304,13 @@ Because the Brick has no analog stick, the physical d-pad has to stand in for on
 - **Joystick** (default for most games) — the physical d-pad routes through the N64 analog stick. The N64 d-pad is inactive.
 - **D-Pad** — the physical d-pad passes through as the N64 d-pad (the config-mapped hat). The N64 analog stick is inactive.
 
-Smart Pro and Smart Pro S both have a real left analog stick, so this remap is disabled on them — `emu_frontend.c` gates the d-pad remap on `$DEVICE=brick` via trimui_inputd flag files at `/tmp/trimui_inputd/`. The **Input → Input Mode** overlay menu item is still visible on those devices but toggling it is a no-op.
+Every other device is left alone — `emu_frontend.c` gates the d-pad remap on `$DEVICE=brick` via trimui_inputd flag files at `/tmp/trimui_inputd/`. The **Controls → Input Mode** overlay item is still visible elsewhere but toggling it is a no-op, because the swap happens in trimui_inputd rather than in the pak. Stickless H700 models therefore have no live d-pad↔joystick switch; they bind the d-pad to both the N64 analog stick and the N64 d-pad at once instead. They do get the R2 + face button C-buttons, through the modifier bindings described in [Pad layout](#pad-layout).
 
 On the Brick, the setting is **per-ROM**: each game gets its own file at `$DEVICE_CONFIG_DIR/per-game/<rom>.cfg` containing `input_mode=joystick` or `input_mode=dpad`. On first launch the default is chosen by substring-matching the ROM's GoodName (resolved by mupen64plus-core from `mupen64plus.ini` by CRC/MD5) against a hardcoded list in `overlay/emu_frontend.c` — the following games default to **D-Pad**:
 
 Kirby 64: The Crystal Shards, Hoshi no Kirby 64, Mischief Makers, Tetris 64, Tetrisphere, Ms. Pac-Man - Maze Madness, Mortal Kombat 4, Mortal Kombat Trilogy, Killer Instinct Gold, Pokémon Puzzle League, WWF No Mercy, ClayFighter 63⅓, ClayFighter - Sculptor's Cut, WWF WarZone.
 
-All other games default to **Joystick**. Change it live via the overlay menu's **Input → Input Mode** item, or by binding **Shortcuts → Toggle Input Mode** to any face/shoulder button — both write through to the per-game file and the input plugin picks up the change within a frame (stat-mtime polling).
+All other games default to **Joystick**. Change it live via the overlay menu's **Controls → Input Mode** item, or by binding **Shortcuts → Toggle Input Mode** to any face/shoulder button — both write through to the per-game file. The plugin stat-polls `$EMU_BUTTON_MAP_FILE` each frame and reparses it when the mtime changes; input mode itself now goes through trimui_inputd flag files instead.
 
 ### Brick-specific C-button remap
 
@@ -189,6 +335,10 @@ The Brick has no right analog stick either, so C-buttons are accessed via **R2 +
 | Power off (exit + shutdown) | Long press (≥ 1s) |
 
 After 2 minutes in sleep, the device suspends to RAM. Press power again to wake.
+
+### Overlay menu layout
+
+Scale, padding and rows-per-page are chosen from the screen dimensions rather than the platform name, because the Brick and Smart Pro share `tg5040` but not a resolution. `emu_ovl_init()` in `overlay/emu_overlay.c` gives 1024x768 a 3x scale with five rows, any panel 480 pixels tall or shorter a 2x scale with five rows, and everything else a 2x scale with eight rows. The height test covers both the 640x480 devices and the 720x480 H700 models; `list_page_size()` drops one further row at runtime when the description strip would not otherwise fit.
 
 ### Overlay menu sections
 
@@ -244,14 +394,16 @@ The scope indicator at the top of the Save Changes page shows `Using defaults.`,
 
 ### CPU mode
 
-The overlay menu's **Performance → CPU Mode** toggle controls the kernel CPU governor:
+The overlay menu's **Performance → CPU Mode** toggle controls the kernel CPU governor. `apply_cpu_mode()` in `overlay/emu_frontend.c` picks the cpufreq node and the frequency table from `$PLATFORM`:
 
-| Mode | Governor | Min Freq | Max Freq |
-|------|----------|----------|----------|
-| Powersave | `powersave` | 408 MHz | 408 MHz |
-| Ondemand | `ondemand` | 1.2 GHz | 1.8 GHz |
-| Performance (default) | `performance` | Platform max | Platform max |
-| Auto | Resolves to Performance | *(same as Performance)* | *(same as Performance)* |
+| Platform | cpufreq node | Powersave | Ondemand | Performance (default) |
+|---|---|---|---|---|
+| `tg5040` | `cpu0` | 408 MHz | 1.104 – 1.8 GHz | 1.608 – 2.0 GHz |
+| `tg5050` | `cpu4` | 408 MHz | 1.2 – 1.8 GHz | 1.992 – 2.16 GHz |
+| `my355` | `cpu0` | 408 MHz | 1.2 – 1.608 GHz | 1.8 – 1.992 GHz |
+| `h700` | `cpu0` | 480 MHz | 1.008 – 1.512 GHz | 1.2 – 1.512 GHz |
+
+**Auto** is not a separate mode — it resolves to Performance, since N64 emulation is demanding enough to want it. H700 uses 480 MHz for Powersave rather than 408 MHz because 408 MHz is not in its OPP table; its steps are 480, 720, 936, 1008, 1104, 1200, 1320, 1416 and 1512 MHz.
 
 Applied immediately when changed. Persisted only via Options → Save Changes.
 
@@ -270,6 +422,37 @@ Applied immediately when changed. Persisted only via Options → Save Changes.
 ## Platform differences
 
 - **tg5040**: Uses `ghcr.io/loveretro/tg5040-toolchain:latest`. No special setup needed.
-- **tg5050**: Uses `ghcr.io/loveretro/tg5050-toolchain:latest`. The toolchain has broken libpng header symlinks — the Makefile automatically downloads libpng 1.6.37 headers as a workaround. Also bundles `libpng16.so.16` and `libz.so.1` (from the tg5050 sysroot) in both platform dirs because the tg5040 device ships zlib 1.2.8, which is too old for the `ZLIB_1.2.9` symbols referenced by libpng16.
-- **GLideN64**: Built once using the tg5040 toolchain. The resulting `.so` is shared across both platforms.
+- **tg5050**: Uses `ghcr.io/loveretro/tg5050-toolchain:latest`. The toolchain has broken libpng header symlinks — the Makefile automatically downloads libpng 1.6.37 headers as a workaround. It is also the source of the `libz.so.1` every platform bundles; see [Bundled zlib](#bundled-zlib).
+- **my355**: Uses `ghcr.io/loveretro/my355-toolchain:latest`. Cross-compiles libpng 1.6.37 from source and links it statically, so it bundles only `libz.so.1` (1.3.1, from its own sysroot).
+- **h700**: Uses `ghcr.io/loveretro/h700-toolchain:latest`. That image is the tg5040 image plus a patched mali-fbdev SDL2 installed at `PREFIX_LOCAL=/opt/nextui` — same gcc 8.3 `aarch64-nextui-linux-gnu` cross compiler, same TrimUI TG5040 SDK sysroot, so no libpng build workaround is needed. `scripts/docker-env.sh` detects that SDL2 and points `SDL_CFLAGS`/`SDL_LDLIBS` at it, because that is the build NextUI installs on the device at `$SYSTEM_PATH/lib`. GLES symbols resolve straight from `-lGLESv2` with no standalone mali blob.
+
+### Bundled libpng
+
+Which libpng a platform needs follows its sysroot, and the three differ:
+
+| Platform | Links | Bundled | From |
+|---|---|---|---|
+| `tg5040` | `libpng12.so.0` | `libpng12.so.0` | tg5040 sysroot |
+| `tg5050` | `libpng16.so.16` | `libpng16.so.16` | tg5050 sysroot |
+| `my355` | *(static)* | none | — |
+| `h700` | `libpng12.so.0` | `libpng12.so.0` | h700 sysroot |
+
+Each copy comes from the toolchain its binaries were linked against. Getting this wrong is invisible at build time and only surfaces as a missing library on the device, so `tests/makefile.bats` pins every platform's choice.
+
+h700 has to bundle its own: the stock OS ships only a 32-bit libpng12 under `/mnt/vendor/lib`, and the 64-bit copy in `$SYSTEM_PATH/lib` is there because NextUI puts it there, which would otherwise tie the pak to a particular NextUI build. tg5040 shipped an unused `libpng16.so.16` until it was corrected; its binaries had always linked libpng12 and picked it up from the device.
+
+### Bundled zlib
+
+Every platform links `libz.so.1` through `libmupen64plus`, and all of them ship the tg5050 sysroot's 1.2.12 rather than the 1.2.8 the tg5040 and h700 sysroots carry. Only tg5050 strictly needs the newer one: `libpng16.so.16` is the sole library in the tree referencing `ZLIB_1.2.9`, and the pak's own binaries reference no versioned zlib symbols at all.
+- **GLideN64**: Built once using the tg5040 toolchain. The resulting `.so` is shared across every platform. It dlopens `libGLESv2.so.2` and `libEGL.so.1` at runtime rather than linking them.
 - **Rice**: Built per-toolchain (one `.so` per platform) because it links against the platform-specific libpng. The overlay sources are injected into its Makefile by `patches/shared/mupen64plus-video-rice.patch`.
+
+### Docker environment
+
+Every `docker run` in the Makefile invokes `scripts/docker-env.sh`, which sets up the cross-compile environment inside the container and then execs the requested command. It is checked in rather than generated so it survives `make clean` and shows up in review.
+
+Its one conditional is the h700 SDL2 lookup above: the toolchain's `sdl2.pc` records an absolute in-image prefix, so `PKG_CONFIG_SYSROOT_DIR` has to be cleared for that query or pkg-config rewrites every path under the sysroot. Toolchains that leave `$PREFIX_LOCAL` empty fall through to the sysroot unchanged. It logs which SDL2 it selected, and on `h700` a missing `$PREFIX_LOCAL/lib/pkgconfig/sdl2.pc` is a hard error — falling back to the SDK copy there would build cleanly but link against an SDL2 the device does not run.
+
+### Shared source trees
+
+All four platforms compile into the same `src/*/projects/unix` output paths, so each platform's recipes clear the previous platform's objects before building, and `make build` stages one platform fully before starting the next.

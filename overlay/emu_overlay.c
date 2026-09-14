@@ -270,19 +270,23 @@ int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,
 		snprintf(ovl->game_name, sizeof(ovl->game_name), "%s", game_name);
 
 	// Scale factor & outer padding — match NextUI per-platform:
-	//   Brick (1024x768)     → FIXED_SCALE=3, desktop platform's PADDING=5
-	//   Smart Pro / S        → FIXED_SCALE=2, default PADDING=10
-	//   Miyoo Flip (640x480) → FIXED_SCALE=2, default PADDING=10
+	//   Brick (1024x768)          → FIXED_SCALE=3, desktop platform's PADDING=5
+	//   Smart Pro / S             → FIXED_SCALE=2, default PADDING=10
+	//   Miyoo Flip (640x480)      → FIXED_SCALE=2, default PADDING=10
+	//   Anbernic H700 (640/720x480, 720x720) → FIXED_SCALE=2, default PADDING=10
+	// Short panels are keyed off height rather than an exact resolution so the
+	// 720x480 H700 models (rg34xx, rg34xxsp, rgsp) get the same five-row list as
+	// the 640x480 ones instead of the eight-row layout meant for taller screens.
 	if (screen_w == 1024 && screen_h == 768) {
 		ovl_scale = 3;
 		ovl_padding = 5;
 		ovl->items_per_page = 5;
-	} else if (screen_w == 640 && screen_h == 480) {
+	} else if (screen_h <= 480) {
 		ovl_scale = 2;
 		ovl_padding = 10;
 		ovl->items_per_page = 5;
 	} else {
-		// 1280x720 platforms and unknown future displays use the standard layout.
+		// 720x720, 1280x720 and unknown future displays use the standard layout.
 		ovl_scale = 2;
 		ovl_padding = 10;
 		ovl->items_per_page = 8;

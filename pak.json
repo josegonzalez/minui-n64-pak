@@ -8,7 +8,8 @@
   "platforms": [
     "tg5040",
     "tg5050",
-    "my355"
+    "my355",
+    "h700"
   ],
   "launch": "launch.sh",
   "version": "0.6.3"

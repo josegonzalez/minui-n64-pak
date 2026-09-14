@@ -15,6 +15,9 @@ patches/shared/mupen64plus-audio-sdl.patch
 *.o
 *.d
 
+# Scratch space
+tmp/
+
 # Editor/OS junk
 .DS_Store
 *.swp
