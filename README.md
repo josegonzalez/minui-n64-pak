@@ -138,6 +138,9 @@ Nearly every N64 game reads one or the other, so this leaves neither dead.
 Z Trigger is **L2** on every H700 model. If any of this feels wrong on your device, rebind
 it under Options → Controls.
 
+The in-game quick menu opens on the **Menu** button and navigates with the d-pad, A to
+confirm and B to go back, the same as every other device.
+
 ### Shortcuts
 
 You can assign buttons to common actions like fast forward, quick save/load, rewind, and screenshots. Go to Options → Shortcuts and set any face or shoulder button for each action.

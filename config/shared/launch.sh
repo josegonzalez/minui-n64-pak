@@ -215,6 +215,10 @@ export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
 # indices: the overlay to scan the right button range and recognise the shortcut
 # modifiers, the plugin to apply modifier-held C-buttons on devices with no right
 # stick. Unset values fall back to the TrimUI layout compiled into the overlay.
+export EMU_BTN_A="$PROFILE_BTN_A"
+export EMU_BTN_B="$PROFILE_BTN_B"
+export EMU_BTN_L1="$PROFILE_BTN_L1"
+export EMU_BTN_R1="$PROFILE_BTN_R1"
 export EMU_BTN_MENU="$PROFILE_BTN_MENU"
 export EMU_BTN_SELECT="$PROFILE_BTN_SELECT"
 export EMU_MOD_L2="$PROFILE_MOD_L2"

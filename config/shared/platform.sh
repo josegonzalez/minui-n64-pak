@@ -43,6 +43,11 @@ n64_platform_profile() {
     PROFILE_HAS_LSTICK=1
     PROFILE_HAS_RSTICK=1
     PROFILE_INPUT_CFG=""
+    # Overlay navigation reads the pad directly, so it needs indices too.
+    PROFILE_BTN_A=1
+    PROFILE_BTN_B=0
+    PROFILE_BTN_L1=4
+    PROFILE_BTN_R1=5
     PROFILE_BTN_MENU=8
     PROFILE_BTN_SELECT=6
     PROFILE_MOD_L2="a2"
@@ -144,7 +149,13 @@ n64_platform_profile() {
                     PROFILE_BTN_COUNT=14   # 14 is the Menu echo
                     ;;
             esac
-            # Menu is 312 and Select is 310 on every h700 class.
+            # The face and shoulder buttons sit at the same indices on every
+            # h700 class: only the stick clicks shift things, and they come
+            # after these.
+            PROFILE_BTN_A=3
+            PROFILE_BTN_B=4
+            PROFILE_BTN_L1=7
+            PROFILE_BTN_R1=8
             PROFILE_BTN_MENU=11
             PROFILE_BTN_SELECT=9
             PROFILE_CONFIG_SUBDIR="${_device:-rg35xxplus}"

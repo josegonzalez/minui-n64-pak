@@ -230,11 +230,43 @@ profile() {
     profile h700 rgcubexx;   [ "$PROFILE_BTN_COUNT" -eq 16 ]
 }
 
+# The overlay polls the pad directly, so its own navigation buttons need the
+# layout as well. On h700 the TrimUI indices land on ESC, the volume keys and R1,
+# which is what made Menu open on R1 and the menu keys misbehave.
+@test "h700 overlay navigation uses the shifted indices" {
+    for device in rg35xxplus rg40xxv rgcubexx; do
+        profile h700 "$device"
+        [ "$PROFILE_BTN_A" -eq 3 ]
+        [ "$PROFILE_BTN_B" -eq 4 ]
+        [ "$PROFILE_BTN_L1" -eq 7 ]
+        [ "$PROFILE_BTN_R1" -eq 8 ]
+        [ "$PROFILE_BTN_MENU" -eq 11 ]
+    done
+}
+
+@test "no h700 navigation button collides with another" {
+    profile h700 rgcubexx
+    printf '%s\n' "$PROFILE_BTN_A" "$PROFILE_BTN_B" "$PROFILE_BTN_L1" \
+        "$PROFILE_BTN_R1" "$PROFILE_BTN_MENU" "$PROFILE_BTN_SELECT" > "$BATS_TEST_TMPDIR/idx"
+    [ "$(sort -u "$BATS_TEST_TMPDIR/idx" | wc -l)" -eq 6 ]
+}
+
+@test "h700 Menu is not R1, which is what the bug report showed" {
+    profile h700 rg35xxplus
+    [ "$PROFILE_BTN_MENU" -ne "$PROFILE_BTN_R1" ]
+    # The TrimUI Menu index is h700's R1; using it opened the menu on R1.
+    [ "$PROFILE_BTN_R1" -eq 8 ]
+}
+
 @test "the TrimUI and Miyoo pads keep the layout compiled into the overlay" {
     for spec in "tg5040 brickpro" "tg5040 smartpro" "tg5050 " "my355 "; do
         # shellcheck disable=SC2086
         set -- $spec
         profile "$1" "${2:-}"
+        [ "$PROFILE_BTN_A" -eq 1 ]
+        [ "$PROFILE_BTN_B" -eq 0 ]
+        [ "$PROFILE_BTN_L1" -eq 4 ]
+        [ "$PROFILE_BTN_R1" -eq 5 ]
         [ "$PROFILE_BTN_MENU" -eq 8 ]
         [ "$PROFILE_BTN_SELECT" -eq 6 ]
         [ "$PROFILE_MOD_L2" = "a2" ]

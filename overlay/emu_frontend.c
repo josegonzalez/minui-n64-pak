@@ -46,6 +46,13 @@ static SDL_Joystick* s_joy = NULL;
 // environment behaves exactly as before.
 
 typedef struct {
+	// Overlay navigation. These are read straight off the pad rather than
+	// through mupen64plus's config, so they need the layout too — the in-game
+	// mapping does not reach them.
+	int btn_a;      // confirm
+	int btn_b;      // back
+	int btn_l1;     // page left
+	int btn_r1;     // page right
 	int btn_menu;
 	int btn_select;
 	int l2_axis;    // >= 0 when L2 is an analog axis
@@ -77,6 +84,17 @@ static void parse_shoulder(const char* v, int* axis, int* btn) {
 	else if (v[0] == 'b') *btn = n;
 }
 
+// Button indices feed `1u << n` against a 32-bit mask, and they arrive from the
+// environment, so a bogus value would be undefined behaviour rather than a
+// wrong button. Clamp to the range a mask can hold.
+static int env_btn(const char* name, int fallback) {
+	const char* v = getenv(name);
+	if (!v || !v[0]) return fallback;
+	int n = atoi(v);
+	if (n < 0 || n > 31) return fallback;
+	return n;
+}
+
 static int env_int(const char* name, int fallback) {
 	const char* v = getenv(name);
 	if (!v || !v[0]) return fallback;
@@ -89,8 +107,12 @@ static const PadLayout* pad_layout(void) {
 	if (loaded) return &layout;
 	loaded = 1;
 
-	layout.btn_menu = env_int("EMU_BTN_MENU", 8);
-	layout.btn_select = env_int("EMU_BTN_SELECT", 6);
+	layout.btn_a = env_btn("EMU_BTN_A", 1);
+	layout.btn_b = env_btn("EMU_BTN_B", 0);
+	layout.btn_l1 = env_btn("EMU_BTN_L1", 4);
+	layout.btn_r1 = env_btn("EMU_BTN_R1", 5);
+	layout.btn_menu = env_btn("EMU_BTN_MENU", 8);
+	layout.btn_select = env_btn("EMU_BTN_SELECT", 6);
 	layout.btn_count = env_int("EMU_BTN_COUNT", 11);
 	if (layout.btn_count < 1) layout.btn_count = 1;
 	if (layout.btn_count > 32) layout.btn_count = 32;   // s_btnState is 32 bits
@@ -104,6 +126,19 @@ static const PadLayout* pad_layout(void) {
 	// one thing that distinguishes the two layouts from here.
 	layout.labels = (layout.btn_menu == 8) ? s_labelsTrimUI : s_labelsH700;
 	return &layout;
+}
+
+// The buttons the overlay itself watches: back, confirm, page left/right, menu.
+#define OVL_NAV_COUNT 5
+
+static const int* ovl_nav_buttons(const PadLayout* l) {
+	static int buttons[OVL_NAV_COUNT];
+	buttons[0] = l->btn_b;
+	buttons[1] = l->btn_a;
+	buttons[2] = l->btn_l1;
+	buttons[3] = l->btn_r1;
+	buttons[4] = l->btn_menu;
+	return buttons;
 }
 
 static const char* pad_label(int index) {
@@ -1699,7 +1734,7 @@ static void overlay_ensure_init(int w, int h) {
 static bool check_menu_button(void) {
 	if (!s_joy) return false;
 
-	bool pressed = SDL_JoystickGetButton(s_joy, 8) != 0;
+	bool pressed = SDL_JoystickGetButton(s_joy, pad_layout()->btn_menu) != 0;
 	bool justPressed = pressed && !s_menuBtnPrev;
 	s_menuBtnPrev = pressed;
 	return justPressed;
@@ -1740,22 +1775,24 @@ static EmuOvlInput poll_overlay_input(void) {
 	s_prevAxisX = axisX;
 	s_prevAxisY = axisY;
 
-	// Buttons — edge detect: only trigger on newly-pressed buttons
-	// SDL button indices: 0=A(hw), 1=B(hw), 2=X(hw), 3=Y(hw), 4=L1, 5=R1, 8=Menu
-	static const int btnMap[] = {0, 1, 4, 5, 8};
+	// Buttons — edge detect: only trigger on newly-pressed buttons.
+	// Indices come from the active pad layout, not a fixed table: on h700 the
+	// TrimUI indices land on ESC, the volume keys and R1 instead.
+	const PadLayout* pad = pad_layout();
 	Uint32 curButtons = 0;
-	for (int i = 0; i < 5; i++) {
-		if (SDL_JoystickGetButton(s_joy, btnMap[i]))
-			curButtons |= (1u << btnMap[i]);
+	for (int i = 0; i < OVL_NAV_COUNT; i++) {
+		int b = ovl_nav_buttons(pad)[i];
+		if (b >= 0 && SDL_JoystickGetButton(s_joy, b))
+			curButtons |= (1u << b);
 	}
 	Uint32 btnPressed = curButtons & ~s_prevButtons;
 	s_prevButtons = curButtons;
 
-	if (btnPressed & (1u << 0)) input.b    = true;
-	if (btnPressed & (1u << 1)) input.a    = true;
-	if (btnPressed & (1u << 4)) input.l1   = true;
-	if (btnPressed & (1u << 5)) input.r1   = true;
-	if (btnPressed & (1u << 8)) input.menu = true;
+	if (btnPressed & (1u << pad->btn_b))    input.b    = true;
+	if (btnPressed & (1u << pad->btn_a))    input.a    = true;
+	if (btnPressed & (1u << pad->btn_l1))   input.l1   = true;
+	if (btnPressed & (1u << pad->btn_r1))   input.r1   = true;
+	if (btnPressed & (1u << pad->btn_menu)) input.menu = true;
 
 	return input;
 }
@@ -1789,10 +1826,13 @@ static EmuOvlAction run_overlay_loop(void) {
 	s_prevAxisX = SDL_JoystickGetAxis(s_joy, 0);
 	s_prevAxisY = SDL_JoystickGetAxis(s_joy, 1);
 	s_prevButtons = 0;
-	static const int menu_btns[] = {0, 1, 4, 5, 8};
-	for (int i = 0; i < 5; i++) {
-		if (SDL_JoystickGetButton(s_joy, menu_btns[i]))
-			s_prevButtons |= (1u << menu_btns[i]);
+	{
+		const PadLayout* pad = pad_layout();
+		for (int i = 0; i < OVL_NAV_COUNT; i++) {
+			int b = ovl_nav_buttons(pad)[i];
+			if (b >= 0 && SDL_JoystickGetButton(s_joy, b))
+				s_prevButtons |= (1u << b);
+		}
 	}
 	SDL_Event ev;
 	while (SDL_PollEvent(&ev)) {}

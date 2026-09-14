@@ -160,6 +160,23 @@ own copy of the table.
 |---|---|---|
 | `rg35xxh`, `rg35xxpro`, `rg40xxh`, `rgcubexx`, `rg34xxsp` | `rg40xxv` | `rg28xx`, `rg34xx`, `rg35xxplus`, `rg35xxsp`, `rgsp` |
 
+### The overlay has its own input path
+
+The in-game mapping described above lives in `mupen64plus.cfg` and reaches the emulator
+through the input plugin. The overlay menu does not use any of it: `poll_overlay_input()`
+and `check_menu_button()` in `overlay/emu_frontend.c` read the pad directly with
+`SDL_JoystickGetButton`, because `SDL_PollEvent` is unreliable inside mupen64plus's threaded
+plugin context. So the overlay needs the layout separately, and it reads the same profile
+values `launch.sh` exports.
+
+That is why fixing the in-game mapping alone left the menu wrong on h700: the overlay was
+still using the TrimUI indices, where Menu is 8. On h700 button 8 is R1, so the menu opened
+on R1, and confirm and back landed on the pad's ESC and volume keys. The indices now come
+from `PROFILE_BTN_A`, `_B`, `_L1`, `_R1` and `_MENU`.
+
+Anything reading the pad directly has to go through the layout. Adding a new direct read
+with a literal index will work on TrimUI and silently misbehave on h700.
+
 ### C-buttons without a right stick
 
 The Brick and the stickless h700 models reach the C-buttons by holding R2 and pressing a
