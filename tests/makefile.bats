@@ -200,6 +200,14 @@ omits() {
     [ "$count_profile" -eq "$platforms" ]
 }
 
+@test "every platform dir gets the per-device pad mappings" {
+    run grep -q 'cp $(CONFIG)/shared/input/\*.cfg $(1)/input/' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+    # DIST_COMMON runs for every platform, so one copy step covers them all.
+    run grep -c 'DIST_COMMON,$(DIST)/' "$REPO_ROOT/Makefile"
+    [ "$output" -eq "$(jq -r '.platforms | length' "$REPO_ROOT/pak.json")" ]
+}
+
 @test "the pak metadata drives the artifact and install paths" {
     mk PAK_NAME
     [ "$output" = "PAK_NAME=N64" ]

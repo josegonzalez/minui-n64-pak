@@ -35,6 +35,86 @@ static bool s_initialized = false;
 static SDL_Joystick* s_joy = NULL;
 
 // ---------------------------------------------------------------------------
+// Built-in pad layout
+// ---------------------------------------------------------------------------
+// SDL button indices differ per platform. TrimUI and Miyoo pads start at button
+// 0 with analog shoulder triggers; NextUI's h700 SDL2 enumerates a pad's buttons
+// in ascending evdev keycode order, and the Anbernic pad reports ESC and the two
+// volume keys first, so its gamepad buttons start at 3 and its shoulders are
+// plain buttons rather than axes. launch.sh exports the active layout from the
+// platform profile; the defaults here are the TrimUI one, so an unset
+// environment behaves exactly as before.
+
+typedef struct {
+	int btn_menu;
+	int btn_select;
+	int l2_axis;    // >= 0 when L2 is an analog axis
+	int l2_btn;     // >= 0 when L2 is a plain button
+	int r2_axis;
+	int r2_btn;
+	int btn_count;  // buttons to scan when polling
+	const char* const* labels;
+} PadLayout;
+
+static const char* const s_labelsTrimUI[] = {
+	"B", "A", "Y", "X", "L1", "R1", "Select", "Start", "Menu",
+	"L3/F1", "R3/F2", NULL
+};
+
+// Indices 0-2 are the pad's ESC and volume keys, which never reach a binding.
+static const char* const s_labelsH700[] = {
+	"ESC", "Vol-", "Vol+", "A", "B", "Y", "X", "L1", "R1",
+	"Select", "Start", "Menu", "L3", "L2", "R2", "R3", NULL
+};
+
+// Parse an "aN" / "bN" shoulder descriptor into an axis or button index.
+static void parse_shoulder(const char* v, int* axis, int* btn) {
+	*axis = -1;
+	*btn = -1;
+	if (!v || !v[0]) return;
+	int n = atoi(v + 1);
+	if (v[0] == 'a') *axis = n;
+	else if (v[0] == 'b') *btn = n;
+}
+
+static int env_int(const char* name, int fallback) {
+	const char* v = getenv(name);
+	if (!v || !v[0]) return fallback;
+	return atoi(v);
+}
+
+static const PadLayout* pad_layout(void) {
+	static PadLayout layout;
+	static int loaded = 0;
+	if (loaded) return &layout;
+	loaded = 1;
+
+	layout.btn_menu = env_int("EMU_BTN_MENU", 8);
+	layout.btn_select = env_int("EMU_BTN_SELECT", 6);
+	layout.btn_count = env_int("EMU_BTN_COUNT", 11);
+	if (layout.btn_count < 1) layout.btn_count = 1;
+	if (layout.btn_count > 32) layout.btn_count = 32;   // s_btnState is 32 bits
+
+	const char* l2 = getenv("EMU_MOD_L2");
+	const char* r2 = getenv("EMU_MOD_R2");
+	parse_shoulder(l2 && l2[0] ? l2 : "a2", &layout.l2_axis, &layout.l2_btn);
+	parse_shoulder(r2 && r2[0] ? r2 : "a5", &layout.r2_axis, &layout.r2_btn);
+
+	// The label table is chosen by where the gamepad buttons start, which is the
+	// one thing that distinguishes the two layouts from here.
+	layout.labels = (layout.btn_menu == 8) ? s_labelsTrimUI : s_labelsH700;
+	return &layout;
+}
+
+static const char* pad_label(int index) {
+	const PadLayout* l = pad_layout();
+	if (index < 0) return "?";
+	for (int i = 0; i <= index; i++)
+		if (!l->labels[i]) return "?";
+	return l->labels[index];
+}
+
+// ---------------------------------------------------------------------------
 // Overlay state
 // ---------------------------------------------------------------------------
 
@@ -406,16 +486,15 @@ N64ButtonMapping* emu_frontend_get_button_mappings(void) {
 	return s_buttonMappings;
 }
 
-static const char* s_btnLabels[] = {
-	"B", "A", "Y", "X", "L1", "R1", "Select", "Start", "Menu",
-	"L3/F1", "R3/F2", NULL
-};
-
 static const char* mod_label(int mod) {
-	if (mod == 8) return "MENU";
-	if (mod == 6) return "SELECT";
-	if (mod == -3) return "L2";   // -(axis_id + 1)
-	if (mod == -6) return "R2";
+	const PadLayout* l = pad_layout();
+	if (mod == l->btn_menu) return "MENU";
+	if (mod == l->btn_select) return "SELECT";
+	if (l->l2_btn >= 0 && mod == l->l2_btn) return "L2";
+	if (l->r2_btn >= 0 && mod == l->r2_btn) return "R2";
+	// Axis modifiers are stored as -(axis_id + 1).
+	if (l->l2_axis >= 0 && mod == -(l->l2_axis + 1)) return "L2";
+	if (l->r2_axis >= 0 && mod == -(l->r2_axis + 1)) return "R2";
 	return "MOD";
 }
 
@@ -428,7 +507,7 @@ const char* emu_frontend_binding_label(const N64ButtonMapping* m) {
 		snprintf(axis_buf, sizeof(axis_buf), "Axis %d%s", m->physical, m->axis_dir > 0 ? "+" : "-");
 		base = axis_buf;
 	} else {
-		base = (m->physical >= 0 && m->physical < 11) ? s_btnLabels[m->physical] : "?";
+		base = pad_label(m->physical);
 	}
 	if (m->mod != 0) {
 		snprintf(buf, sizeof(buf), "%s+%s", mod_label(m->mod), base);
@@ -715,7 +794,8 @@ void emu_frontend_update_buttons(void) {
 	s_btnState = 0;
 	memcpy(s_axisPrev, s_axisState, sizeof(s_axisPrev));
 	if (!s_joy) return;
-	for (int b = 0; b <= 10; b++)
+	int nbtn = pad_layout()->btn_count;
+	for (int b = 0; b < nbtn; b++)
 		if (SDL_JoystickGetButton(s_joy, b))
 			s_btnState |= (1u << b);
 	int na = SDL_JoystickNumAxes(s_joy);
@@ -788,7 +868,7 @@ const char* emu_frontend_shortcut_label(const ShortcutBinding* s) {
 				 s->physical, s->axis_dir > 0 ? "+" : "-");
 		base = axis_buf;
 	} else {
-		base = (s->physical >= 0 && s->physical < 11) ? s_btnLabels[s->physical] : "?";
+		base = pad_label(s->physical);
 	}
 	if (s->mod != 0) {
 		snprintf(buf, sizeof(buf), "%s+%s", mod_label(s->mod), base);
@@ -1819,10 +1899,11 @@ static EmuOvlAction run_overlay_loop(void) {
 				// MENU: always modifier-only.
 				// SELECT/L2/R2: dual-purpose — modifier if a combo button
 				// is pressed, standalone after a grace period if not.
-				#define MOD_BTN_MENU   8
-				#define MOD_BTN_SELECT 6
-				#define MOD_AXIS_L2    2
-				#define MOD_AXIS_R2    5
+				const PadLayout* pad = pad_layout();
+				const int MOD_BTN_MENU = pad->btn_menu;
+				const int MOD_BTN_SELECT = pad->btn_select;
+				const int MOD_AXIS_L2 = pad->l2_axis;   // -1 when L2 is a button
+				const int MOD_AXIS_R2 = pad->r2_axis;
 				int held_mod = 0;
 				bool select_active = false;
 				bool l2_active = false;
@@ -1832,15 +1913,21 @@ static EmuOvlAction run_overlay_loop(void) {
 					held_mod = MOD_BTN_MENU;
 				if (SDL_JoystickGetButton(s_joy, MOD_BTN_SELECT))
 					select_active = true;
-				{
-					int l2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_L2);
-					int r2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_R2);
-					int l2_delta = l2 - bc_prev_axis[MOD_AXIS_L2];
-					int r2_delta = r2 - bc_prev_axis[MOD_AXIS_R2];
+				// Analog shoulders are detected by deflection from the baseline;
+				// digital ones are just held or not.
+				if (MOD_AXIS_L2 >= 0) {
+					int l2_delta = SDL_JoystickGetAxis(s_joy, MOD_AXIS_L2) - bc_prev_axis[MOD_AXIS_L2];
 					if (l2_delta < 0) l2_delta = -l2_delta;
-					if (r2_delta < 0) r2_delta = -r2_delta;
 					if (l2_delta > 16000) l2_active = true;
+				} else if (pad->l2_btn >= 0) {
+					l2_active = SDL_JoystickGetButton(s_joy, pad->l2_btn) != 0;
+				}
+				if (MOD_AXIS_R2 >= 0) {
+					int r2_delta = SDL_JoystickGetAxis(s_joy, MOD_AXIS_R2) - bc_prev_axis[MOD_AXIS_R2];
+					if (r2_delta < 0) r2_delta = -r2_delta;
 					if (r2_delta > 16000) r2_active = true;
+				} else if (pad->r2_btn >= 0) {
+					r2_active = SDL_JoystickGetButton(s_joy, pad->r2_btn) != 0;
 				}
 
 				// Build held_mod: MENU takes priority, then SELECT, then L2/R2.
@@ -1848,8 +1935,10 @@ static EmuOvlAction run_overlay_loop(void) {
 				// if a different button is actually captured this frame.
 				if (!held_mod) {
 					if (select_active) held_mod = MOD_BTN_SELECT;
-					else if (l2_active) held_mod = -(MOD_AXIS_L2 + 1);
-					else if (r2_active) held_mod = -(MOD_AXIS_R2 + 1);
+					else if (l2_active)
+						held_mod = (MOD_AXIS_L2 >= 0) ? -(MOD_AXIS_L2 + 1) : pad->l2_btn;
+					else if (r2_active)
+						held_mod = (MOD_AXIS_R2 >= 0) ? -(MOD_AXIS_R2 + 1) : pad->r2_btn;
 				}
 
 				// --- Button scan ---
@@ -1870,6 +1959,11 @@ static EmuOvlAction run_overlay_loop(void) {
 					if (b == MOD_BTN_SELECT && select_active) {
 						continue;
 					}
+					// Same for digital shoulders used as modifiers.
+					if (pad->l2_btn >= 0 && b == pad->l2_btn && l2_active && held_mod == pad->l2_btn)
+						continue;
+					if (pad->r2_btn >= 0 && b == pad->r2_btn && r2_active && held_mod == pad->r2_btn)
+						continue;
 					if (cur && !bc_prev_btn[b]) {
 						m->physical = b;
 						m->is_axis = 0;
@@ -1888,8 +1982,8 @@ static EmuOvlAction run_overlay_loop(void) {
 					int na = SDL_JoystickNumAxes(s_joy);
 					if (na > 8) na = 8;
 					for (int a = 0; a < na; a++) {
-						if ((a == MOD_AXIS_L2 && l2_active) ||
-							(a == MOD_AXIS_R2 && r2_active))
+						if ((MOD_AXIS_L2 >= 0 && a == MOD_AXIS_L2 && l2_active) ||
+							(MOD_AXIS_R2 >= 0 && a == MOD_AXIS_R2 && r2_active))
 							continue;
 						int val = SDL_JoystickGetAxis(s_joy, a);
 						int delta = val - bc_prev_axis[a];
@@ -1921,15 +2015,24 @@ static EmuOvlAction run_overlay_loop(void) {
 							bc_pending_type = 1;
 							bc_pending_id = MOD_BTN_SELECT;
 							bc_pending_at = SDL_GetTicks();
-						} else if (l2_active) {
+						} else if (l2_active && MOD_AXIS_L2 >= 0) {
 							bc_pending_type = 2;
 							bc_pending_id = MOD_AXIS_L2;
 							bc_pending_dir = (SDL_JoystickGetAxis(s_joy, MOD_AXIS_L2) > bc_prev_axis[MOD_AXIS_L2]) ? 1 : -1;
 							bc_pending_at = SDL_GetTicks();
-						} else if (r2_active) {
+						} else if (r2_active && MOD_AXIS_R2 >= 0) {
 							bc_pending_type = 2;
 							bc_pending_id = MOD_AXIS_R2;
 							bc_pending_dir = (SDL_JoystickGetAxis(s_joy, MOD_AXIS_R2) > bc_prev_axis[MOD_AXIS_R2]) ? 1 : -1;
+							bc_pending_at = SDL_GetTicks();
+						} else if (l2_active && pad->l2_btn >= 0 && !bc_prev_btn[pad->l2_btn]) {
+							// Digital shoulder: same grace period as SELECT.
+							bc_pending_type = 1;
+							bc_pending_id = pad->l2_btn;
+							bc_pending_at = SDL_GetTicks();
+						} else if (r2_active && pad->r2_btn >= 0 && !bc_prev_btn[pad->r2_btn]) {
+							bc_pending_type = 1;
+							bc_pending_id = pad->r2_btn;
 							bc_pending_at = SDL_GetTicks();
 						}
 					}

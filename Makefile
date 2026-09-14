@@ -386,6 +386,9 @@ stage-h700: h700 rice-h700 ini-h700
 define DIST_COMMON
 	cp $(CONFIG)/shared/default.cfg $(1)/
 	cp $(CONFIG)/shared/overlay_settings.json $(1)/
+	@# Per-device pad mappings; launch.sh merges the one the profile names.
+	mkdir -p $(1)/input
+	cp $(CONFIG)/shared/input/*.cfg $(1)/input/
 	cp $(SRC)/GLideN64/src/build/plugin/Release/mupen64plus-video-GLideN64.so $(1)/
 	cp $(SRC)/mupen64plus-core/data/mupen64plus.ini    $(1)/
 	cp $(SRC)/mupen64plus-input-sdl/data/InputAutoCfg.ini $(1)/

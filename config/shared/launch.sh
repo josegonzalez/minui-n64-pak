@@ -123,6 +123,21 @@ fi
 # Platform-specific values are applied via --set flags on the mupen64plus
 # command line instead of patching the config file, so user edits persist.
 DEVICE_CFG="$DEVICE_CONFIG_DIR/mupen64plus.cfg"
+
+# Overlay the device's pad mapping onto the config, once. default.cfg carries the
+# TrimUI layout, which is wrong on any pad whose SDL button indices differ, so
+# platforms that need their own mapping name a fragment in the profile; the rest
+# report an empty PROFILE_INPUT_CFG and are left alone.
+#
+# This is additive rather than a re-seed: `ini merge` replaces only the keys the
+# fragment names, so a user's video plugin, CPU mode and everything else survive.
+# It runs for installs seeded before the mapping existed as well as fresh ones.
+if [ -n "$PROFILE_INPUT_CFG" ] && [ ! -f "$DEVICE_CONFIG_DIR/.input-mapped-v1" ]; then
+    if [ -f "$BIN_DIR/$PROFILE_INPUT_CFG" ]; then
+        "$BIN_DIR/ini" merge "$DEVICE_CFG" "$BIN_DIR/$PROFILE_INPUT_CFG"
+    fi
+    touch "$DEVICE_CONFIG_DIR/.input-mapped-v1"
+fi
 SCREEN_W="${DEVICE_RESOLUTION%x*}"
 SCREEN_H="${DEVICE_RESOLUTION#*x}"
 
@@ -194,6 +209,19 @@ M64P_LD_PRELOAD="$PROFILE_LD_PRELOAD"
 export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
 # Pass resume slot to emulator if game switcher requested it
 [ -n "$RESUME_SLOT" ] && export EMU_RESUME_SLOT="$RESUME_SLOT"
+
+# ── Pad layout ───────────────────────────────────────────────────────────────
+# The overlay and the patched input plugin both need the built-in pad's SDL
+# indices: the overlay to scan the right button range and recognise the shortcut
+# modifiers, the plugin to apply modifier-held C-buttons on devices with no right
+# stick. Unset values fall back to the TrimUI layout compiled into the overlay.
+export EMU_BTN_MENU="$PROFILE_BTN_MENU"
+export EMU_BTN_SELECT="$PROFILE_BTN_SELECT"
+export EMU_MOD_L2="$PROFILE_MOD_L2"
+export EMU_MOD_R2="$PROFILE_MOD_R2"
+export EMU_BTN_COUNT="$PROFILE_BTN_COUNT"
+export EMU_HAS_LSTICK="$PROFILE_HAS_LSTICK"
+export EMU_HAS_RSTICK="$PROFILE_HAS_RSTICK"
 
 # ── Overlay menu config ──────────────────────────────────────────────────────
 export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"

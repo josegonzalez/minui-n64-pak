@@ -107,6 +107,74 @@ All paths are set via CLI flags or `--set` on the mupen64plus command line — `
 | User cache (shaders, textures) | `--cachedir` (patched into ui-console) | `.userdata/tg5040/N64-mupen64plus/brick/cache/` |
 | User data | `XDG_DATA_HOME` env var | `.userdata/tg5040/N64-mupen64plus/brick/` |
 
+## Pad layout
+
+SDL button indices are not the same across platforms, and `default.cfg` can only hold one
+layout. It holds the TrimUI one; devices whose pad differs name a fragment in the platform
+profile, which `launch.sh` merges over the seeded config once per device using the bundled
+`ini merge`. The merge is additive, so a user's own rebinding survives it, and it runs on
+installs seeded before the fragment existed as well as fresh ones (stamped
+`.input-mapped-v1`).
+
+### Why h700 differs
+
+NextUI's h700 SDL2 enumerates a pad's buttons in ascending evdev keycode order. The Anbernic
+pad reports `ESC` (1) and the two volume keys (114/115) before the gamepad codes (304-316),
+so its gamepad buttons start at index 3. It is not a uniform shift — TrimUI has `A=1 B=0`
+swapped where h700 has `A=3 B=4` in order — and h700 has no analog triggers at all, so L2
+and R2 are plain buttons and `Z Trig` cannot be an axis there.
+
+The stick-click codes 313 (`BTN_TR2`, L3) and 316 (`BTN_MODE`, R3) only exist on a model
+that has the corresponding stick, and each one present shifts L2/R2 up, which is why there
+are three h700 classes rather than one:
+
+| evdev | label | no sticks | left stick only | both sticks |
+|---|---|---|---|---|
+| 304-311 | A, B, Y, X, L1, R1, Select, Start | 3-10 | 3-10 | 3-10 |
+| 312 `BTN_TL2` | Menu | 11 | 11 | 11 |
+| 313 `BTN_TR2` | L3 | — | 12 | 12 |
+| 314 `BTN_SELECT` | L2 | 12 | 13 | 13 |
+| 315 `BTN_START` | R2 | 13 | 14 | 14 |
+| 316 `BTN_MODE` | R3 | — | — | 15 |
+| 354 `KEY_GOTO` | Menu echo | 14 | 15 | 16 |
+
+The pad emits Menu twice, so `PROFILE_BTN_COUNT` stops one short of the echo. The d-pad is
+SDL hat 0; sticks are axes 0/1 (left) and 2/3 (right), negative being left and up.
+
+These indices were measured on hardware by the
+[nextui-portmaster-h700](https://github.com/Logarythms/nextui-portmaster-h700) project and
+corroborated by the `NextCommander-h700` patch in the NextUI h700 fork. That project records
+that deriving them from evtest keycodes instead of measuring produced a different, wrong
+table, so they should be re-measured with `jstest` rather than recomputed. The left-stick-only
+column is the one class no published measurement covers; it follows the same shift rule.
+
+### Stick presence per model
+
+From `workspace/h700/platform/platform.c` in the NextUI h700 fork. Its `settings.cpp` holds
+a second copy that is wrong about RG40XXV, so platform.c is the one to follow. Nothing
+exports these at runtime — `dev_has_lstick` is a plain global compiled into each NextUI
+binary — so `$DEVICE` is the supported hook, as `PAKS.md` documents, and the pak carries its
+own copy of the table.
+
+| Left + right | Left only | None |
+|---|---|---|
+| `rg35xxh`, `rg35xxpro`, `rg40xxh`, `rgcubexx`, `rg34xxsp` | `rg40xxv` | `rg28xx`, `rg34xx`, `rg35xxplus`, `rg35xxsp`, `rgsp` |
+
+### C-buttons without a right stick
+
+The Brick and the stickless h700 models reach the C-buttons by holding R2 and pressing a
+face button by position. That combo is data, not a special case: the overlay's config loader
+understands a `<key>_mod` suffix, writes the pair into `$EMU_BUTTON_MAP_FILE`, and the
+patched input plugin applies the modifier from there. A non-negative modifier is an SDL
+button index; a negative one is `-(axis index + 1)` for an analog shoulder, which is how the
+Brick's axis-5 R2 is expressed.
+
+This replaced a `$DEVICE=brick` block in the input-sdl patch that had stopped working: it
+set the C-button bits, and the button-map block that runs after it cleared every C-button
+bit and re-derived them from right-stick axes the Brick does not have. Fixing it also
+required correcting the axis-modifier test, which checked `|value| >= 24000` and so read a
+trigger resting at -32768 as permanently held.
+
 ## Platform profile
 
 Every per-platform and per-device fact lives in one function, `n64_platform_profile` in `config/shared/platform.sh`, which `launch.sh` sources at startup and calls once with `$PLATFORM` and `$DEVICE`. It does no I/O — it reads only those two arguments plus `$SDL_VIDEO_EGL_DRIVER` — so it can be unit tested without a device.
@@ -126,6 +194,11 @@ It sets the following, and everything downstream in `launch.sh` reads them rathe
 | `PROFILE_SWAPFILE` | swapfile path; empty skips swap entirely |
 | `PROFILE_LD_EXTRA_DIRS` | extra loader directories for the mupen64plus invocation |
 | `PROFILE_LD_PRELOAD` | EGL library to preload |
+| `PROFILE_HAS_LSTICK` / `PROFILE_HAS_RSTICK` | analog sticks the device carries |
+| `PROFILE_INPUT_CFG` | pad mapping to merge at first run; empty when default.cfg already fits |
+| `PROFILE_BTN_MENU` / `PROFILE_BTN_SELECT` | SDL button indices the overlay treats as shortcut modifiers |
+| `PROFILE_MOD_L2` / `PROFILE_MOD_R2` | shoulder modifiers, `aN` for an axis or `bN` for a button |
+| `PROFILE_BTN_COUNT` | how many buttons the overlay polls |
 
 `platform.sh` ships in the pak root next to `launch.sh`.
 
@@ -184,12 +257,9 @@ dist/N64.pak/
 | R3 (right stick click) | — | — | Yes |
 | Power | Yes | Yes | Yes |
 
-The Brick Pro, the Miyoo Flip and the eleven H700 models differ from each other in whether
-they carry analog sticks, but the pak does not branch on that. The remaps described below
-are gated on `$DEVICE` matching `brick` exactly, so every other device — Brick Pro included
-— uses the stock mapping: the d-pad drives the N64 d-pad, and C-buttons come from the right
-analog stick where one exists. On a stickless device that is not the Brick, C-buttons need a
-manual binding under Options → Shortcuts.
+Analog stick presence varies across the Brick Pro, the Miyoo Flip and the eleven H700
+models, and the pak branches on it through the platform profile. See
+[Pad layout](#pad-layout) below.
 
 ### N64 controller mapping
 
@@ -217,13 +287,13 @@ Because the Brick has no analog stick, the physical d-pad has to stand in for on
 - **Joystick** (default for most games) — the physical d-pad routes through the N64 analog stick. The N64 d-pad is inactive.
 - **D-Pad** — the physical d-pad passes through as the N64 d-pad (the config-mapped hat). The N64 analog stick is inactive.
 
-Every other device is left alone — `emu_frontend.c` gates the d-pad remap on `$DEVICE=brick` via trimui_inputd flag files at `/tmp/trimui_inputd/`. The **Input → Input Mode** overlay menu item is still visible elsewhere but toggling it is a no-op. Note that this includes the Brick Pro and the stickless H700 models, which therefore have no d-pad↔joystick switch and no R2 + face button C-buttons.
+Every other device is left alone — `emu_frontend.c` gates the d-pad remap on `$DEVICE=brick` via trimui_inputd flag files at `/tmp/trimui_inputd/`. The **Controls → Input Mode** overlay item is still visible elsewhere but toggling it is a no-op, because the swap happens in trimui_inputd rather than in the pak. Stickless H700 models therefore have no live d-pad↔joystick switch; they bind the d-pad to both the N64 analog stick and the N64 d-pad at once instead. They do get the R2 + face button C-buttons, through the modifier bindings described in [Pad layout](#pad-layout).
 
 On the Brick, the setting is **per-ROM**: each game gets its own file at `$DEVICE_CONFIG_DIR/per-game/<rom>.cfg` containing `input_mode=joystick` or `input_mode=dpad`. On first launch the default is chosen by substring-matching the ROM's GoodName (resolved by mupen64plus-core from `mupen64plus.ini` by CRC/MD5) against a hardcoded list in `overlay/emu_frontend.c` — the following games default to **D-Pad**:
 
 Kirby 64: The Crystal Shards, Hoshi no Kirby 64, Mischief Makers, Tetris 64, Tetrisphere, Ms. Pac-Man - Maze Madness, Mortal Kombat 4, Mortal Kombat Trilogy, Killer Instinct Gold, Pokémon Puzzle League, WWF No Mercy, ClayFighter 63⅓, ClayFighter - Sculptor's Cut, WWF WarZone.
 
-All other games default to **Joystick**. Change it live via the overlay menu's **Input → Input Mode** item, or by binding **Shortcuts → Toggle Input Mode** to any face/shoulder button — both write through to the per-game file and the input plugin picks up the change within a frame (stat-mtime polling).
+All other games default to **Joystick**. Change it live via the overlay menu's **Controls → Input Mode** item, or by binding **Shortcuts → Toggle Input Mode** to any face/shoulder button — both write through to the per-game file. The plugin stat-polls `$EMU_BUTTON_MAP_FILE` each frame and reparses it when the mtime changes; input mode itself now goes through trimui_inputd flag files instead.
 
 ### Brick-specific C-button remap
 

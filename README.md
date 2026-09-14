@@ -96,9 +96,10 @@ Change the plugin in Options → Core → Video Plugin (requires restarting the 
 
 ### Controls (Brick)
 
-The Brick has no analog sticks, so the d-pad doubles as the N64 joystick by default. For games that use the N64 d-pad (like Kirby 64 or puzzle games), the emulator automatically switches to d-pad mode. You can also change this manually in Options → Input → Input Mode.
+The Brick has no analog sticks, so the d-pad doubles as the N64 joystick by default. For games that use the N64 d-pad (like Kirby 64 or puzzle games), the emulator automatically switches to d-pad mode. You can also change this manually in Options → Controls → Input Mode.
 
-C-buttons are accessed by holding **R2** and pressing a face button:
+C-buttons are accessed by holding **R2** and pressing a face button (this was broken in
+releases up to 0.6.3 and works again now):
 
 | Combo | N64 C-button |
 |-------|-------------|
@@ -111,12 +112,31 @@ C-buttons are accessed by holding **R2** and pressing a face button:
 
 Both analog sticks and the d-pad work natively — left stick controls the N64 analog, right stick controls C-buttons, and the d-pad maps to the N64 d-pad. No special configuration needed.
 
-### Controls (Brick Pro, Miyoo Flip and Anbernic H700)
+### Controls (Brick Pro and Miyoo Flip)
 
-These use the stock mapping: the d-pad maps to the N64 d-pad, and where the device has a
-right analog stick it drives the C-buttons. The per-game Input Mode switch and the
-R2 + face button C-button combos described above are Brick-only. On a device without a
-right stick, bind C-buttons yourself under Options → Shortcuts.
+Both analog sticks and the d-pad work as they do on the Smart Pro. The per-game Input Mode
+switch described above is Brick-only.
+
+### Controls (Anbernic H700)
+
+The H700 pad reports its buttons differently from every other supported device, so the pak
+ships a mapping per model and applies the right one the first time you launch a game. What
+you get depends on which sticks your model has:
+
+| Model | N64 analog stick | C-buttons |
+|---|---|---|
+| RG35XXH, RG35XXPro, RG40XXH, RGcubeXX, RG34XXSP | Left stick | Right stick |
+| RG40XXV | Left stick | R2 + face button |
+| RG28XX, RG34XX, RG35XX Plus, RG35XXSP, RGSP | D-pad | R2 + face button |
+
+Where C-buttons come from R2, hold **R2** and press a face button by its position, the same
+combos the Brick uses: R2+X for C-Up, R2+B for C-Down, R2+Y for C-Left, R2+A for C-Right.
+
+On models with no sticks the d-pad drives the N64 analog stick *and* the N64 d-pad at once.
+Nearly every N64 game reads one or the other, so this leaves neither dead.
+
+Z Trigger is **L2** on every H700 model. If any of this feels wrong on your device, rebind
+it under Options → Controls.
 
 ### Shortcuts
 

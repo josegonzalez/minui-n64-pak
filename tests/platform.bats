@@ -164,6 +164,101 @@ profile() {
     done
 }
 
+# ── pad capabilities ────────────────────────────────────────────────────────
+#
+# Stick presence per h700 model is NextUI's own table, from
+# workspace/h700/platform/platform.c. Its settings.cpp carries a second copy that
+# is wrong about rg40xxv, so platform.c is the one followed here.
+
+@test "h700 models with both sticks take the two-stick profile" {
+    for device in rg35xxh rg35xxpro rg40xxh rgcubexx rg34xxsp; do
+        profile h700 "$device"
+        [ "$PROFILE_HAS_LSTICK" -eq 1 ]
+        [ "$PROFILE_HAS_RSTICK" -eq 1 ]
+        [ "$PROFILE_INPUT_CFG" = "input/h700-sticks.cfg" ]
+    done
+}
+
+@test "rg40xxv has a left stick but no right one" {
+    profile h700 rg40xxv
+    [ "$PROFILE_HAS_LSTICK" -eq 1 ]
+    [ "$PROFILE_HAS_RSTICK" -eq 0 ]
+    [ "$PROFILE_INPUT_CFG" = "input/h700-lstick.cfg" ]
+}
+
+@test "the remaining h700 models have no sticks" {
+    for device in rg28xx rg34xx rg35xxplus rg35xxsp rgsp; do
+        profile h700 "$device"
+        [ "$PROFILE_HAS_LSTICK" -eq 0 ]
+        [ "$PROFILE_HAS_RSTICK" -eq 0 ]
+        [ "$PROFILE_INPUT_CFG" = "input/h700-nosticks.cfg" ]
+    done
+}
+
+@test "an unknown h700 device falls back to the stickless profile" {
+    # NextUI defaults DEVICE to rg35xxplus, which has no sticks; assuming sticks
+    # that are not there would leave the analog stick dead.
+    profile h700 ""
+    [ "$PROFILE_HAS_LSTICK" -eq 0 ]
+    [ "$PROFILE_INPUT_CFG" = "input/h700-nosticks.cfg" ]
+}
+
+@test "h700 shoulder modifiers are buttons, and shift with the stick clicks" {
+    profile h700 rg35xxplus          # no stick clicks
+    [ "$PROFILE_MOD_L2" = "b12" ]
+    [ "$PROFILE_MOD_R2" = "b13" ]
+    profile h700 rg40xxv             # L3 takes 12
+    [ "$PROFILE_MOD_L2" = "b13" ]
+    [ "$PROFILE_MOD_R2" = "b14" ]
+    profile h700 rgcubexx
+    [ "$PROFILE_MOD_L2" = "b13" ]
+    [ "$PROFILE_MOD_R2" = "b14" ]
+}
+
+@test "h700 Menu and Select sit where the ESC and volume keys push them" {
+    for device in rg35xxplus rg40xxv rgcubexx; do
+        profile h700 "$device"
+        [ "$PROFILE_BTN_MENU" -eq 11 ]
+        [ "$PROFILE_BTN_SELECT" -eq 9 ]
+    done
+}
+
+@test "the h700 button scan stops short of Menu's KEY_GOTO echo" {
+    # The pad emits Menu twice, and the echo would read as a phantom press.
+    profile h700 rg35xxplus; [ "$PROFILE_BTN_COUNT" -eq 14 ]
+    profile h700 rg40xxv;    [ "$PROFILE_BTN_COUNT" -eq 15 ]
+    profile h700 rgcubexx;   [ "$PROFILE_BTN_COUNT" -eq 16 ]
+}
+
+@test "the TrimUI and Miyoo pads keep the layout compiled into the overlay" {
+    for spec in "tg5040 brickpro" "tg5040 smartpro" "tg5050 " "my355 "; do
+        # shellcheck disable=SC2086
+        set -- $spec
+        profile "$1" "${2:-}"
+        [ "$PROFILE_BTN_MENU" -eq 8 ]
+        [ "$PROFILE_BTN_SELECT" -eq 6 ]
+        [ "$PROFILE_MOD_L2" = "a2" ]
+        [ "$PROFILE_MOD_R2" = "a5" ]
+        [ "$PROFILE_BTN_COUNT" -eq 11 ]
+        [ -z "$PROFILE_INPUT_CFG" ]
+    done
+}
+
+@test "the Brick has no sticks and gets the C-button fragment" {
+    profile tg5040 brick
+    [ "$PROFILE_HAS_LSTICK" -eq 0 ]
+    [ "$PROFILE_HAS_RSTICK" -eq 0 ]
+    [ "$PROFILE_INPUT_CFG" = "input/tg5040-brick.cfg" ]
+}
+
+@test "the other TrimUI devices have both sticks and need no fragment" {
+    for device in brickpro smartpro; do
+        profile tg5040 "$device"
+        [ "$PROFILE_HAS_LSTICK" -eq 1 ]
+        [ "$PROFILE_HAS_RSTICK" -eq 1 ]
+    done
+}
+
 # ── every shipped platform must be covered ──────────────────────────────────
 
 @test "every platform in pak.json resolves a profile" {
