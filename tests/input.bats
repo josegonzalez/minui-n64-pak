@@ -2,15 +2,16 @@
 #
 # The per-device pad mappings in config/shared/input/.
 #
-# default.cfg carries the TrimUI layout. Devices whose pad differs name a
-# fragment in the platform profile, which launch.sh merges over the seeded
-# config. These tests drive the real `ini` helper, so they cover the merge the
-# device actually performs rather than re-deriving it.
+# Every supported pad reports the same SDL button and axis numbers — B=0 A=1 Y=2
+# X=3 L1=4 R1=5 Select=6 Start=7 Menu=8, axes 0/1 the left stick, 3/4 the right,
+# 2 and 5 the L2/R2 triggers, d-pad on hat 0 — so default.cfg fits them all.
+# NextUI h700 rc11 made the Anbernic pads match; before it their numbers differed
+# per model and from TrimUI's.
 #
-# The h700 indices come from NextUI's h700 SDL2 enumerating a pad's buttons in
-# ascending evdev keycode order, with the Anbernic pad's ESC and volume keys
-# taking 0-2. Measured by the nextui-portmaster-h700 project on hardware and
-# corroborated by the NextCommander-h700 patch in NextUI.
+# What varies is which sticks a model physically has. default.cfg binds the left
+# stick to the N64 analog stick and the right stick to the C-buttons, so a model
+# missing either needs those rebound. These tests drive the real `ini` helper, so
+# they cover the merge the device actually performs.
 
 setup() {
     REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -19,7 +20,7 @@ setup() {
     [ -x "$INI" ] || make -C "$REPO_ROOT/tools/ini" build-native >/dev/null
 }
 
-# binding <fragment> <key> — the value a fragment sets, via the real ini tool.
+# binding <fragment> <key>
 binding() {
     run "$INI" get "$INPUT_DIR/$1" "Input-SDL-Control1" "$2"
     [ "$status" -eq 0 ]
@@ -61,144 +62,108 @@ merged() {
     done
 }
 
-# ── h700 button indices, all three classes ──────────────────────────────────
-
-@test "h700 face and shoulder buttons start at 3 on every class" {
-    for f in h700-sticks.cfg h700-lstick.cfg h700-nosticks.cfg; do
-        binding "$f" "A Button"; [ "$output" = "button(3)" ]
-        binding "$f" "B Button"; [ "$output" = "button(4)" ]
-        binding "$f" "L Trig";   [ "$output" = "button(7)" ]
-        binding "$f" "R Trig";   [ "$output" = "button(8)" ]
-        binding "$f" "Start";    [ "$output" = "button(10)" ]
+@test "no fragment rebinds a button, only what a missing stick made unreachable" {
+    # Face buttons, shoulders, Start and the d-pad are the same on every pad, so
+    # a fragment touching them would be re-introducing a per-device layout.
+    for f in "$INPUT_DIR"/*.cfg; do
+        for key in "A Button" "B Button" "Start" "Z Trig" "L Trig" "R Trig" \
+                   "DPad U" "DPad D" "DPad L" "DPad R"; do
+            run "$INI" get "$f" "Input-SDL-Control1" "$key"
+            [ "$status" -ne 0 ]
+        done
     done
 }
 
-@test "h700 Z Trigger follows L2, which the stick clicks shift" {
-    # No stick clicks: L2 is 12. A left stick adds L3 at 12 and pushes L2 to 13.
-    binding h700-nosticks.cfg "Z Trig"; [ "$output" = "button(12)" ]
-    binding h700-lstick.cfg   "Z Trig"; [ "$output" = "button(13)" ]
-    binding h700-sticks.cfg   "Z Trig"; [ "$output" = "button(13)" ]
+# ── C-buttons without a right stick ─────────────────────────────────────────
+
+@test "the C-button fragment uses R2 plus a face button by position" {
+    # X top, B bottom, Y left, A right.
+    binding cbuttons-on-r2.cfg "C Button U"; [ "$output" = "button(3)" ]
+    binding cbuttons-on-r2.cfg "C Button D"; [ "$output" = "button(0)" ]
+    binding cbuttons-on-r2.cfg "C Button L"; [ "$output" = "button(2)" ]
+    binding cbuttons-on-r2.cfg "C Button R"; [ "$output" = "button(1)" ]
 }
 
-@test "h700 never binds an analog trigger, because it has none" {
-    for f in h700-sticks.cfg h700-lstick.cfg h700-nosticks.cfg; do
-        binding "$f" "Z Trig"
-        [[ "$output" != *"axis"* ]]
+@test "the modifier is R2, encoded as its analog axis" {
+    # R2 is axis 5, and an axis modifier is stored as -(index + 1).
+    for key in "C Button U" "C Button D" "C Button L" "C Button R"; do
+        binding cbuttons-on-r2.cfg "${key}_mod"; [ "$output" = "-6" ]
+        binding h700-nosticks.cfg  "${key}_mod"; [ "$output" = "-6" ]
     done
 }
 
-@test "h700 d-pad is the hat on every class" {
-    for f in h700-sticks.cfg h700-lstick.cfg h700-nosticks.cfg; do
-        binding "$f" "DPad U"; [ "$output" = "hat(0 Up)" ]
-        binding "$f" "DPad R"; [ "$output" = "hat(0 Right)" ]
+@test "no fragment leaves a C-button on an axis its device cannot reach" {
+    for f in "$INPUT_DIR"/*.cfg; do
+        for key in "C Button U" "C Button D" "C Button L" "C Button R"; do
+            run "$INI" get "$f" "Input-SDL-Control1" "$key"
+            [ "$status" -ne 0 ] || [[ "$output" != *"axis("* ]]
+        done
     done
 }
 
-# ── sticks are bound only where they exist ──────────────────────────────────
+# ── the analog stick on a device with no sticks ─────────────────────────────
 
-@test "the left stick drives the N64 analog stick where there is one" {
-    binding h700-sticks.cfg "X Axis"; [ "$output" = "axis(0-,0+)" ]
-    binding h700-lstick.cfg "X Axis"; [ "$output" = "axis(0-,0+)" ]
-    binding h700-sticks.cfg "Y Axis"; [ "$output" = "axis(1-,1+)" ]
-}
-
-@test "with no left stick the d-pad drives the N64 analog stick instead" {
+@test "with no sticks the d-pad drives the N64 analog stick" {
     # One hat() carrying both directions; the first drives the negative end, and
     # Y is inverted downstream, so Up leads.
     binding h700-nosticks.cfg "X Axis"; [ "$output" = "hat(0 Left Right)" ]
     binding h700-nosticks.cfg "Y Axis"; [ "$output" = "hat(0 Up Down)" ]
 }
 
-@test "the right stick drives the C-buttons where there is one" {
-    binding h700-sticks.cfg "C Button R"; [ "$output" = "axis(2+,24000)" ]
-    binding h700-sticks.cfg "C Button L"; [ "$output" = "axis(2-,24000)" ]
-    binding h700-sticks.cfg "C Button D"; [ "$output" = "axis(3+,24000)" ]
-    binding h700-sticks.cfg "C Button U"; [ "$output" = "axis(3-,24000)" ]
-}
-
-@test "no fragment binds a stick axis its class does not have" {
-    for f in h700-nosticks.cfg tg5040-brick.cfg; do
-        for key in "X Axis" "Y Axis" "C Button U" "C Button D" "C Button L" "C Button R"; do
-            run "$INI" get "$INPUT_DIR/$f" "Input-SDL-Control1" "$key"
-            [ "$status" -ne 0 ] || [[ "$output" != *"axis("* ]]
-        done
-    done
-    # The left-stick-only class may use axes 0/1, never 2/3.
-    for key in "C Button U" "C Button D" "C Button L" "C Button R"; do
-        binding h700-lstick.cfg "$key"
-        [[ "$output" != *"axis("* ]]
-    done
-}
-
-# ── C-buttons without a right stick ─────────────────────────────────────────
-
-@test "stickless classes reach the C-buttons through a held modifier" {
-    # R2 + face button, by physical position: X top, B bottom, Y left, A right.
-    binding h700-nosticks.cfg "C Button U"; [ "$output" = "button(6)" ]   # X
-    binding h700-nosticks.cfg "C Button D"; [ "$output" = "button(4)" ]   # B
-    binding h700-nosticks.cfg "C Button L"; [ "$output" = "button(5)" ]   # Y
-    binding h700-nosticks.cfg "C Button R"; [ "$output" = "button(3)" ]   # A
-}
-
-@test "the modifier is R2 for each stickless class" {
-    # No stick clicks: R2 is 13. A left stick shifts it to 14.
-    for key in "C Button U" "C Button D" "C Button L" "C Button R"; do
-        binding h700-nosticks.cfg "${key}_mod"; [ "$output" = "13" ]
-        binding h700-lstick.cfg   "${key}_mod"; [ "$output" = "14" ]
-    done
-}
-
-@test "the Brick reaches its C-buttons the same way, on its analog R2" {
-    # TrimUI indices, and R2 is analog axis 5, encoded as -(5 + 1).
-    binding tg5040-brick.cfg "C Button U"; [ "$output" = "button(3)" ]   # X
-    binding tg5040-brick.cfg "C Button D"; [ "$output" = "button(0)" ]   # B
-    binding tg5040-brick.cfg "C Button L"; [ "$output" = "button(2)" ]   # Y
-    binding tg5040-brick.cfg "C Button R"; [ "$output" = "button(1)" ]   # A
-    for key in "C Button U" "C Button D" "C Button L" "C Button R"; do
-        binding tg5040-brick.cfg "${key}_mod"; [ "$output" = "-6" ]
-    done
-}
-
-@test "the Brick fragment touches nothing but the C-buttons" {
-    # Its face buttons and sticks already match default.cfg.
-    for key in "A Button" "B Button" "Start" "Z Trig" "X Axis" "DPad U"; do
-        run "$INI" get "$INPUT_DIR/tg5040-brick.cfg" "Input-SDL-Control1" "$key"
+@test "a device that keeps its left stick does not touch the analog axes" {
+    # rg40xxv and the Brick both have a usable left stick binding in default.cfg.
+    for key in "X Axis" "Y Axis"; do
+        run "$INI" get "$INPUT_DIR/cbuttons-on-r2.cfg" "Input-SDL-Control1" "$key"
         [ "$status" -ne 0 ]
     done
 }
 
 # ── the merge launch.sh performs ────────────────────────────────────────────
 
-@test "merging leaves the platforms whose pad matches default.cfg untouched" {
-    for spec in "tg5040 brickpro" "tg5040 smartpro" "tg5050 " "my355 "; do
+@test "devices with both sticks keep default.cfg untouched" {
+    for spec in "tg5040 brickpro" "tg5040 smartpro" "tg5050 " "my355 " \
+                "h700 rg35xxh" "h700 rgcubexx"; do
         # shellcheck disable=SC2086
         set -- $spec
-        merged "$1" "${2:-}" "A Button"; [ "$output" = "button(1)" ]
-        merged "$1" "${2:-}" "Z Trig";   [ "$output" = "axis(2+)" ]
+        merged "$1" "${2:-}" "A Button";   [ "$output" = "button(1)" ]
+        merged "$1" "${2:-}" "Z Trig";     [ "$output" = "axis(2+)" ]
+        merged "$1" "${2:-}" "X Axis";     [ "$output" = "axis(0-,0+)" ]
+        merged "$1" "${2:-}" "C Button R"; [ "$output" = "axis(3+,24000)" ]
     done
 }
 
-@test "merging rewrites the h700 bindings and keeps everything else" {
-    merged h700 rg35xxplus "A Button"; [ "$output" = "button(3)" ]
-    merged h700 rg35xxplus "Z Trig";   [ "$output" = "button(12)" ]
+@test "merging keeps the shared buttons and rebinds only the unreachable parts" {
+    merged h700 rg35xxplus "A Button"; [ "$output" = "button(1)" ]
+    merged h700 rg35xxplus "Z Trig";   [ "$output" = "axis(2+)" ]
+    merged h700 rg35xxplus "X Axis";   [ "$output" = "hat(0 Left Right)" ]
+    merged h700 rg35xxplus "C Button U_mod"; [ "$output" = "-6" ]
     # A key no fragment names keeps default.cfg's value.
     merged h700 rg35xxplus "mode"; [ "$output" = "0" ]
 }
 
-@test "merging gives the Brick working C-buttons without moving its face buttons" {
+@test "rg40xxv keeps its left stick and moves only the C-buttons" {
+    merged h700 rg40xxv "X Axis";         [ "$output" = "axis(0-,0+)" ]
+    merged h700 rg40xxv "C Button U";     [ "$output" = "button(3)" ]
+    merged h700 rg40xxv "C Button U_mod"; [ "$output" = "-6" ]
+}
+
+@test "the Brick gets working C-buttons without moving its face buttons" {
     merged tg5040 brick "C Button U";     [ "$output" = "button(3)" ]
     merged tg5040 brick "C Button U_mod"; [ "$output" = "-6" ]
     merged tg5040 brick "A Button";       [ "$output" = "button(1)" ]
+    # trimui_inputd swaps its d-pad and analog stick, so leave the axes alone.
+    merged tg5040 brick "X Axis";         [ "$output" = "axis(0-,0+)" ]
 }
 
-@test "every N64 button is reachable on every h700 class" {
-    for spec in "h700 rg35xxh" "h700 rg40xxv" "h700 rg35xxplus"; do
+@test "every N64 button is reachable on every device" {
+    for spec in "h700 rg35xxh" "h700 rg40xxv" "h700 rg35xxplus" "tg5040 brick" \
+                "tg5040 smartpro" "tg5050 " "my355 "; do
         # shellcheck disable=SC2086
         set -- $spec
         for key in "A Button" "B Button" "Start" "Z Trig" "L Trig" "R Trig" \
                    "C Button U" "C Button D" "C Button L" "C Button R" \
                    "DPad U" "DPad D" "DPad L" "DPad R" "X Axis" "Y Axis"; do
-            merged "$1" "$2" "$key"
+            merged "$1" "${2:-}" "$key"
             [ -n "$output" ]
             [ "$output" != '""' ]
         done

@@ -109,88 +109,89 @@ All paths are set via CLI flags or `--set` on the mupen64plus command line — `
 
 ## Pad layout
 
-SDL button indices are not the same across platforms, and `default.cfg` can only hold one
-layout. It holds the TrimUI one; devices whose pad differs name a fragment in the platform
-profile, which `launch.sh` merges over the seeded config once per device using the bundled
-`ini merge`. The merge is additive, so a user's own rebinding survives it, and it runs on
-installs seeded before the fragment existed as well as fresh ones (stamped
-`.input-mapped-v1`).
+Every supported pad reports the same SDL button and axis numbers, so `default.cfg` holds one
+mapping that fits them all:
 
-### Why h700 differs
+| Input | SDL |
+|---|---|
+| B, A, Y, X | buttons 0, 1, 2, 3 |
+| L1, R1 | buttons 4, 5 |
+| Select, Start, Menu | buttons 6, 7, 8 |
+| L3, R3 | buttons 9, 10 |
+| Left stick | axes 0, 1 |
+| L2, R2 | axes 2, 5 |
+| Right stick | axes 3, 4 |
+| D-pad | hat 0 |
 
-NextUI's h700 SDL2 enumerates a pad's buttons in ascending evdev keycode order. The Anbernic
-pad reports `ESC` (1) and the two volume keys (114/115) before the gamepad codes (304-316),
-so its gamepad buttons start at index 3. It is not a uniform shift — TrimUI has `A=1 B=0`
-swapped where h700 has `A=3 B=4` in order — and h700 has no analog triggers at all, so L2
-and R2 are plain buttons and `Z Trig` cannot be an axis there.
+That became true on h700 with NextUI rc11, which is therefore the minimum this pak supports
+there. Before rc11 the Anbernic pad's numbers differed per model *and* from TrimUI's: its
+ESC and volume keys took indices 0-2, pushing the gamepad buttons to 3 and up, and the
+stick-click keycodes shifted L2/R2 further depending on which sticks the model had. rc11's
+SDL2 remaps the built-in pad to the TrimUI numbering, synthesises L2/R2 as trigger axes
+resting at -32768, normalises the sticks to the full axis range, and drops the second press
+Menu emits after a tap. `SDL_JOYSTICK_H700_FIXED_LAYOUT=0` restores the old behaviour for a
+single pak; this one does not set it.
 
-The stick-click codes 313 (`BTN_TR2`, L3) and 316 (`BTN_MODE`, R3) only exist on a model
-that has the corresponding stick, and each one present shifts L2/R2 up, which is why there
-are three h700 classes rather than one:
+Because the numbering is now uniform, the pak carries no per-device button table and nothing
+reads pad indices from the environment. `tests/platform.bats` asserts that, so a
+reintroduced table fails the suite.
 
-| evdev | label | no sticks | left stick only | both sticks |
-|---|---|---|---|---|
-| 304-311 | A, B, Y, X, L1, R1, Select, Start | 3-10 | 3-10 | 3-10 |
-| 312 `BTN_TL2` | Menu | 11 | 11 | 11 |
-| 313 `BTN_TR2` | L3 | — | 12 | 12 |
-| 314 `BTN_SELECT` | L2 | 12 | 13 | 13 |
-| 315 `BTN_START` | R2 | 13 | 14 | 14 |
-| 316 `BTN_MODE` | R3 | — | — | 15 |
-| 354 `KEY_GOTO` | Menu echo | 14 | 15 | 16 |
+### What still varies: analog sticks
 
-The pad emits Menu twice, so `PROFILE_BTN_COUNT` stops one short of the echo. The d-pad is
-SDL hat 0; sticks are axes 0/1 (left) and 2/3 (right), negative being left and up.
+`default.cfg` binds the left stick to the N64 analog stick and the right stick to the
+C-buttons. A device missing either cannot reach those inputs, so the profile names a fragment
+in `config/shared/input/` and `launch.sh` merges it over the seeded config once per device
+with the bundled `ini merge`. The merge is additive, so a user's own rebinding survives it,
+and it runs on installs seeded before the fragment existed as well as fresh ones (stamped
+`.input-mapped-v1`). Axes 0-5 always exist on h700; the ones behind an absent stick read 0.
 
-These indices were measured on hardware by the
-[nextui-portmaster-h700](https://github.com/Logarythms/nextui-portmaster-h700) project and
-corroborated by the `NextCommander-h700` patch in the NextUI h700 fork. That project records
-that deriving them from evtest keycodes instead of measuring produced a different, wrong
-table, so they should be re-measured with `jstest` rather than recomputed. The left-stick-only
-column is the one class no published measurement covers; it follows the same shift rule.
-
-### Stick presence per model
-
-From `workspace/h700/platform/platform.c` in the NextUI h700 fork. Its `settings.cpp` holds
-a second copy that is wrong about RG40XXV, so platform.c is the one to follow. Nothing
-exports these at runtime — `dev_has_lstick` is a plain global compiled into each NextUI
-binary — so `$DEVICE` is the supported hook, as `PAKS.md` documents, and the pak carries its
-own copy of the table.
-
-| Left + right | Left only | None |
+| Device | Sticks | Fragment |
 |---|---|---|
-| `rg35xxh`, `rg35xxpro`, `rg40xxh`, `rgcubexx`, `rg34xxsp` | `rg40xxv` | `rg28xx`, `rg34xx`, `rg35xxplus`, `rg35xxsp`, `rgsp` |
+| tg5040 Smart Pro / Brick Pro, tg5050, my355 | both | none |
+| h700 `rg35xxh`, `rg35xxpro`, `rg40xxh`, `rgcubexx`, `rg34xxsp` | both | none |
+| h700 `rg40xxv` | left only | `cbuttons-on-r2.cfg` |
+| tg5040 Brick | none | `cbuttons-on-r2.cfg` |
+| h700 `rg28xx`, `rg34xx`, `rg35xxplus`, `rg35xxsp`, `rgsp` | none | `h700-nosticks.cfg` |
 
-### The overlay has its own input path
+Stick presence per h700 model comes from `workspace/h700/platform/platform.c` in the NextUI
+h700 fork. Its `settings.cpp` holds a second copy that is wrong about RG40XXV, so platform.c
+is the one to follow. Nothing exports it at runtime — `dev_has_lstick` is a plain global
+compiled into each NextUI binary — so `$DEVICE` is the supported hook, as `PAKS.md`
+documents, and the pak carries its own copy.
 
-The in-game mapping described above lives in `mupen64plus.cfg` and reaches the emulator
-through the input plugin. The overlay menu does not use any of it: `poll_overlay_input()`
-and `check_menu_button()` in `overlay/emu_frontend.c` read the pad directly with
-`SDL_JoystickGetButton`, because `SDL_PollEvent` is unreliable inside mupen64plus's threaded
-plugin context. So the overlay needs the layout separately, and it reads the same profile
-values `launch.sh` exports.
+The Brick shares `cbuttons-on-r2.cfg` with RG40XXV rather than having its own: neither has a
+right stick, and `trimui_inputd` already swaps the Brick's d-pad and analog stick at the
+kernel level, so only its C-buttons need rebinding. h700 has no equivalent daemon, which is
+why the stickless h700 fragment binds the d-pad to the N64 analog stick as well as the N64
+d-pad. Nearly every N64 game reads one or the other, so binding both leaves neither dead.
 
-That is why fixing the in-game mapping alone left the menu wrong on h700: the overlay was
-still using the TrimUI indices, where Menu is 8. On h700 button 8 is R1, so the menu opened
-on R1, and confirm and back landed on the pad's ESC and volume keys. The indices now come
-from `PROFILE_BTN_A`, `_B`, `_L1`, `_R1` and `_MENU`.
-
-Anything reading the pad directly has to go through the layout. Adding a new direct read
-with a literal index will work on TrimUI and silently misbehave on h700.
+The fragments are generated by `scripts/gen-input-cfg.py`; the output is committed and
+`tests/input.bats` asserts it.
 
 ### C-buttons without a right stick
 
-The Brick and the stickless h700 models reach the C-buttons by holding R2 and pressing a
-face button by position. That combo is data, not a special case: the overlay's config loader
-understands a `<key>_mod` suffix, writes the pair into `$EMU_BUTTON_MAP_FILE`, and the
-patched input plugin applies the modifier from there. A non-negative modifier is an SDL
-button index; a negative one is `-(axis index + 1)` for an analog shoulder, which is how the
-Brick's axis-5 R2 is expressed.
+Holding R2 and pressing a face button by position is data, not a special case: the overlay's
+config loader understands a `<key>_mod` suffix, writes the pair into
+`$EMU_BUTTON_MAP_FILE`, and the patched input plugin applies the modifier from there. A
+non-negative modifier is an SDL button index; a negative one is `-(axis index + 1)`, which is
+how R2's axis 5 becomes `-6`.
 
-This replaced a `$DEVICE=brick` block in the input-sdl patch that had stopped working: it
-set the C-button bits, and the button-map block that runs after it cleared every C-button
-bit and re-derived them from right-stick axes the Brick does not have. Fixing it also
-required correcting the axis-modifier test, which checked `|value| >= 24000` and so read a
-trigger resting at -32768 as permanently held.
+This replaced a `$DEVICE=brick` block in the input-sdl patch that had stopped working: it set
+the C-button bits, and the button-map block that runs after it cleared every C-button bit and
+re-derived them from right-stick axes the Brick does not have. Fixing it also required
+correcting the axis-modifier test, which checked `|value| >= 24000` and so read a trigger
+resting at -32768 as permanently held — true of TrimUI's real triggers and of the ones rc11
+synthesises on h700.
+
+### The overlay has its own input path
+
+The mapping above lives in `mupen64plus.cfg` and reaches the emulator through the input
+plugin. The overlay menu does not use any of it: `poll_overlay_input()` and
+`check_menu_button()` in `overlay/emu_frontend.c` read the pad directly with
+`SDL_JoystickGetButton`, because `SDL_PollEvent` is unreliable inside mupen64plus's threaded
+plugin context. Those reads use fixed indices, which is correct only while every pad numbers
+its buttons the same way. If a future platform breaks that again, both paths need fixing, not
+just the config.
 
 ## Platform profile
 
@@ -213,9 +214,6 @@ It sets the following, and everything downstream in `launch.sh` reads them rathe
 | `PROFILE_LD_PRELOAD` | EGL library to preload |
 | `PROFILE_HAS_LSTICK` / `PROFILE_HAS_RSTICK` | analog sticks the device carries |
 | `PROFILE_INPUT_CFG` | pad mapping to merge at first run; empty when default.cfg already fits |
-| `PROFILE_BTN_MENU` / `PROFILE_BTN_SELECT` | SDL button indices the overlay treats as shortcut modifiers |
-| `PROFILE_MOD_L2` / `PROFILE_MOD_R2` | shoulder modifiers, `aN` for an axis or `bN` for a button |
-| `PROFILE_BTN_COUNT` | how many buttons the overlay polls |
 
 `platform.sh` ships in the pak root next to `launch.sh`.
 

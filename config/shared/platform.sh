@@ -6,14 +6,11 @@
 # does no I/O — it reads its two arguments plus $SDL_VIDEO_EGL_DRIVER and sets
 # PROFILE_* variables.
 #
-# The PROFILE_BTN_* / PROFILE_MOD_* values are SDL joystick indices for the
-# device's built-in pad. TrimUI and Miyoo pads start at button 0; NextUI's h700
-# SDL2 enumerates a pad's buttons in ascending evdev keycode order, and the
-# Anbernic pad reports ESC (1) and the two volume keys (114/115) before the
-# gamepad codes (304-316), so its gamepad buttons start at index 3. The
-# stick-click codes 313 (L3) and 316 (R3) only exist where a stick does, which
-# shifts L2/R2 again — hence three h700 classes. Shoulder modifiers are written
-# as aN or bN because TrimUI triggers are analog axes and h700's are buttons.
+# Every supported pad reports the same SDL button and axis numbers, so
+# default.cfg's mapping fits them all. NextUI h700 rc11 made that true: before
+# it, the Anbernic pad's numbers differed per model and from TrimUI's. What still
+# varies is which analog sticks a model physically has, which is what
+# PROFILE_HAS_LSTICK / PROFILE_HAS_RSTICK and PROFILE_INPUT_CFG describe.
 
 # n64_platform_profile <platform> <device>
 n64_platform_profile() {
@@ -37,22 +34,12 @@ n64_platform_profile() {
     PROFILE_SWAPFILE="/mnt/UDISK/n64_swap"
     PROFILE_LD_EXTRA_DIRS=""
     PROFILE_LD_PRELOAD="libEGL.so"
-    # Input capabilities. Defaults describe the TrimUI pad, which every platform
-    # except h700 uses; only h700 ships an input fragment to merge over
-    # default.cfg, so PROFILE_INPUT_CFG stays empty elsewhere.
+    # Analog sticks the device physically has. default.cfg binds the left stick
+    # to the N64 analog stick and the right stick to the C-buttons, so a model
+    # missing either needs a fragment to rebind what it cannot reach.
     PROFILE_HAS_LSTICK=1
     PROFILE_HAS_RSTICK=1
     PROFILE_INPUT_CFG=""
-    # Overlay navigation reads the pad directly, so it needs indices too.
-    PROFILE_BTN_A=1
-    PROFILE_BTN_B=0
-    PROFILE_BTN_L1=4
-    PROFILE_BTN_R1=5
-    PROFILE_BTN_MENU=8
-    PROFILE_BTN_SELECT=6
-    PROFILE_MOD_L2="a2"
-    PROFILE_MOD_R2="a5"
-    PROFILE_BTN_COUNT=11
 
     case "$_platform" in
         tg5040)
@@ -67,9 +54,11 @@ n64_platform_profile() {
                 PROFILE_LEGACY_SUBDIR="tg5040-brick"
                 # The Brick is the one TrimUI device with no sticks at all, so
                 # default.cfg's right-stick C-buttons are unreachable there.
+                # trimui_inputd swaps its d-pad and analog stick, so only the
+                # C-buttons need rebinding.
                 PROFILE_HAS_LSTICK=0
                 PROFILE_HAS_RSTICK=0
-                PROFILE_INPUT_CFG="input/tg5040-brick.cfg"
+                PROFILE_INPUT_CFG="input/cbuttons-on-r2.cfg"
             elif [ "$_device" = "brickpro" ]; then
                 PROFILE_CONFIG_SUBDIR="brick-pro"
                 PROFILE_RESOLUTION="1024x768"
@@ -117,47 +106,31 @@ n64_platform_profile() {
             # Sticks per SKU, from NextUI's workspace/h700/platform/platform.c.
             # NextUI's settings.cpp carries a second copy of this table that is
             # wrong about rg40xxv, so platform.c is the one to follow.
+            #
+            # Button and axis numbers match TrimUI's on every model as of NextUI
+            # h700 rc11, so a missing stick is the only thing needing a fragment.
+            # Axes 0-5 always exist; the ones behind an absent stick read 0.
             case "${_device:-rg35xxplus}" in
                 rg35xxh|rg35xxpro|rg40xxh|rgcubexx|rg34xxsp)
+                    # Both sticks, so default.cfg already fits.
                     PROFILE_HAS_LSTICK=1
                     PROFILE_HAS_RSTICK=1
-                    PROFILE_INPUT_CFG="input/h700-sticks.cfg"
-                    # L3 at 12 shifts L2/R2 to 13/14; R3 takes 15.
-                    PROFILE_MOD_L2="b13"
-                    PROFILE_MOD_R2="b14"
-                    # Scan 0-15: index 16 is Menu's KEY_GOTO echo, which would
-                    # otherwise read as a phantom second Menu press.
-                    PROFILE_BTN_COUNT=16
                     ;;
                 rg40xxv)
-                    # Left stick only: L3 exists, R3 does not.
+                    # Left stick only: the C-buttons need the R2 modifier, the
+                    # same way the Brick's do.
                     PROFILE_HAS_LSTICK=1
                     PROFILE_HAS_RSTICK=0
-                    PROFILE_INPUT_CFG="input/h700-lstick.cfg"
-                    PROFILE_MOD_L2="b13"
-                    PROFILE_MOD_R2="b14"
-                    PROFILE_BTN_COUNT=15   # 15 is the Menu echo
+                    PROFILE_INPUT_CFG="input/cbuttons-on-r2.cfg"
                     ;;
                 *)
-                    # rg28xx, rg34xx, rg35xxplus, rg35xxsp, rgsp.
+                    # rg28xx, rg34xx, rg35xxplus, rg35xxsp, rgsp. No sticks, so
+                    # the d-pad drives the N64 analog stick too.
                     PROFILE_HAS_LSTICK=0
                     PROFILE_HAS_RSTICK=0
                     PROFILE_INPUT_CFG="input/h700-nosticks.cfg"
-                    # No stick clicks, so L2/R2 sit at 12/13.
-                    PROFILE_MOD_L2="b12"
-                    PROFILE_MOD_R2="b13"
-                    PROFILE_BTN_COUNT=14   # 14 is the Menu echo
                     ;;
             esac
-            # The face and shoulder buttons sit at the same indices on every
-            # h700 class: only the stick clicks shift things, and they come
-            # after these.
-            PROFILE_BTN_A=3
-            PROFILE_BTN_B=4
-            PROFILE_BTN_L1=7
-            PROFILE_BTN_R1=8
-            PROFILE_BTN_MENU=11
-            PROFILE_BTN_SELECT=9
             PROFILE_CONFIG_SUBDIR="${_device:-rg35xxplus}"
             PROFILE_LEGACY_SUBDIR="h700"
             # No writable non-FAT partition: the SD card is FAT and the stock

@@ -210,23 +210,6 @@ export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
 # Pass resume slot to emulator if game switcher requested it
 [ -n "$RESUME_SLOT" ] && export EMU_RESUME_SLOT="$RESUME_SLOT"
 
-# ── Pad layout ───────────────────────────────────────────────────────────────
-# The overlay and the patched input plugin both need the built-in pad's SDL
-# indices: the overlay to scan the right button range and recognise the shortcut
-# modifiers, the plugin to apply modifier-held C-buttons on devices with no right
-# stick. Unset values fall back to the TrimUI layout compiled into the overlay.
-export EMU_BTN_A="$PROFILE_BTN_A"
-export EMU_BTN_B="$PROFILE_BTN_B"
-export EMU_BTN_L1="$PROFILE_BTN_L1"
-export EMU_BTN_R1="$PROFILE_BTN_R1"
-export EMU_BTN_MENU="$PROFILE_BTN_MENU"
-export EMU_BTN_SELECT="$PROFILE_BTN_SELECT"
-export EMU_MOD_L2="$PROFILE_MOD_L2"
-export EMU_MOD_R2="$PROFILE_MOD_R2"
-export EMU_BTN_COUNT="$PROFILE_BTN_COUNT"
-export EMU_HAS_LSTICK="$PROFILE_HAS_LSTICK"
-export EMU_HAS_RSTICK="$PROFILE_HAS_RSTICK"
-
 # ── Overlay menu config ──────────────────────────────────────────────────────
 export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"
 export EMU_OVERLAY_INI="$DEVICE_CONFIG_DIR/mupen64plus.cfg"

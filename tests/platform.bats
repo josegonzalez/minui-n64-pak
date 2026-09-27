@@ -166,16 +166,18 @@ profile() {
 
 # ── pad capabilities ────────────────────────────────────────────────────────
 #
-# Stick presence per h700 model is NextUI's own table, from
+# Every supported pad reports the same SDL button and axis numbers, so
+# default.cfg fits them all; NextUI h700 rc11 made the Anbernic pads match. What
+# varies is which sticks a model has, taken from NextUI's own table in
 # workspace/h700/platform/platform.c. Its settings.cpp carries a second copy that
 # is wrong about rg40xxv, so platform.c is the one followed here.
 
-@test "h700 models with both sticks take the two-stick profile" {
+@test "h700 models with both sticks need no fragment" {
     for device in rg35xxh rg35xxpro rg40xxh rgcubexx rg34xxsp; do
         profile h700 "$device"
         [ "$PROFILE_HAS_LSTICK" -eq 1 ]
         [ "$PROFILE_HAS_RSTICK" -eq 1 ]
-        [ "$PROFILE_INPUT_CFG" = "input/h700-sticks.cfg" ]
+        [ -z "$PROFILE_INPUT_CFG" ]
     done
 }
 
@@ -183,7 +185,7 @@ profile() {
     profile h700 rg40xxv
     [ "$PROFILE_HAS_LSTICK" -eq 1 ]
     [ "$PROFILE_HAS_RSTICK" -eq 0 ]
-    [ "$PROFILE_INPUT_CFG" = "input/h700-lstick.cfg" ]
+    [ "$PROFILE_INPUT_CFG" = "input/cbuttons-on-r2.cfg" ]
 }
 
 @test "the remaining h700 models have no sticks" {
@@ -203,92 +205,32 @@ profile() {
     [ "$PROFILE_INPUT_CFG" = "input/h700-nosticks.cfg" ]
 }
 
-@test "h700 shoulder modifiers are buttons, and shift with the stick clicks" {
-    profile h700 rg35xxplus          # no stick clicks
-    [ "$PROFILE_MOD_L2" = "b12" ]
-    [ "$PROFILE_MOD_R2" = "b13" ]
-    profile h700 rg40xxv             # L3 takes 12
-    [ "$PROFILE_MOD_L2" = "b13" ]
-    [ "$PROFILE_MOD_R2" = "b14" ]
-    profile h700 rgcubexx
-    [ "$PROFILE_MOD_L2" = "b13" ]
-    [ "$PROFILE_MOD_R2" = "b14" ]
+@test "the Brick has no sticks and shares the C-button fragment" {
+    # Same fragment as rg40xxv: neither has a right stick, and both pads number
+    # their buttons the same way.
+    profile tg5040 brick
+    [ "$PROFILE_HAS_LSTICK" -eq 0 ]
+    [ "$PROFILE_HAS_RSTICK" -eq 0 ]
+    [ "$PROFILE_INPUT_CFG" = "input/cbuttons-on-r2.cfg" ]
 }
 
-@test "h700 Menu and Select sit where the ESC and volume keys push them" {
-    for device in rg35xxplus rg40xxv rgcubexx; do
-        profile h700 "$device"
-        [ "$PROFILE_BTN_MENU" -eq 11 ]
-        [ "$PROFILE_BTN_SELECT" -eq 9 ]
-    done
-}
-
-@test "the h700 button scan stops short of Menu's KEY_GOTO echo" {
-    # The pad emits Menu twice, and the echo would read as a phantom press.
-    profile h700 rg35xxplus; [ "$PROFILE_BTN_COUNT" -eq 14 ]
-    profile h700 rg40xxv;    [ "$PROFILE_BTN_COUNT" -eq 15 ]
-    profile h700 rgcubexx;   [ "$PROFILE_BTN_COUNT" -eq 16 ]
-}
-
-# The overlay polls the pad directly, so its own navigation buttons need the
-# layout as well. On h700 the TrimUI indices land on ESC, the volume keys and R1,
-# which is what made Menu open on R1 and the menu keys misbehave.
-@test "h700 overlay navigation uses the shifted indices" {
-    for device in rg35xxplus rg40xxv rgcubexx; do
-        profile h700 "$device"
-        [ "$PROFILE_BTN_A" -eq 3 ]
-        [ "$PROFILE_BTN_B" -eq 4 ]
-        [ "$PROFILE_BTN_L1" -eq 7 ]
-        [ "$PROFILE_BTN_R1" -eq 8 ]
-        [ "$PROFILE_BTN_MENU" -eq 11 ]
-    done
-}
-
-@test "no h700 navigation button collides with another" {
-    profile h700 rgcubexx
-    printf '%s\n' "$PROFILE_BTN_A" "$PROFILE_BTN_B" "$PROFILE_BTN_L1" \
-        "$PROFILE_BTN_R1" "$PROFILE_BTN_MENU" "$PROFILE_BTN_SELECT" > "$BATS_TEST_TMPDIR/idx"
-    [ "$(sort -u "$BATS_TEST_TMPDIR/idx" | wc -l)" -eq 6 ]
-}
-
-@test "h700 Menu is not R1, which is what the bug report showed" {
-    profile h700 rg35xxplus
-    [ "$PROFILE_BTN_MENU" -ne "$PROFILE_BTN_R1" ]
-    # The TrimUI Menu index is h700's R1; using it opened the menu on R1.
-    [ "$PROFILE_BTN_R1" -eq 8 ]
-}
-
-@test "the TrimUI and Miyoo pads keep the layout compiled into the overlay" {
+@test "the devices with both sticks need no fragment at all" {
     for spec in "tg5040 brickpro" "tg5040 smartpro" "tg5050 " "my355 "; do
         # shellcheck disable=SC2086
         set -- $spec
         profile "$1" "${2:-}"
-        [ "$PROFILE_BTN_A" -eq 1 ]
-        [ "$PROFILE_BTN_B" -eq 0 ]
-        [ "$PROFILE_BTN_L1" -eq 4 ]
-        [ "$PROFILE_BTN_R1" -eq 5 ]
-        [ "$PROFILE_BTN_MENU" -eq 8 ]
-        [ "$PROFILE_BTN_SELECT" -eq 6 ]
-        [ "$PROFILE_MOD_L2" = "a2" ]
-        [ "$PROFILE_MOD_R2" = "a5" ]
-        [ "$PROFILE_BTN_COUNT" -eq 11 ]
+        [ "$PROFILE_HAS_LSTICK" -eq 1 ]
+        [ "$PROFILE_HAS_RSTICK" -eq 1 ]
         [ -z "$PROFILE_INPUT_CFG" ]
     done
 }
 
-@test "the Brick has no sticks and gets the C-button fragment" {
-    profile tg5040 brick
-    [ "$PROFILE_HAS_LSTICK" -eq 0 ]
-    [ "$PROFILE_HAS_RSTICK" -eq 0 ]
-    [ "$PROFILE_INPUT_CFG" = "input/tg5040-brick.cfg" ]
-}
-
-@test "the other TrimUI devices have both sticks and need no fragment" {
-    for device in brickpro smartpro; do
-        profile tg5040 "$device"
-        [ "$PROFILE_HAS_LSTICK" -eq 1 ]
-        [ "$PROFILE_HAS_RSTICK" -eq 1 ]
-    done
+@test "the profile carries no pad index overrides any more" {
+    # rc11 made every pad report the same numbers, so these were removed. A
+    # reappearance means someone is hardcoding a layout again.
+    run grep -nE "PROFILE_(BTN_(A|B|L1|R1|MENU|SELECT|COUNT)|MOD_(L2|R2))=" \
+        "$REPO_ROOT/config/shared/platform.sh"
+    [ "$status" -ne 0 ]
 }
 
 # ── every shipped platform must be covered ──────────────────────────────────
