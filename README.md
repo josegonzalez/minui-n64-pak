@@ -97,6 +97,8 @@ Two video plugins are included:
 
 Change the plugin in Options → Core → Video Plugin (requires restarting the game).
 
+To render at the N64's native resolution with sharp, unfiltered pixels, set Options → Rendering → Resolution Factor to 1x. It is also lighter on the GPU. Screen renders at the display's full resolution.
+
 ### Controls (Brick)
 
 The Brick has no analog sticks, so the d-pad doubles as the N64 joystick by default. For games that use the N64 d-pad (like Kirby 64 or puzzle games), the emulator automatically switches to d-pad mode. You can also change this manually in Options → Controls → Input Mode.
