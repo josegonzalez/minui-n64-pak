@@ -866,7 +866,7 @@
         {
           "key": "UseNativeResolutionFactor",
           "label": "Resolution Factor",
-          "description": "Internal rendering resolution multiplier",
+          "description": "Internal render resolution (1x = native N64, restart required)",
           "type": "cycle",
           "values": [
             0,
@@ -876,14 +876,15 @@
             4
           ],
           "labels": [
-            "Auto",
+            "Screen",
             "1x",
             "2x",
             "3x",
             "4x"
           ],
           "default": 2,
-          "plugin": "gliden64"
+          "plugin": "gliden64",
+          "restart_required": true
         }
       ]
     },
