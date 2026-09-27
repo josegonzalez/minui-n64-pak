@@ -1,17 +1,27 @@
-# N64 for TrimUI
+# N64 for MinUI
 
 A MinUI Emu Pak for N64, wrapping the standalone `mupen64plus` N64 emulator (version 2.6.0).
 
-![N64 for TrimUI](n64.png)
+![N64 for MinUI](n64.png)
 
 ## Requirements
 
-This pak is designed and tested on the following MinUI Platforms and devices:
+This pak supports the following MinUI Platforms and devices:
 
-- `tg5040`: TrimUI Brick (formerly `tg3040`) and TrimUI Smart Pro
+- `tg5040`: TrimUI Brick (formerly `tg3040`), TrimUI Brick Pro and TrimUI Smart Pro
 - `tg5050`: TrimUI Smart Pro S
+- `my355`: Miyoo Flip
+- `h700`: Anbernic RG28XX, RG34XX, RG34XXSP, RG35XX Plus, RG35XXH, RG35XXPro, RG35XXSP, RG40XXH, RG40XXV, RGcubeXX and RGSP, running [NextUI for H700](https://github.com/pvaibhav/NextUI) **rc11 or newer**
 
 Use the correct platform for your device.
+
+On H700, NextUI rc11 is the minimum. It changed the button numbers apps see, and this pak
+follows the new ones. On rc10 or older the buttons will be wrong, so update NextUI.
+
+The H700 devices are the slowest hardware this pak targets: a quad Cortex-A53 with a
+Mali-G31 MP1 and 1 GB of RAM on a 32-bit memory bus. Expect the Rice plugin and modest
+settings to be necessary, and avoid hi-res texture packs — unlike the other platforms
+there is no swapfile to fall back on.
 
 ## Installation
 
@@ -89,9 +99,10 @@ Change the plugin in Options → Core → Video Plugin (requires restarting the 
 
 ### Controls (Brick)
 
-The Brick has no analog sticks, so the d-pad doubles as the N64 joystick by default. For games that use the N64 d-pad (like Kirby 64 or puzzle games), the emulator automatically switches to d-pad mode. You can also change this manually in Options → Input → Input Mode.
+The Brick has no analog sticks, so the d-pad doubles as the N64 joystick by default. For games that use the N64 d-pad (like Kirby 64 or puzzle games), the emulator automatically switches to d-pad mode. You can also change this manually in Options → Controls → Input Mode.
 
-C-buttons are accessed by holding **R2** and pressing a face button:
+C-buttons are accessed by holding **R2** and pressing a face button (this was broken in
+releases up to 0.6.3 and works again now):
 
 | Combo | N64 C-button |
 |-------|-------------|
@@ -103,6 +114,30 @@ C-buttons are accessed by holding **R2** and pressing a face button:
 ### Controls (Smart Pro / Smart Pro S)
 
 Both analog sticks and the d-pad work natively — left stick controls the N64 analog, right stick controls C-buttons, and the d-pad maps to the N64 d-pad. No special configuration needed.
+
+### Controls (Brick Pro and Miyoo Flip)
+
+Both analog sticks and the d-pad work as they do on the Smart Pro. The per-game Input Mode
+switch described above is Brick-only.
+
+### Controls (Anbernic H700)
+
+Buttons behave as on the Smart Pro. What differs between H700 models is which analog sticks
+they have, and the pak picks the right mapping the first time you launch a game:
+
+| Model | N64 analog stick | C-buttons |
+|---|---|---|
+| RG35XXH, RG35XXPro, RG40XXH, RGcubeXX, RG34XXSP | Left stick | Right stick |
+| RG40XXV | Left stick | R2 + face button |
+| RG28XX, RG34XX, RG35XX Plus, RG35XXSP, RGSP | D-pad | R2 + face button |
+
+Where C-buttons come from R2, hold **R2** and press a face button by its position, the same
+combos the Brick uses: R2+X for C-Up, R2+B for C-Down, R2+Y for C-Left, R2+A for C-Right.
+
+On models with no sticks the d-pad drives the N64 analog stick *and* the N64 d-pad at once.
+Nearly every N64 game reads one or the other, so this leaves neither dead.
+
+If anything feels wrong on your device, rebind it under Options → Controls.
 
 ### Shortcuts
 

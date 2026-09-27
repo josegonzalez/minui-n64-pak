@@ -32,7 +32,7 @@ index 974b1db..edaa2c3 100644
      for ( b = 0; b < 4; ++b )
      {
          if (controller[b].device >= 0)
-@@ -614,6 +623,149 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
+@@ -614,6 +623,151 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
          controller[Control].buttons.Y_AXIS = iY;
      }
  
@@ -167,9 +167,11 @@ index 974b1db..edaa2c3 100644
 +                        if (!SDL_JoystickGetButton(joy, r->mod_id))
 +                            pressed = 0;
 +                    } else if (r->mod_type == 2 && r->mod_id >= 0) {
-+                        /* Axis modifier (L2, R2) — held when past threshold */
-+                        int mod_val = SDL_JoystickGetAxis(joy, r->mod_id);
-+                        if (mod_val < 24000 && mod_val > -24000)
++                        /* Axis modifier (L2, R2). Held means deflected in the
++                         * positive direction: these triggers rest at -32768, so
++                         * a two-sided |value| test would read them as always
++                         * held and the modifier combo would fire constantly. */
++                        if (SDL_JoystickGetAxis(joy, r->mod_id) < 24000)
 +                            pressed = 0;
 +                    }
 +                    if (pressed)
