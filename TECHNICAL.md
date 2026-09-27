@@ -365,7 +365,7 @@ The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagg
 | Frame Buffer | FB Emulation, Color to RDRAM, Depth to RDRAM, Color from RDRAM, N64 Depth Compare, Disable FB Info | |
 | Gamma | Force Gamma, Gamma Level | |
 | Hi-Res Textures | Enable Hi-Res, File Storage, Full Alpha Channel, Alt CRC, VRAM Limit | |
-| Performance | Inaccurate Tex Coords, Legacy Blending, Shader Cache, Fragment Depth Write, Backgrounds Mode, Threaded Video | |
+| Performance | Inaccurate Tex Coords, Legacy Blending, Shader Cache, Fragment Depth Write, Backgrounds Mode, Threaded Video, Async Shaders | |
 | Rendering | Resolution Factor, Aspect Ratio, FXAA, Multi-Sampling, Anisotropic Filtering, Bilinear Mode, Hybrid Filter, HW Lighting, LOD Emulation, Coverage, Clipping, Buffer Swap Mode | |
 | Texture Enhancement | Filter Mode, Enhancement Mode, Deposterize, Ignore BG Textures, Texture Cache Size | |
 

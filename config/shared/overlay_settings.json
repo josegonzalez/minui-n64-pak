@@ -508,6 +508,15 @@
           "default": true,
           "plugin": "gliden64",
           "restart_required": true
+        },
+        {
+          "key": "AsyncShaderCompilation",
+          "label": "Async Shaders",
+          "description": "Compile shaders in the background to reduce stutter (restart required)",
+          "type": "bool",
+          "default": false,
+          "plugin": "gliden64",
+          "restart_required": true
         }
       ]
     },
