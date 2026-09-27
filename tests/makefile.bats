@@ -52,6 +52,19 @@ mk() { # <VAR>
     done
 }
 
+# ── patching ─────────────────────────────────────────────────────────────────
+
+# A patch that no longer applies after an upstream bump has to stop the build
+# there, not surface later as a compile error in a half-patched tree.
+@test "make patch stops at the first patch that fails to apply" {
+    run make --no-print-directory -C "$REPO_ROOT" -n -B "$REPO_ROOT/src/.patched"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"set -e;"* ]]
+    # The stamp is written only after the last patch is applied.
+    after_last_apply="${output##*git apply}"
+    [[ "$after_last_apply" == *"touch $REPO_ROOT/src/.patched"* ]]
+}
+
 # ── toolchain images ─────────────────────────────────────────────────────────
 
 @test "the toolchains come from the LoveRetro registry" {

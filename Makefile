@@ -165,8 +165,11 @@ PATCH_STAMP := $(SRC)/.patched
 
 patch: $(PATCH_STAMP)
 
+# set -e stops at the first patch that fails to apply, so the stamp is only
+# written once every patch is in.
 $(PATCH_STAMP): | clone
-	@if [ ! -f $(PATCH_STAMP) ]; then \
+	@set -e; \
+	if [ ! -f $(PATCH_STAMP) ]; then \
 		echo "Applying patches..."; \
 		cd $(SRC)/mupen64plus-ui-console && git apply $(PATCHES)/mupen64plus-ui-console.patch; \
 		if [ -s $(PATCHES)/mupen64plus-audio-sdl.patch ]; then \
