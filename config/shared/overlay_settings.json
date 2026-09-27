@@ -38,7 +38,8 @@
             "Sinc (Medium)",
             "Sinc (Best)"
           ],
-          "default": 3
+          "default": 3,
+          "restart_required": true
         }
       ]
     },
@@ -63,7 +64,8 @@
             "4x",
             "8x"
           ],
-          "default": 0
+          "default": 0,
+          "restart_required": true
         },
         {
           "key": "cpu_mode",
@@ -173,7 +175,8 @@
           "description": "Display frames per second (restart required)",
           "type": "bool",
           "default": false,
-          "plugin": "gliden64"
+          "plugin": "gliden64",
+          "restart_required": true
         },
         {
           "key": "ShowFPS",
@@ -182,7 +185,8 @@
           "type": "bool",
           "default": false,
           "plugin": "rice",
-          "ini_section": "Video-Rice"
+          "ini_section": "Video-Rice",
+          "restart_required": true
         },
         {
           "key": "ShowPercent",
@@ -190,7 +194,8 @@
           "description": "Display emulation speed percentage (restart required)",
           "type": "bool",
           "default": false,
-          "plugin": "gliden64"
+          "plugin": "gliden64",
+          "restart_required": true
         },
         {
           "key": "ShowVIS",
@@ -198,7 +203,8 @@
           "description": "Display VI interrupts per second (restart required)",
           "type": "bool",
           "default": false,
-          "plugin": "gliden64"
+          "plugin": "gliden64",
+          "restart_required": true
         }
       ]
     },
@@ -500,7 +506,8 @@
           "description": "Run video backend on a separate thread (restart required)",
           "type": "bool",
           "default": true,
-          "plugin": "gliden64"
+          "plugin": "gliden64",
+          "restart_required": true
         }
       ]
     },
