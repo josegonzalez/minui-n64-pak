@@ -8,32 +8,45 @@ PUSH_PLATFORM ?= my355
 SHELL := /bin/bash
 
 # ── Upstream repos and pinned versions ────────────────────────────────────────
+# The emulator components track upstream master rather than the 2.6.0 release,
+# so each one is pinned to a full commit SHA.
 CORE_REPO    := https://github.com/mupen64plus/mupen64plus-core
-CORE_TAG     := 2.6.0
+# upstream master as of 2026-09-14
+CORE_REV     := b20b27ebf9e5b099a978e86dba609111dc98c837
 
 UI_REPO      := https://github.com/mupen64plus/mupen64plus-ui-console
-UI_TAG       := 2.6.0
+# upstream master as of 2026-06-23
+UI_REV       := c8ac4862a019d7885b24927d9b4db5dd3e42a528
 
 AUDIO_REPO   := https://github.com/mupen64plus/mupen64plus-audio-sdl
-AUDIO_TAG    := 2.6.0
+# upstream master as of 2026-06-23
+AUDIO_REV    := 2faed1c7e62c5f292948e7cd2398c184970cf794
 
 INPUT_REPO   := https://github.com/mupen64plus/mupen64plus-input-sdl
-INPUT_TAG    := 2.6.0
+# upstream master as of 2026-06-23
+INPUT_REV    := 842c39e89749aa3a8d02202b2afddd20b29cdfdb
 
 RSP_REPO     := https://github.com/mupen64plus/mupen64plus-rsp-hle
-RSP_TAG      := 2.6.0
+# upstream master as of 2026-06-23
+RSP_REV      := 8a7a472a7172eb2c8725b305eae26818ed7b51a2
 
 GLIDEN64_REPO := https://github.com/gonetz/GLideN64
-GLIDEN64_REV  := c8ef81c7d9aede9f67f6ed3d3426c90541f9f13e
+# upstream master as of 2026-08-05
+GLIDEN64_REV  := 41c7ba273a6c9afb43c0574cf3cf5d139182d070
 
 RICE_REPO    := https://github.com/mupen64plus/mupen64plus-video-rice
-RICE_TAG     := 2.6.0
+# upstream master as of 2026-09-14
+RICE_REV     := f0a7b9f391b0e9bc14962b114f7da1ba553060be
 
 NX_REDUX_REPO := https://github.com/mohammadsyuhada/nx-redux
 NX_REDUX_TAG  := v1.1.1
 
 ZLIB_REPO     := https://github.com/madler/zlib
 ZLIB_TAG      := v1.3.2
+
+# GLideNHQ links a bundled x86-64 libzstd.a; this is cross-built to replace it.
+ZSTD_REPO     := https://github.com/facebook/zstd
+ZSTD_TAG      := v1.5.7
 
 # 7-Zip standalone binary for ZIP/7Z ROM extraction. Pre-built AArch64 blob
 # published by the upstream 7-Zip project on GitHub. Sha256-verified.
@@ -108,7 +121,7 @@ clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
        $(SRC)/mupen64plus-audio-sdl $(SRC)/mupen64plus-input-sdl \
        $(SRC)/mupen64plus-rsp-hle $(SRC)/GLideN64 \
        $(SRC)/mupen64plus-video-rice $(SRC)/nx-redux \
-       $(SRC)/zlib $(SRC)/7zip/7zzs
+       $(SRC)/zlib $(SRC)/zstd $(SRC)/7zip/7zzs
 	@# Populate GLES headers and unmodified patches from nx-redux
 	@# (overlay/ sources are vendored in the repo — not pulled from nx-redux)
 	@mkdir -p $(ROOT)/include
@@ -119,33 +132,42 @@ clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
 	@# mupen64plus-ui-console.patch is committed (customized with romfilename support)
 	@cp $(SRC)/nx-redux/workspace/tg5040/other/mupen64plus/mupen64plus-audio-sdl.patch $(PATCHES)/
 
+# Shallow-fetch one exact commit: <dir> <repo> <rev>. GitHub serves any
+# reachable SHA, so pinning to a commit needs no full-history clone.
+define CLONE_REV
+	git init -q $(1)
+	cd $(1) && git remote add origin $(2) && git fetch --depth 1 origin $(3) && git checkout -q FETCH_HEAD
+endef
+
 $(SRC)/mupen64plus-core:
-	git clone --depth 1 --branch $(CORE_TAG) $(CORE_REPO) $@
+	$(call CLONE_REV,$@,$(CORE_REPO),$(CORE_REV))
 
 $(SRC)/mupen64plus-ui-console:
-	git clone --depth 1 --branch $(UI_TAG) $(UI_REPO) $@
+	$(call CLONE_REV,$@,$(UI_REPO),$(UI_REV))
 
 $(SRC)/mupen64plus-audio-sdl:
-	git clone --depth 1 --branch $(AUDIO_TAG) $(AUDIO_REPO) $@
+	$(call CLONE_REV,$@,$(AUDIO_REPO),$(AUDIO_REV))
 
 $(SRC)/mupen64plus-input-sdl:
-	git clone --depth 1 --branch $(INPUT_TAG) $(INPUT_REPO) $@
+	$(call CLONE_REV,$@,$(INPUT_REPO),$(INPUT_REV))
 
 $(SRC)/mupen64plus-rsp-hle:
-	git clone --depth 1 --branch $(RSP_TAG) $(RSP_REPO) $@
+	$(call CLONE_REV,$@,$(RSP_REPO),$(RSP_REV))
 
 $(SRC)/GLideN64:
-	git clone $(GLIDEN64_REPO) $@
-	cd $@ && git checkout $(GLIDEN64_REV)
+	$(call CLONE_REV,$@,$(GLIDEN64_REPO),$(GLIDEN64_REV))
 
 $(SRC)/mupen64plus-video-rice:
-	git clone --depth 1 --branch $(RICE_TAG) $(RICE_REPO) $@
+	$(call CLONE_REV,$@,$(RICE_REPO),$(RICE_REV))
 
 $(SRC)/nx-redux:
 	git clone --depth 1 --branch $(NX_REDUX_TAG) $(NX_REDUX_REPO) $@
 
 $(SRC)/zlib:
 	git clone --depth 1 --branch $(ZLIB_TAG) $(ZLIB_REPO) $@
+
+$(SRC)/zstd:
+	git clone --depth 1 --branch $(ZSTD_TAG) $(ZSTD_REPO) $@
 
 # 7-Zip standalone static binary for ZIP/7Z ROM extraction at launch time.
 # Downloaded pre-built from upstream and sha256-verified. Only 7zzs and the
@@ -318,11 +340,14 @@ h700-rsp: $(PATCH_STAMP)
 gliden64: $(PATCH_STAMP)
 	@# Cross-compile zlib from source (tg5040 toolchain has 1.2.8, too old for GLideN64)
 	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/zlib && [ -f libz.a ] || (CC=aarch64-nextui-linux-gnu-gcc AR=aarch64-nextui-linux-gnu-ar RANLIB=aarch64-nextui-linux-gnu-ranlib ./configure --static && make -j$$(nproc))'
-	@# Replace bundled static libs with ARM64 versions:
+	@# Cross-compile zstd from source for GLideNHQ's texture cache compression
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/zstd/lib && [ -f libzstd.a ] || make -j$$(nproc) libzstd.a CC=aarch64-nextui-linux-gnu-gcc AR=aarch64-nextui-linux-gnu-ar CFLAGS="-O3 -fPIC"'
+	@# Replace the bundled x86-64/macOS static libs with ARM64 versions:
 	@#   libpng16.a from tg5050 sysroot (tg5040 only has libpng12)
-	@#   libz.a from zlib source build above
+	@#   libz.a and libzstd.a from the source builds above
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.a /build/src/GLideN64/src/GLideNHQ/lib/libpng.a
 	cp $(SRC)/zlib/libz.a $(SRC)/GLideN64/src/GLideNHQ/lib/libz.a
+	cp $(SRC)/zstd/lib/libzstd.a $(SRC)/GLideN64/src/GLideNHQ/lib/libzstd.a
 	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/GLideN64/src && mkdir -p build && cd build && cmake -DCMAKE_TOOLCHAIN_FILE=../../toolchain-aarch64.cmake -DMUPENPLUSAPI=ON -DEGL=ON -DMESA=ON -DNEON_OPT=ON -DCRC_ARMV8=ON .. && make -j$$(nproc) mupen64plus-video-GLideN64 && $(CROSS)strip -s plugin/Release/mupen64plus-video-GLideN64.so'
 
 # ── Rice video plugin (built per-platform toolchain) ─────────────────────────

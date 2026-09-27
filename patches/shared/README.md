@@ -4,7 +4,7 @@ These patches are applied to the freshly-cloned upstream sources during `make pa
 
 ## mupen64plus-core.patch
 
-**Target**: `src/mupen64plus-core/` (upstream tag 2.6.0)
+**Target**: `src/mupen64plus-core/` (upstream commit b20b27e)
 
 Adds ROM-filename-based save naming so save files match NextUI's conventions:
 
@@ -14,7 +14,7 @@ Adds ROM-filename-based save naming so save files match NextUI's conventions:
 
 ## mupen64plus-ui-console.patch
 
-**Target**: `src/mupen64plus-ui-console/` (upstream tag 2.6.0)
+**Target**: `src/mupen64plus-ui-console/` (upstream commit c8ac486)
 
 Three changes to the command-line frontend:
 
@@ -26,13 +26,13 @@ Three changes to the command-line frontend:
 
 ## mupen64plus-audio-sdl.patch
 
-**Target**: `src/mupen64plus-audio-sdl/` (upstream tag 2.6.0)
+**Target**: `src/mupen64plus-audio-sdl/` (upstream commit 2faed1c)
 
 Empty placeholder — pulled from the nx-redux build system at `make clone` time. The audio plugin is built from unmodified upstream source. The patch file exists so the `make patch` / `make patches` machinery has a consistent target for all components.
 
 ## mupen64plus-input-sdl.patch
 
-**Target**: `src/mupen64plus-input-sdl/` (upstream tag 2.6.0)
+**Target**: `src/mupen64plus-input-sdl/` (upstream commit 842c39e)
 
 Brick-specific input remapping, gated on `$DEVICE=brick` at runtime (every other device, Brick Pro included, is unaffected):
 
@@ -44,7 +44,7 @@ Both blocks are wrapped in a `static int is_brick` check that reads `getenv("DEV
 
 ## GLideN64-standalone.patch
 
-**Target**: `src/GLideN64/` (upstream commit c8ef81c)
+**Target**: `src/GLideN64/` (upstream commit 41c7ba2)
 
 Wires GLideN64 into the shared `emu_frontend` overlay module so all custom TrimUI features work when GLideN64 is the active video plugin. The patch is large but structurally thin — most of the logic lives in the vendored `overlay/*.c` sources, not in GLideN64 code itself.
 
@@ -54,8 +54,8 @@ Wires GLideN64 into the shared `emu_frontend` overlay module so all custom TrimU
 - **`src/DisplayWindow.cpp`** (the plugin's main render loop): reduced to a thin shim that fills `EmuFrontendPluginOps` (swap_buffers, cycle_aspect, get_render, exec_on_video_thread) and calls `emu_frontend_init()` + `emu_frontend_frame()` from `swapBuffers()`. All custom feature logic that previously lived here was extracted to `overlay/emu_frontend.c` in earlier refactoring commits.
 - **`src/mupenplus/MupenPlusAPIImpl.cpp`**: resolves `CoreDoCommand`, `CoreAddCheat`, `CoreCheatEnabled` via dlsym at plugin startup for the cheat and save-state systems.
 - **`src/RSP.cpp`**: reads the `extern int g_frameSkip` variable (owned by `emu_frontend.c`) to implement adaptive frame skip.
-- **`src/Graphics/OpenGLContext/` files**: patches for PowerVR GE8300 compatibility (EGL via dlopen, `glBufferSubData` instead of `glMapBufferRange`, `eglGetProcAddress` via dlsym).
-- **`toolchain-aarch64.cmake`**: cross-compilation toolchain file for the Docker build.
+- **`src/Graphics/OpenGLContext/` files**: patches for PowerVR GE8300 compatibility (EGL via dlopen, `glBufferSubData` instead of `glMapBufferRange`, `eglGetProcAddress` via dlsym). In `BufferedDrawer::_updateBuffer`, the `glBufferSubData` upload replaces upstream's mapped write along with the null check upstream added around it, since there is no mapping left to fail; the function keeps upstream's `bool` return.
+- **`toolchain-aarch64.cmake`**: cross-compilation toolchain file for the Docker build. It also adds `/build/src/zstd/lib` to the include path, because GLideNHQ's zstd zlib wrapper includes `zstd.h`, which GLideN64 does not ship.
 
 **What it adds (new files)**:
 
@@ -64,7 +64,7 @@ Wires GLideN64 into the shared `emu_frontend` overlay module so all custom TrimU
 
 ## mupen64plus-video-rice.patch
 
-**Target**: `src/mupen64plus-video-rice/` (upstream tag 2.6.0)
+**Target**: `src/mupen64plus-video-rice/` (upstream commit f0a7b9f)
 
 Wires the Rice video plugin into the same `emu_frontend` overlay module as GLideN64, so every custom feature (overlay menu, power button, shortcuts, rewind, cheats, save/load, screenshot, game switcher) works identically regardless of which video plugin is active.
 

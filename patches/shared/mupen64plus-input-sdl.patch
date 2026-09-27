@@ -1,5 +1,5 @@
 diff --git a/src/plugin.c b/src/plugin.c
-index 974b1db..edaa2c3 100644
+index 4699eed..756bdb9 100644
 --- a/src/plugin.c
 +++ b/src/plugin.c
 @@ -27,6 +27,7 @@
@@ -21,7 +21,7 @@ index 974b1db..edaa2c3 100644
  /* definitions of pointers to Core config functions */
  ptr_ConfigOpenSection      ConfigOpenSection = NULL;
  ptr_ConfigDeleteSection    ConfigDeleteSection = NULL;
-@@ -510,6 +515,10 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
+@@ -531,6 +536,10 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
      if (myKeyState[SDL_SCANCODE_RSHIFT])
          axis_max_val -= 25;
  
@@ -32,7 +32,7 @@ index 974b1db..edaa2c3 100644
      for ( b = 0; b < 4; ++b )
      {
          if (controller[b].device >= 0)
-@@ -614,6 +623,151 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
+@@ -631,6 +640,151 @@ EXPORT void CALL GetKeys( int Control, BUTTONS *Keys )
          controller[Control].buttons.Y_AXIS = iY;
      }
  

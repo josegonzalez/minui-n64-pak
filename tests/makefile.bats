@@ -52,6 +52,54 @@ mk() { # <VAR>
     done
 }
 
+# ── pinned upstream sources ─────────────────────────────────────────────────
+#
+# The emulator components track upstream master, so a branch name or tag would
+# silently move the build. Each one is pinned to a full commit SHA instead.
+
+# <dir under src/> <rev variable>
+PINNED_SOURCES="
+mupen64plus-core CORE_REV
+mupen64plus-ui-console UI_REV
+mupen64plus-audio-sdl AUDIO_REV
+mupen64plus-input-sdl INPUT_REV
+mupen64plus-rsp-hle RSP_REV
+GLideN64 GLIDEN64_REV
+mupen64plus-video-rice RICE_REV
+"
+
+@test "every emulator component is pinned to a full commit SHA" {
+    while read -r dir var; do
+        [ -n "$dir" ] || continue
+        mk "$var"
+        [[ "$output" =~ ^${var}=[0-9a-f]{40}$ ]]
+    done <<< "$PINNED_SOURCES"
+}
+
+@test "each component is shallow-fetched at its pinned commit" {
+    while read -r dir var; do
+        [ -n "$dir" ] || continue
+        mk "$var"
+        rev="${output#*=}"
+        run make --no-print-directory -C "$REPO_ROOT" -n -B "$REPO_ROOT/src/$dir"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"git fetch --depth 1 origin $rev"* ]]
+    done <<< "$PINNED_SOURCES"
+}
+
+# GLideNHQ ships an x86 libzstd.a. The build has to link an aarch64 one, built
+# from the pinned zstd source that clone fetches.
+@test "GLideNHQ links a zstd cross-built from the pinned source" {
+    mk ZSTD_TAG
+    tag="${output#*=}"
+    [ -n "$tag" ]
+    run make --no-print-directory -C "$REPO_ROOT" -n -B clone
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"--branch $tag https://github.com/facebook/zstd $REPO_ROOT/src/zstd"* ]]
+    run grep -q 'cp $(SRC)/zstd/lib/libzstd.a $(SRC)/GLideN64/src/GLideNHQ/lib/libzstd.a' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+}
+
 # ── patching ─────────────────────────────────────────────────────────────────
 
 # A patch that no longer applies after an upstream bump has to stop the build
