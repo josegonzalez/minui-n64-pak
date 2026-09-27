@@ -47,8 +47,13 @@ def normalize(item: dict, ini_val: Optional[str]) -> Tuple[str, Optional[str]]:
     float_scale = item.get("float_scale", 0)
 
     # JSON side
+    values = item.get("values") or []
     if item_type == "bool":
         json_norm = "True" if json_default else "False"
+    elif values and isinstance(values[0], str) and isinstance(json_default, int):
+        # String-valued cycles store their default as an index into values,
+        # matching emu_overlay_cfg.c, which sets values[i] = i for them.
+        json_norm = values[json_default] if 0 <= json_default < len(values) else str(json_default)
     elif float_scale and float_scale > 0:
         json_norm = f"{json_default / float_scale:.6f}"
     else:
