@@ -65,34 +65,37 @@ index da26ff1..c778424 100755
  	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
  
 diff --git a/src/Config.cpp b/src/Config.cpp
-index 961a1c7..2093939 100644
+index 961a1c7..8dbc415 100644
 --- a/src/Config.cpp
 +++ b/src/Config.cpp
-@@ -342,6 +342,7 @@ BOOL InitConfiguration(void)
+@@ -342,6 +342,8 @@ BOOL InitConfiguration(void)
      ConfigSetDefaultInt(l_ConfigVideoRice, "TextureEnhancementControl", 0, "Secondary texture enhancement filter (0 = none, 1-4 = filtered)");
      ConfigSetDefaultInt(l_ConfigVideoRice, "TextureQuality", TXT_QUALITY_DEFAULT, "Color bit depth to use for textures (0=default, 1=32 bits, 2=16 bits)");
      ConfigSetDefaultInt(l_ConfigVideoRice, "OpenGLDepthBufferSetting", 16, "Z-buffer depth (only 16 or 32)");
 +    ConfigSetDefaultInt(l_ConfigVideoRice, "AspectRatio", 1, "Screen aspect ratio (0=stretch, 1=force 4:3, 2=force 16:9, 3=auto)");
++    ConfigSetDefaultInt(l_ConfigVideoRice, "ResolutionFactor", 0, "Internal render resolution as a multiple of the N64 resolution (0=screen resolution, 1=native, 2-4=multiple)");
      ConfigSetDefaultInt(l_ConfigVideoRice, "MultiSampling", 0, "Enable/Disable MultiSampling (0=off, 2,4,8,16=quality)");
      ConfigSetDefaultInt(l_ConfigVideoRice, "ColorQuality", TEXTURE_FMT_A8R8G8B8, "Color bit depth for rendering window (0=32 bits, 1=16 bits)");
      ConfigSetDefaultInt(l_ConfigVideoRice, "OpenGLRenderSetting", OGL_DEVICE, "OpenGL level to support (0=auto, 1=OGL_FRAGMENT_PROGRAM)");
-@@ -463,6 +464,7 @@ static void ReadConfiguration(void)
+@@ -463,6 +465,8 @@ static void ReadConfiguration(void)
      options.colorQuality = ConfigGetParamInt(l_ConfigVideoRice, "ColorQuality");
      options.OpenglRenderSetting = ConfigGetParamInt(l_ConfigVideoRice, "OpenGLRenderSetting");
      options.anisotropicFiltering = ConfigGetParamInt(l_ConfigVideoRice, "AnisotropicFiltering");
 +    options.aspectRatio = ConfigGetParamInt(l_ConfigVideoRice, "AspectRatio");
++    options.resolutionFactor = ConfigGetParamInt(l_ConfigVideoRice, "ResolutionFactor");
  
      options.bForcePolygonOffset = ConfigGetParamBool(l_ConfigVideoRice, "ForcePolygonOffset");
      options.polygonOffsetFactor = ConfigGetParamFloat(l_ConfigVideoRice, "PolygonOffsetFactor");
 diff --git a/src/Config.h b/src/Config.h
-index 4476434..32f9e96 100644
+index 4476434..858c7e0 100644
 --- a/src/Config.h
 +++ b/src/Config.h
-@@ -201,6 +201,7 @@ typedef struct {
+@@ -201,6 +201,8 @@ typedef struct {
      int     OpenglDepthBufferSetting;
      int     OpenglRenderSetting;
      uint32  colorQuality;
 +    uint32  aspectRatio;
++    uint32  resolutionFactor;
  
      // Polygon Offset Settings
      // These can be used to eliminate stitching artifacts in textures and shadows, which are typically only a problem
@@ -110,10 +113,248 @@ index e3b8d3e..a77ac0b 100644
      CRender::g_pRender->ApplyScissorWithClipRatio();
  
 diff --git a/src/OGLGraphicsContext.cpp b/src/OGLGraphicsContext.cpp
-index e4e57ba..6a3560e 100644
+index e4e57ba..bf1b064 100644
 --- a/src/OGLGraphicsContext.cpp
 +++ b/src/OGLGraphicsContext.cpp
-@@ -414,7 +414,17 @@ void COGLGraphicsContext::UpdateFrame(bool swaponly)
+@@ -41,6 +41,215 @@ COGLGraphicsContext::COGLGraphicsContext() :
+ {
+ }
+ 
++//=======================================================
++// Low-resolution present (ResolutionFactor)
++//
++// With a ResolutionFactor set, SetVIScales() shrinks the render area to a
++// multiple of the N64 resolution anchored at the origin. Before each swap the
++// frame is copied out of that corner and drawn back over the aspect-corrected
++// present rect with nearest-neighbor filtering, so pixels stay sharp.
++
++static GLuint s_lowResTexture = 0;
++static GLuint s_lowResProgram = 0;
++static int s_lowResTexW = 0, s_lowResTexH = 0;
++
++static const char *lowResVertexShader =
++"#version " GLSL_VERSION "\n"
++"attribute vec4 inPosition;\n"
++"attribute vec2 inTexCoord0;\n"
++"varying vec2 vertexTexCoord0;\n"
++"void main()\n"
++"{\n"
++"gl_Position = inPosition;\n"
++"vertexTexCoord0 = inTexCoord0;\n"
++"}\n";
++
++static const char *lowResFragmentShader =
++"#version " GLSL_VERSION "\n"
++"#ifdef GL_ES\n"
++"precision mediump float;\n"
++"#endif\n"
++"uniform sampler2D uTex0;\n"
++"varying vec2 vertexTexCoord0;\n"
++"void main()\n"
++"{\n"
++"gl_FragColor = texture2D(uTex0, vertexTexCoord0);\n"
++"}\n";
++
++static GLuint CompileLowResShader(GLenum type, const char *src)
++{
++    GLuint shader = glCreateShader(type);
++    glShaderSource(shader, 1, &src, NULL);
++    glCompileShader(shader);
++    GLint ok = GL_FALSE;
++    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
++    if (ok == GL_FALSE)
++    {
++        DebugMessage(M64MSG_ERROR, "Low-resolution present shader failed to compile");
++        glDeleteShader(shader);
++        return 0;
++    }
++    return shader;
++}
++
++static bool EnsureLowResProgram(void)
++{
++    if (s_lowResProgram != 0)
++        return true;
++
++    GLuint vs = CompileLowResShader(GL_VERTEX_SHADER, lowResVertexShader);
++    GLuint fs = CompileLowResShader(GL_FRAGMENT_SHADER, lowResFragmentShader);
++    if (vs == 0 || fs == 0)
++    {
++        if (vs) glDeleteShader(vs);
++        if (fs) glDeleteShader(fs);
++        return false;
++    }
++
++    GLuint program = glCreateProgram();
++    glAttachShader(program, vs);
++    glAttachShader(program, fs);
++    glBindAttribLocation(program, VS_POSITION, "inPosition");
++    glBindAttribLocation(program, VS_TEXCOORD0, "inTexCoord0");
++    glLinkProgram(program);
++    glDeleteShader(vs);
++    glDeleteShader(fs);
++
++    GLint ok = GL_FALSE;
++    glGetProgramiv(program, GL_LINK_STATUS, &ok);
++    if (ok == GL_FALSE)
++    {
++        DebugMessage(M64MSG_ERROR, "Low-resolution present program failed to link");
++        glDeleteProgram(program);
++        return false;
++    }
++
++    GLint prevProgram = 0;
++    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
++    glUseProgram(program);
++    glUniform1i(glGetUniformLocation(program, "uTex0"), 0);
++    glUseProgram(prevProgram);
++
++    s_lowResProgram = program;
++    return true;
++}
++
++// Saved state of one vertex attribute, so Rice's client-side arrays survive
++struct SavedVertexAttrib
++{
++    GLint enabled, size, type, stride, normalized, buffer;
++    GLvoid *pointer;
++};
++
++static void SaveVertexAttrib(GLuint index, SavedVertexAttrib &a)
++{
++    glGetVertexAttribiv(index, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &a.enabled);
++    glGetVertexAttribiv(index, GL_VERTEX_ATTRIB_ARRAY_SIZE, &a.size);
++    glGetVertexAttribiv(index, GL_VERTEX_ATTRIB_ARRAY_TYPE, &a.type);
++    glGetVertexAttribiv(index, GL_VERTEX_ATTRIB_ARRAY_STRIDE, &a.stride);
++    glGetVertexAttribiv(index, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, &a.normalized);
++    glGetVertexAttribiv(index, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &a.buffer);
++    glGetVertexAttribPointerv(index, GL_VERTEX_ATTRIB_ARRAY_POINTER, &a.pointer);
++}
++
++static void RestoreVertexAttrib(GLuint index, const SavedVertexAttrib &a)
++{
++    glBindBuffer(GL_ARRAY_BUFFER, a.buffer);
++    glVertexAttribPointer(index, a.size, a.type, a.normalized ? GL_TRUE : GL_FALSE, a.stride, a.pointer);
++    if (a.enabled)
++        glEnableVertexAttribArray(index);
++    else
++        glDisableVertexAttribArray(index);
++}
++
++static void PresentLowResFrame(void)
++{
++    const int srcW = windowSetting.uEffDisplayWidth;
++    const int srcH = windowSetting.uEffDisplayHeight;
++    if (srcW <= 0 || srcH <= 0 || !EnsureLowResProgram())
++        return;
++
++    // Save the state Rice caches or expects to persist between draws
++    GLint prevProgram = 0, prevActiveTex = 0, prevTex = 0, prevArrayBuffer = 0;
++    GLint prevViewport[4];
++    GLfloat prevClearColor[4];
++    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
++    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTex);
++    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prevArrayBuffer);
++    glGetIntegerv(GL_VIEWPORT, prevViewport);
++    glGetFloatv(GL_COLOR_CLEAR_VALUE, prevClearColor);
++    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
++    GLboolean depth = glIsEnabled(GL_DEPTH_TEST);
++    GLboolean blend = glIsEnabled(GL_BLEND);
++    GLboolean cull = glIsEnabled(GL_CULL_FACE);
++    SavedVertexAttrib posAttrib, texAttrib;
++    SaveVertexAttrib(VS_POSITION, posAttrib);
++    SaveVertexAttrib(VS_TEXCOORD0, texAttrib);
++
++    glActiveTexture(GL_TEXTURE0);
++    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
++
++    // Copy the rendered corner out of the back buffer
++    if (s_lowResTexture == 0)
++        glGenTextures(1, &s_lowResTexture);
++    glBindTexture(GL_TEXTURE_2D, s_lowResTexture);
++    if (s_lowResTexW != srcW || s_lowResTexH != srcH)
++    {
++        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, srcW, srcH, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++        s_lowResTexW = srcW;
++        s_lowResTexH = srcH;
++    }
++    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, srcW, srcH);
++
++    // Clear the whole screen, then draw the frame into the present rect
++    glDisable(GL_SCISSOR_TEST);
++    glDisable(GL_DEPTH_TEST);
++    glDisable(GL_BLEND);
++    glDisable(GL_CULL_FACE);
++    glViewport(0, 0, windowSetting.uDisplayWidth, windowSetting.uDisplayHeight);
++    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
++    glClear(GL_COLOR_BUFFER_BIT);
++    glViewport(windowSetting.presentX, windowSetting.presentY, windowSetting.presentW, windowSetting.presentH);
++
++    static const GLfloat positions[] = {
++        -1.0f, -1.0f, 0.0f, 1.0f,
++         1.0f, -1.0f, 0.0f, 1.0f,
++        -1.0f,  1.0f, 0.0f, 1.0f,
++         1.0f,  1.0f, 0.0f, 1.0f,
++    };
++    static const GLfloat texcoords[] = {
++        0.0f, 0.0f,
++        1.0f, 0.0f,
++        0.0f, 1.0f,
++        1.0f, 1.0f,
++    };
++    glUseProgram(s_lowResProgram);
++    glBindBuffer(GL_ARRAY_BUFFER, 0);
++    glVertexAttribPointer(VS_POSITION, 4, GL_FLOAT, GL_FALSE, 0, positions);
++    glVertexAttribPointer(VS_TEXCOORD0, 2, GL_FLOAT, GL_FALSE, 0, texcoords);
++    glEnableVertexAttribArray(VS_POSITION);
++    glEnableVertexAttribArray(VS_TEXCOORD0);
++    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
++
++    // Put everything back the way Rice left it
++    RestoreVertexAttrib(VS_POSITION, posAttrib);
++    RestoreVertexAttrib(VS_TEXCOORD0, texAttrib);
++    glBindBuffer(GL_ARRAY_BUFFER, prevArrayBuffer);
++    glBindTexture(GL_TEXTURE_2D, prevTex);
++    glActiveTexture(prevActiveTex);
++    glUseProgram(prevProgram);
++    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
++    glClearColor(prevClearColor[0], prevClearColor[1], prevClearColor[2], prevClearColor[3]);
++    if (scissor) glEnable(GL_SCISSOR_TEST);
++    if (depth) glEnable(GL_DEPTH_TEST);
++    if (blend) glEnable(GL_BLEND);
++    if (cull) glEnable(GL_CULL_FACE);
++}
++
+ 
+ COGLGraphicsContext::~COGLGraphicsContext()
+ {
+@@ -324,6 +533,10 @@ void COGLGraphicsContext::CleanUp()
+ {
+     CoreVideo_Quit();
+     m_bReady = false;
++    // The GL objects died with the context; recreate them on next use
++    s_lowResTexture = 0;
++    s_lowResProgram = 0;
++    s_lowResTexW = s_lowResTexH = 0;
+ }
+ 
+ 
+@@ -399,6 +612,10 @@ void COGLGraphicsContext::UpdateFrame(bool swaponly)
+     */
+ 
+    
++   // ResolutionFactor: scale the low-resolution frame up to the screen
++   if (windowSetting.bLowResRender)
++       PresentLowResFrame();
++
+    // if emulator defined a render callback function, call it before buffer swap
+    if(renderCallback)
+    {
+@@ -414,7 +631,17 @@ void COGLGraphicsContext::UpdateFrame(bool swaponly)
     }
  
     CoreVideo_GL_SwapBuffers();
@@ -322,7 +563,7 @@ index 26e38df..52193d1 100644
      GLfloat vertices[] = {
              -inv + g_texRectTVtx[0].x/ w, inv - g_texRectTVtx[0].y/ h, -g_texRectTVtx[0].z,1,
 diff --git a/src/Video.cpp b/src/Video.cpp
-index c32e1ce..08eae76 100644
+index c32e1ce..c06527d 100644
 --- a/src/Video.cpp
 +++ b/src/Video.cpp
 @@ -42,9 +42,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
@@ -354,7 +595,7 @@ index c32e1ce..08eae76 100644
  //---------------------------------------------------------------------------------------
  // Forward function declarations
  
-@@ -532,7 +544,36 @@ void SetVIScales()
+@@ -532,7 +544,64 @@ void SetVIScales()
              }
          }
      }
@@ -388,11 +629,39 @@ index c32e1ce..08eae76 100644
 +    windowSetting.vpBaseX = (dispW - effW) / 2;
 +    windowSetting.vpBaseY = (dispH - effH) / 2;
 +
++    // The aspect-corrected area is where the frame is shown on screen
++    windowSetting.presentX = windowSetting.vpBaseX;
++    windowSetting.presentY = windowSetting.vpBaseY;
++    windowSetting.presentW = effW;
++    windowSetting.presentH = effH;
++    windowSetting.bLowResRender = false;
++
++    // ResolutionFactor: render at a multiple of the N64 resolution into the
++    // bottom-left corner, and let UpdateFrame scale it up with nearest-neighbor
++    // filtering. One scale for both axes keeps the frame undistorted, and it is
++    // capped so it never exceeds the aspect-corrected area.
++    if (options.resolutionFactor > 0 && windowSetting.fViWidth > 0 && windowSetting.fViHeight > 0) {
++        float scale = (float)options.resolutionFactor;
++        if (effW / windowSetting.fViWidth < scale) scale = effW / windowSetting.fViWidth;
++        if (effH / windowSetting.fViHeight < scale) scale = effH / windowSetting.fViHeight;
++        unsigned short renderW = (unsigned short)(windowSetting.fViWidth * scale);
++        unsigned short renderH = (unsigned short)(windowSetting.fViHeight * scale);
++        if (renderW > 0 && renderH > 0 && (renderW < effW || renderH < effH)) {
++            windowSetting.uEffDisplayWidth = renderW;
++            windowSetting.uEffDisplayHeight = renderH;
++            windowSetting.vpBaseX = 0;
++            windowSetting.vpBaseY = 0;
++            windowSetting.bLowResRender = true;
++            SetScreenMult(renderW / windowSetting.fViWidth, renderH / windowSetting.fViHeight);
++            return;
++        }
++    }
++
 +    SetScreenMult(effW / windowSetting.fViWidth, effH / windowSetting.fViHeight);
  }
  
  void TriggerDPInterrupt(void)
-@@ -658,6 +699,11 @@ EXPORT m64p_error CALL PluginStartup(m64p_dynlib_handle CoreLibHandle, void *Con
+@@ -658,6 +727,11 @@ EXPORT m64p_error CALL PluginStartup(m64p_dynlib_handle CoreLibHandle, void *Con
      CoreVideo_GL_GetAttribute = (ptr_VidExt_GL_GetAttribute) osal_dynlib_getproc(CoreLibHandle, "VidExt_GL_GetAttribute");
      CoreVideo_GL_SwapBuffers = (ptr_VidExt_GL_SwapBuffers) osal_dynlib_getproc(CoreLibHandle, "VidExt_GL_SwapBuffers");
  
@@ -404,7 +673,7 @@ index c32e1ce..08eae76 100644
      if (!CoreVideo_Init || !CoreVideo_Quit || !CoreVideo_ListFullscreenModes || !CoreVideo_SetVideoMode ||
          !CoreVideo_ResizeWindow || !CoreVideo_SetCaption || !CoreVideo_ToggleFullScreen || !CoreVideo_GL_GetProcAddress ||
          !CoreVideo_GL_SetAttribute || !CoreVideo_GL_GetAttribute || !CoreVideo_GL_SwapBuffers)
-@@ -775,6 +821,73 @@ EXPORT int CALL RomOpen(void)
+@@ -775,6 +849,73 @@ EXPORT int CALL RomOpen(void)
  }
  
  
@@ -478,7 +747,7 @@ index c32e1ce..08eae76 100644
  //---------------------------------------------------------------------------------------
  EXPORT void CALL UpdateScreen(void)
  {
-@@ -794,6 +907,10 @@ EXPORT void CALL UpdateScreen(void)
+@@ -794,6 +935,10 @@ EXPORT void CALL UpdateScreen(void)
          }
      }
      UpdateScreenStep2();
@@ -490,16 +759,21 @@ index c32e1ce..08eae76 100644
  
  //---------------------------------------------------------------------------------------
 diff --git a/src/Video.h b/src/Video.h
-index 7fbbcaa..17e1b43 100644
+index 7fbbcaa..7bbd337 100644
 --- a/src/Video.h
 +++ b/src/Video.h
-@@ -44,6 +44,10 @@ typedef struct {
+@@ -44,6 +44,15 @@ typedef struct {
      float   fMultX, fMultY;
      int     vpLeftW, vpTopW, vpRightW, vpBottomW, vpWidthW, vpHeightW;
  
 +    // Aspect-ratio constrained effective display area and centering offset
 +    unsigned short uEffDisplayWidth, uEffDisplayHeight;
 +    int vpBaseX, vpBaseY;
++
++    // Low-resolution rendering (ResolutionFactor): the frame is drawn into the
++    // uEffDisplay* corner at the origin, then scaled up into the present rect
++    bool bLowResRender;
++    int presentX, presentY, presentW, presentH;
 +
      int     statusBarHeight, statusBarHeightToUse, toolbarHeight, toolbarHeightToUse;
      BOOL    screenSaverStatus;

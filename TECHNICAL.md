@@ -377,7 +377,7 @@ The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagg
 | Frame Buffer | FB Setting, Render To Texture, Screen Update | |
 | Hi-Res Textures | Load Hi-Res Textures, Hi-Res CRC Only | |
 | Performance | Fast Texture Loading, Skip Frame, Accurate Texture Mapping | |
-| Rendering | Aspect Ratio, Multi-Sampling, Anisotropic Filtering, Color Quality, Depth Buffer, Fog | |
+| Rendering | Resolution Factor, Aspect Ratio, Multi-Sampling, Anisotropic Filtering, Color Quality, Depth Buffer, Fog | |
 | Texture Enhancement | Texture Enhancement, Force Texture Filter, Mipmapping, Texture Quality | |
 
 #### Save scope
@@ -389,6 +389,17 @@ Settings follow NextUI's minarch save model: changes are applied on-demand in me
 - **Restore Defaults** — deletes the currently-active scope's file and reverts to defaults
 
 The scope indicator at the top of the Save Changes page shows `Using defaults.`, `Using console config.`, or `Using game config.`
+
+### Internal resolution
+
+**Rendering → Resolution Factor** sets the resolution each plugin renders at, as a multiple of the N64's own. **1x** is native: the frame is drawn at the game's resolution (usually 320x240) and scaled up to the panel with nearest-neighbor filtering, which keeps pixels sharp and is cheaper on the GPU. **Screen** renders at the panel's resolution, and **2x** to **4x** sit in between. The setting is read when the game starts, so changing it offers the save-and-restart prompt.
+
+| Plugin | Key | Default | Upscale filter |
+|---|---|---|---|
+| GLideN64 | `[Video-GLideN64] UseNativeResolutionFactor` | 2x | Nearest-neighbor while **Hybrid Filter** is off (the default); linear with integer pre-scaling when it is on |
+| Rice | `[Video-Rice] ResolutionFactor` | Screen | Nearest-neighbor |
+
+GLideN64 supports this upstream. Rice does not, so `mupen64plus-video-rice.patch` adds it: `SetVIScales()` shrinks the render area to the chosen multiple, anchored at the bottom-left of the back buffer, and `UpdateFrame()` copies that corner into a texture and draws it over the aspect-corrected area just before the buffer swap. A factor that would not fit inside that area is clamped to the largest one that does, using the same scale on both axes. Rice's default stays at Screen, so installs that never touch the setting render as before.
 
 ### CPU mode
 

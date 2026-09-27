@@ -71,12 +71,15 @@ Wires the Rice video plugin into the same `emu_frontend` overlay module as GLide
 **What it modifies in Rice**:
 
 - **`projects/unix/Makefile`**: adds the overlay source files as build targets (`OVERLAY_DIR = ../../../../overlay`), includes the overlay and cJSON header paths, and links SDL2_ttf and SDL2_image.
+- **`src/Config.cpp` / `src/Config.h`**: adds `[Video-Rice] AspectRatio` and `ResolutionFactor` options.
+- **`src/Video.cpp` `SetVIScales()`**: computes an aspect-corrected effective display area (`uEffDisplayWidth/Height`, centred via `vpBaseX/Y`) that the viewport and scissor wrappers in `OGLRender.cpp` draw into. With a `ResolutionFactor` above 0, the render area shrinks to that multiple of the N64 resolution at the origin, and the aspect-corrected area is kept as the present rect.
+- **`src/OGLGraphicsContext.cpp` `UpdateFrame()`**: clears the letterbox bars after each swap. When the render area was shrunk, it first copies the frame into a texture and draws it over the present rect with nearest-neighbor filtering, saving and restoring the GL state Rice caches (program, texture binding, vertex attribute pointers, viewport, enables).
 - **`src/Video.cpp`**: includes `emu_frontend.h` (via `extern "C"`), adds four static `rice_*` plugin-op callback functions, adds `ensure_frontend_init()` that fills `EmuFrontendCoreAPI` + `EmuFrontendPluginOps` and calls `emu_frontend_init()`, and calls `emu_frontend_frame(windowSetting.uDisplayWidth, windowSetting.uDisplayHeight)` at the end of `UpdateScreen()`.
 
 Rice's plugin ops are simpler than GLideN64's because Rice is single-threaded:
 - `rice_exec_on_video_thread(fn, ctx)` just calls `fn(ctx)` directly (no thread dispatch needed).
 - `rice_swap_buffers()` calls `CoreVideo_GL_SwapBuffers()`.
 - `rice_get_render()` returns the SDL overlay backend.
-- `rice_cycle_aspect()` is a no-op (Rice reads aspect from VI registers).
+- `rice_cycle_aspect()` steps `AspectRatio` through Auto, 4:3, 16:9 and Stretch and reruns `SetVIScales()`.
 
 The patch also resolves `CoreDoCommand`, `CoreAddCheat`, and `CoreCheatEnabled` via dlsym in `PluginStartup()` for the cheat and save-state systems.
