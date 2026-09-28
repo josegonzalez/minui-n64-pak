@@ -614,6 +614,7 @@ static void clear_turbo_files(void) {
 
 #define POWER_BUTTON 102
 #define DISP_LCD_SET_BRIGHTNESS 0x102
+#define DISP_LCD_GET_BRIGHTNESS 0x103
 #define DEEP_SLEEP_TIMEOUT_MS 120000
 
 static bool s_powerBtnPrev = false;
@@ -635,7 +636,15 @@ static void set_backlight(int brightness) {
 static int read_backlight(void) {
 	FILE* f = fopen("/sys/class/backlight/backlight0/brightness", "r");
 	if (f) { int v = 0; if (fscanf(f, "%d", &v) == 1) { fclose(f); return v; } fclose(f); }
-	return 200; // tg5040 default (no sysfs read path)
+	// Allwinner /dev/disp (tg5040, zero28): the ioctl returns the current level
+	int fd = open("/dev/disp", O_RDWR);
+	if (fd >= 0) {
+		unsigned long param[4] = {0, 0, 0, 0};
+		int v = ioctl(fd, DISP_LCD_GET_BRIGHTNESS, &param);
+		close(fd);
+		if (v > 0) return v;
+	}
+	return 200; // last resort
 }
 
 // Returns: 0 = nothing, 1 = short press (sleep), 2 = long press (poweroff)
@@ -722,6 +731,8 @@ static void handle_sleep(void) {
 	set_backlight(saved_brightness);
 	system("echo 0 > /sys/class/speaker/mute 2>/dev/null");
 	SDL_PauseAudio(0);
+	// Re-apply MinUI's own brightness and volume, which are what its keys adjust from
+	system("command -v syncsettings.elf >/dev/null 2>&1 && syncsettings.elf >/dev/null 2>&1 &");
 
 	// Resume game time tracking session
 	system("command -v gametimectl.elf >/dev/null 2>&1 && gametimectl.elf resume");
