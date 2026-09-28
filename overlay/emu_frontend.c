@@ -48,6 +48,20 @@ static char s_overlayIniPath[512] = "";
 static bool s_menuBtnPrev = false;
 static Uint8 s_prevHat = 0;
 static Uint32 s_prevButtons = 0;
+
+// ---------------------------------------------------------------------------
+// Pad layout for the overlay. Defaults are the TrimUI numbering; other devices
+// override any subset with $EMU_PAD, e.g. the MagicX Zero 28:
+//   EMU_PAD="a=0,b=1,menu=19,select=8,up=13,down=16,left=14,right=15,l2axis=-1,r2axis=-1"
+// D-pad entries of -1 mean "read hat 0". Axis entries of -1 disable that axis.
+// ---------------------------------------------------------------------------
+#define OVL_MAX_BUTTONS 32
+static struct {
+	int a, b, l1, r1, menu, select;
+	int up, down, left, right;
+	int l2axis, r2axis;
+} s_pad = { 1, 0, 4, 5, 8, 6, -1, -1, -1, -1, 2, 5 };
+static bool s_padLoaded = false;
 #define OVL_AXIS_DEADZONE 16000
 static int s_prevAxisX = 0;
 static int s_prevAxisY = 0;
@@ -412,11 +426,31 @@ static const char* s_btnLabels[] = {
 };
 
 static const char* mod_label(int mod) {
-	if (mod == 8) return "MENU";
-	if (mod == 6) return "SELECT";
-	if (mod == -3) return "L2";   // -(axis_id + 1)
-	if (mod == -6) return "R2";
+	if (mod > 0 && mod == s_pad.menu) return "MENU";
+	if (mod > 0 && mod == s_pad.select) return "SELECT";
+	if (s_pad.l2axis >= 0 && mod == -(s_pad.l2axis + 1)) return "L2";   // -(axis_id + 1)
+	if (s_pad.r2axis >= 0 && mod == -(s_pad.r2axis + 1)) return "R2";
 	return "MOD";
+}
+
+// Name of a physical button: from $EMU_PAD when a device sets one, else TrimUI's table
+static const char* pad_label(int index) {
+	static char other[16];
+	if (getenv("EMU_PAD")) {
+		if (index == s_pad.a) return "A";
+		if (index == s_pad.b) return "B";
+		if (index == s_pad.l1) return "L1";
+		if (index == s_pad.r1) return "R1";
+		if (index == s_pad.menu) return "Menu";
+		if (index == s_pad.select) return "Select";
+		if (index == s_pad.up) return "Up";
+		if (index == s_pad.down) return "Down";
+		if (index == s_pad.left) return "Left";
+		if (index == s_pad.right) return "Right";
+		snprintf(other, sizeof(other), "Btn %d", index);
+		return other;
+	}
+	return (index >= 0 && index < 11) ? s_btnLabels[index] : "?";
 }
 
 const char* emu_frontend_binding_label(const N64ButtonMapping* m) {
@@ -428,7 +462,7 @@ const char* emu_frontend_binding_label(const N64ButtonMapping* m) {
 		snprintf(axis_buf, sizeof(axis_buf), "Axis %d%s", m->physical, m->axis_dir > 0 ? "+" : "-");
 		base = axis_buf;
 	} else {
-		base = (m->physical >= 0 && m->physical < 11) ? s_btnLabels[m->physical] : "?";
+		base = pad_label(m->physical);
 	}
 	if (m->mod != 0) {
 		snprintf(buf, sizeof(buf), "%s+%s", mod_label(m->mod), base);
@@ -710,18 +744,57 @@ static uint32_t s_btnPrev = 0;
 static int32_t s_axisState[8];
 static int32_t s_axisPrev[8];
 
+// Raw pad event log for mapping new devices: set $EMU_INPUT_LOG to a file path.
+// Records button presses/releases, hat changes and sticks crossing half travel.
+static void log_input_changes(int nb, int na) {
+	static FILE* f = NULL;
+	static bool tried = false;
+	static Uint8 prevHat = 0;
+	static int prevZone[8];
+	if (!tried) {
+		tried = true;
+		const char* path = getenv("EMU_INPUT_LOG");
+		if (path && *path && (f = fopen(path, "w"))) {
+			fprintf(f, "# joystick '%s': %d buttons, %d axes, %d hats\n",
+			        SDL_JoystickName(s_joy), SDL_JoystickNumButtons(s_joy),
+			        SDL_JoystickNumAxes(s_joy), SDL_JoystickNumHats(s_joy));
+			fflush(f);
+		}
+	}
+	if (!f) return;
+	uint32_t t = SDL_GetTicks();
+	uint32_t changed = s_btnState ^ s_btnPrev;
+	for (int b = 0; b < nb; b++)
+		if (changed & (1u << b))
+			fprintf(f, "%u button %d %s\n", t, b, (s_btnState & (1u << b)) ? "down" : "up");
+	Uint8 hat = SDL_JoystickNumHats(s_joy) > 0 ? SDL_JoystickGetHat(s_joy, 0) : 0;
+	if (hat != prevHat)
+		fprintf(f, "%u hat 0 = 0x%x\n", t, hat);
+	prevHat = hat;
+	for (int a = 0; a < na; a++) {
+		int zone = s_axisState[a] > 16000 ? 1 : (s_axisState[a] < -16000 ? -1 : 0);
+		if (zone != prevZone[a])
+			fprintf(f, "%u axis %d %s (%d)\n", t, a, zone > 0 ? "+" : (zone < 0 ? "-" : "center"), s_axisState[a]);
+		prevZone[a] = zone;
+	}
+	fflush(f);
+}
+
 void emu_frontend_update_buttons(void) {
 	s_btnPrev = s_btnState;
 	s_btnState = 0;
 	memcpy(s_axisPrev, s_axisState, sizeof(s_axisPrev));
 	if (!s_joy) return;
-	for (int b = 0; b <= 10; b++)
+	int nb = SDL_JoystickNumButtons(s_joy);
+	if (nb > OVL_MAX_BUTTONS) nb = OVL_MAX_BUTTONS;
+	for (int b = 0; b < nb; b++)
 		if (SDL_JoystickGetButton(s_joy, b))
 			s_btnState |= (1u << b);
 	int na = SDL_JoystickNumAxes(s_joy);
 	if (na > 8) na = 8;
 	for (int a = 0; a < na; a++)
 		s_axisState[a] = SDL_JoystickGetAxis(s_joy, a);
+	log_input_changes(nb, na);
 }
 
 static bool btn_just_pressed(int b) {
@@ -788,7 +861,7 @@ const char* emu_frontend_shortcut_label(const ShortcutBinding* s) {
 				 s->physical, s->axis_dir > 0 ? "+" : "-");
 		base = axis_buf;
 	} else {
-		base = (s->physical >= 0 && s->physical < 11) ? s_btnLabels[s->physical] : "?";
+		base = pad_label(s->physical);
 	}
 	if (s->mod != 0) {
 		snprintf(buf, sizeof(buf), "%s+%s", mod_label(s->mod), base);
@@ -1642,10 +1715,71 @@ static void overlay_ensure_init(int w, int h) {
 	fprintf(stderr, "[Overlay] Initialized successfully (%dx%d)\n", w, h);
 }
 
+static void load_pad_layout(void) {
+	if (s_padLoaded) return;
+	s_padLoaded = true;
+	const char* env = getenv("EMU_PAD");
+	if (!env || !*env) return;
+	char buf[256];
+	snprintf(buf, sizeof(buf), "%s", env);
+	for (char* tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")) {
+		char* eq = strchr(tok, '=');
+		if (!eq) continue;
+		*eq = '\0';
+		int v = atoi(eq + 1);
+		if (v >= OVL_MAX_BUTTONS) continue;
+		if      (!strcmp(tok, "a"))      s_pad.a = v;
+		else if (!strcmp(tok, "b"))      s_pad.b = v;
+		else if (!strcmp(tok, "l1"))     s_pad.l1 = v;
+		else if (!strcmp(tok, "r1"))     s_pad.r1 = v;
+		else if (!strcmp(tok, "menu"))   s_pad.menu = v;
+		else if (!strcmp(tok, "select")) s_pad.select = v;
+		else if (!strcmp(tok, "up"))     s_pad.up = v;
+		else if (!strcmp(tok, "down"))   s_pad.down = v;
+		else if (!strcmp(tok, "left"))   s_pad.left = v;
+		else if (!strcmp(tok, "right"))  s_pad.right = v;
+		else if (!strcmp(tok, "l2axis")) s_pad.l2axis = v;
+		else if (!strcmp(tok, "r2axis")) s_pad.r2axis = v;
+	}
+	fprintf(stderr, "[Overlay] Pad layout: a=%d b=%d l1=%d r1=%d menu=%d select=%d dpad=%d,%d,%d,%d l2axis=%d r2axis=%d\n",
+	        s_pad.a, s_pad.b, s_pad.l1, s_pad.r1, s_pad.menu, s_pad.select,
+	        s_pad.up, s_pad.down, s_pad.left, s_pad.right, s_pad.l2axis, s_pad.r2axis);
+}
+
+static bool pad_button(int index) {
+	return index >= 0 && s_joy && SDL_JoystickGetButton(s_joy, index) != 0;
+}
+
+static int pad_axis(int index) {
+	return (index >= 0 && s_joy) ? SDL_JoystickGetAxis(s_joy, index) : 0;
+}
+
+// Hat 0 plus any d-pad buttons, as SDL_HAT_* bits
+static Uint8 pad_dpad(void) {
+	Uint8 hat = s_joy ? SDL_JoystickGetHat(s_joy, 0) : 0;
+	if (pad_button(s_pad.up))    hat |= SDL_HAT_UP;
+	if (pad_button(s_pad.down))  hat |= SDL_HAT_DOWN;
+	if (pad_button(s_pad.left))  hat |= SDL_HAT_LEFT;
+	if (pad_button(s_pad.right)) hat |= SDL_HAT_RIGHT;
+	return hat;
+}
+
+// Overlay action buttons as bits: 0=a 1=b 2=l1 3=r1 4=menu
+static Uint32 pad_action_bits(void) {
+	Uint32 bits = 0;
+	if (pad_button(s_pad.a))    bits |= 1u << 0;
+	if (pad_button(s_pad.b))    bits |= 1u << 1;
+	if (pad_button(s_pad.l1))   bits |= 1u << 2;
+	if (pad_button(s_pad.r1))   bits |= 1u << 3;
+	if (pad_button(s_pad.menu)) bits |= 1u << 4;
+	return bits;
+}
+
 static bool check_menu_button(void) {
 	if (!s_joy) return false;
+	load_pad_layout();
 
-	bool pressed = SDL_JoystickGetButton(s_joy, 8) != 0;
+	bool pressed = pad_button(s_pad.menu);
 	bool justPressed = pressed && !s_menuBtnPrev;
 	s_menuBtnPrev = pressed;
 	return justPressed;
@@ -1660,8 +1794,8 @@ static EmuOvlInput poll_overlay_input(void) {
 	SDL_JoystickUpdate();
 	if (!s_joy) return input;
 
-	// D-pad (hat) — edge detect: only trigger on newly-pressed directions
-	Uint8 hat = SDL_JoystickGetHat(s_joy, 0);
+	// D-pad (hat and/or buttons) — edge detect: only trigger on newly-pressed directions
+	Uint8 hat = pad_dpad();
 	Uint8 hatPressed = hat & ~s_prevHat;
 	s_prevHat = hat;
 
@@ -1686,22 +1820,16 @@ static EmuOvlInput poll_overlay_input(void) {
 	s_prevAxisX = axisX;
 	s_prevAxisY = axisY;
 
-	// Buttons — edge detect: only trigger on newly-pressed buttons
-	// SDL button indices: 0=A(hw), 1=B(hw), 2=X(hw), 3=Y(hw), 4=L1, 5=R1, 8=Menu
-	static const int btnMap[] = {0, 1, 4, 5, 8};
-	Uint32 curButtons = 0;
-	for (int i = 0; i < 5; i++) {
-		if (SDL_JoystickGetButton(s_joy, btnMap[i]))
-			curButtons |= (1u << btnMap[i]);
-	}
+	// Buttons — edge detect: only trigger on newly-pressed buttons (layout from s_pad)
+	Uint32 curButtons = pad_action_bits();
 	Uint32 btnPressed = curButtons & ~s_prevButtons;
 	s_prevButtons = curButtons;
 
-	if (btnPressed & (1u << 0)) input.b    = true;
-	if (btnPressed & (1u << 1)) input.a    = true;
-	if (btnPressed & (1u << 4)) input.l1   = true;
-	if (btnPressed & (1u << 5)) input.r1   = true;
-	if (btnPressed & (1u << 8)) input.menu = true;
+	if (btnPressed & (1u << 0)) input.a    = true;
+	if (btnPressed & (1u << 1)) input.b    = true;
+	if (btnPressed & (1u << 2)) input.l1   = true;
+	if (btnPressed & (1u << 3)) input.r1   = true;
+	if (btnPressed & (1u << 4)) input.menu = true;
 
 	return input;
 }
@@ -1731,15 +1859,11 @@ static EmuOvlAction run_overlay_loop(void) {
 	s_pluginOps.exec_on_video_thread(overlay_open_on_gl_thread, NULL);
 
 	// Reset input edge detection state and drain pending SDL events
-	s_prevHat = SDL_JoystickGetHat(s_joy, 0);
+	load_pad_layout();
+	s_prevHat = pad_dpad();
 	s_prevAxisX = SDL_JoystickGetAxis(s_joy, 0);
 	s_prevAxisY = SDL_JoystickGetAxis(s_joy, 1);
-	s_prevButtons = 0;
-	static const int menu_btns[] = {0, 1, 4, 5, 8};
-	for (int i = 0; i < 5; i++) {
-		if (SDL_JoystickGetButton(s_joy, menu_btns[i]))
-			s_prevButtons |= (1u << menu_btns[i]);
-	}
+	s_prevButtons = pad_action_bits();
 	SDL_Event ev;
 	while (SDL_PollEvent(&ev)) {}
 	s_menuBtnPrev = true; // prevent re-trigger
@@ -1798,7 +1922,7 @@ static EmuOvlAction run_overlay_loop(void) {
 		#define BC_TIMEOUT_MS 5500
 		#define BC_GRACE_MS 200
 		if (s_overlay.bind_capture >= 0 && s_joy) {
-			static int bc_prev_btn[16];
+			static int bc_prev_btn[OVL_MAX_BUTTONS];
 			static int bc_prev_axis[8];
 			static bool bc_baselines_set;
 			// Pending dual-purpose input (SELECT/L2/R2 with no combo yet).
@@ -1823,7 +1947,7 @@ static EmuOvlAction run_overlay_loop(void) {
 				// Listening — record baselines once, then edge-detect
 				if (!bc_baselines_set) {
 					int nb = SDL_JoystickNumButtons(s_joy);
-					if (nb > 16) nb = 16;
+					if (nb > OVL_MAX_BUTTONS) nb = OVL_MAX_BUTTONS;
 					for (int b = 0; b < nb; b++)
 						bc_prev_btn[b] = SDL_JoystickGetButton(s_joy, b);
 					int na = SDL_JoystickNumAxes(s_joy);
@@ -1845,10 +1969,10 @@ static EmuOvlAction run_overlay_loop(void) {
 				// MENU: always modifier-only.
 				// SELECT/L2/R2: dual-purpose — modifier if a combo button
 				// is pressed, standalone after a grace period if not.
-				#define MOD_BTN_MENU   8
-				#define MOD_BTN_SELECT 6
-				#define MOD_AXIS_L2    2
-				#define MOD_AXIS_R2    5
+				#define MOD_BTN_MENU   (s_pad.menu)
+				#define MOD_BTN_SELECT (s_pad.select)
+				#define MOD_AXIS_L2    (s_pad.l2axis)
+				#define MOD_AXIS_R2    (s_pad.r2axis)
 				int held_mod = 0;
 				bool select_active = false;
 				bool l2_active = false;
@@ -1858,14 +1982,14 @@ static EmuOvlAction run_overlay_loop(void) {
 					held_mod = MOD_BTN_MENU;
 				if (SDL_JoystickGetButton(s_joy, MOD_BTN_SELECT))
 					select_active = true;
-				{
-					int l2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_L2);
-					int r2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_R2);
-					int l2_delta = l2 - bc_prev_axis[MOD_AXIS_L2];
-					int r2_delta = r2 - bc_prev_axis[MOD_AXIS_R2];
+				if (MOD_AXIS_L2 >= 0 && MOD_AXIS_L2 < 8) {
+					int l2_delta = pad_axis(MOD_AXIS_L2) - bc_prev_axis[MOD_AXIS_L2];
 					if (l2_delta < 0) l2_delta = -l2_delta;
-					if (r2_delta < 0) r2_delta = -r2_delta;
 					if (l2_delta > 16000) l2_active = true;
+				}
+				if (MOD_AXIS_R2 >= 0 && MOD_AXIS_R2 < 8) {
+					int r2_delta = pad_axis(MOD_AXIS_R2) - bc_prev_axis[MOD_AXIS_R2];
+					if (r2_delta < 0) r2_delta = -r2_delta;
 					if (r2_delta > 16000) r2_active = true;
 				}
 
@@ -1882,7 +2006,7 @@ static EmuOvlAction run_overlay_loop(void) {
 				// Skip MENU (modifier-only). SELECT, L2, R2 are handled
 				// by the grace period logic below instead of being skipped.
 				int nb = SDL_JoystickNumButtons(s_joy);
-				if (nb > 16) nb = 16;
+				if (nb > OVL_MAX_BUTTONS) nb = OVL_MAX_BUTTONS;
 				for (int b = 0; b < nb; b++) {
 					int cur = SDL_JoystickGetButton(s_joy, b);
 					// MENU is always modifier-only (opens overlay)
