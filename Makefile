@@ -37,6 +37,12 @@ ZLIB_TAG      := v1.3.2
 
 # 7-Zip standalone binary for ZIP/7Z ROM extraction. Pre-built AArch64 blob
 # published by the upstream 7-Zip project on GitHub. Sha256-verified.
+# bzip2 for GLideN64's static freetype. Built from source like zlib: the
+# toolchain images' libbz2.a holds host objects, so it only links on arm64 hosts.
+BZIP2_VERSION := 1.0.8
+BZIP2_URL     := https://sourceware.org/pub/bzip2/bzip2-$(BZIP2_VERSION).tar.gz
+BZIP2_SHA256  := ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269
+
 SEVENZ_VERSION := 26.00
 SEVENZ_TAG     := 2600
 SEVENZ_URL     := https://github.com/ip7z/7zip/releases/download/$(SEVENZ_VERSION)/7z$(SEVENZ_TAG)-linux-arm64.tar.xz
@@ -101,7 +107,7 @@ clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
        $(SRC)/mupen64plus-audio-sdl $(SRC)/mupen64plus-input-sdl \
        $(SRC)/mupen64plus-rsp-hle $(SRC)/GLideN64 \
        $(SRC)/mupen64plus-video-rice $(SRC)/nx-redux \
-       $(SRC)/zlib $(SRC)/7zip/7zzs
+       $(SRC)/zlib $(SRC)/bzip2 $(SRC)/7zip/7zzs
 	@# Populate GLES headers and unmodified patches from nx-redux
 	@# (overlay/ sources are vendored in the repo — not pulled from nx-redux)
 	@mkdir -p $(ROOT)/include
@@ -139,6 +145,15 @@ $(SRC)/nx-redux:
 
 $(SRC)/zlib:
 	git clone --depth 1 --branch $(ZLIB_TAG) $(ZLIB_REPO) $@
+
+$(SRC)/bzip2:
+	@mkdir -p $(SRC)
+	@echo "Fetching bzip2 $(BZIP2_VERSION) source…"
+	@curl -fsSL -o $(SRC)/bzip2.tar.gz $(BZIP2_URL)
+	@echo "$(BZIP2_SHA256)  $(SRC)/bzip2.tar.gz" | shasum -a 256 -c -
+	@tar -xzf $(SRC)/bzip2.tar.gz -C $(SRC)
+	@mv $(SRC)/bzip2-$(BZIP2_VERSION) $@
+	@rm -f $(SRC)/bzip2.tar.gz
 
 # 7-Zip standalone static binary for ZIP/7Z ROM extraction at launch time.
 # Downloaded pre-built from upstream and sha256-verified. Only 7zzs and the
@@ -308,6 +323,8 @@ h700-rsp: $(PATCH_STAMP)
 gliden64: $(PATCH_STAMP)
 	@# Cross-compile zlib from source (tg5040 toolchain has 1.2.8, too old for GLideN64)
 	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/zlib && [ -f libz.a ] || (CC=aarch64-nextui-linux-gnu-gcc AR=aarch64-nextui-linux-gnu-ar RANLIB=aarch64-nextui-linux-gnu-ranlib ./configure --static && make -j$$(nproc))'
+	@# Cross-compile bzip2 for freetype (the sysroot's libbz2.a only works on arm64 hosts)
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/bzip2 && [ -f libbz2.a ] || make -j$$(nproc) libbz2.a CC=aarch64-nextui-linux-gnu-gcc AR=aarch64-nextui-linux-gnu-ar RANLIB=aarch64-nextui-linux-gnu-ranlib CFLAGS="-O2 -fPIC -D_FILE_OFFSET_BITS=64"'
 	@# Replace bundled static libs with ARM64 versions:
 	@#   libpng16.a from tg5050 sysroot (tg5040 only has libpng12)
 	@#   libz.a from zlib source build above
