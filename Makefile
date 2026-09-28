@@ -181,6 +181,7 @@ $(PATCH_STAMP): | clone
 			cd $(SRC)/mupen64plus-audio-sdl && git apply $(PATCHES)/mupen64plus-audio-sdl.patch; \
 		fi; \
 		cd $(SRC)/mupen64plus-core && git apply $(PATCHES)/mupen64plus-core.patch; \
+		cd $(SRC)/mupen64plus-core && git apply $(PATCHES)/mupen64plus-core-rotate.patch; \
 		cd $(SRC)/GLideN64 && git apply --exclude='src/GLideNHQ/lib/*.a' $(PATCHES)/GLideN64-standalone.patch; \
 		cd $(SRC)/mupen64plus-input-sdl && git apply $(PATCHES)/mupen64plus-input-sdl.patch; \
 		cd $(SRC)/mupen64plus-video-rice && git apply $(PATCHES)/mupen64plus-video-rice.patch; \

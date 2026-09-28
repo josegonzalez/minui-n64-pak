@@ -1,0 +1,485 @@
+diff --git a/src/api/vidext.c b/src/api/vidext.c
+index 98c8bc1..15659c8 100644
+--- a/src/api/vidext.c
++++ b/src/api/vidext.c
+@@ -62,6 +62,11 @@ static SDL_Surface *l_pScreen = NULL;
+ static const char** l_VulkanExtensionNames = NULL;
+ #endif
+ 
++#if SDL_VERSION_ATLEAST(2,0,0) && defined(USE_GLES)
++#define VIDEXT_ROTATE 1
++#include "vidext_rotate.h"
++#endif
++
+ /* global function for use by frontend.c */
+ m64p_error OverrideVideoFunctions(m64p_video_extension_functions *VideoFunctionStruct)
+ {
+@@ -388,6 +393,9 @@ EXPORT m64p_error CALL VidExt_SetVideoMode(int Width, int Height, int BitsPerPix
+ 
+     l_Fullscreen = (ScreenMode == M64VIDEO_FULLSCREEN);
+     l_VideoOutputActive = 1;
++#ifdef VIDEXT_ROTATE
++    rot_setup(Width, Height);
++#endif
+     StateChanged(M64CORE_VIDEO_MODE, ScreenMode);
+     StateChanged(M64CORE_VIDEO_SIZE, (Width << 16) | Height);
+     return M64ERR_SUCCESS;
+@@ -482,6 +490,9 @@ EXPORT m64p_error CALL VidExt_SetVideoModeWithRate(int Width, int Height, int Re
+ 
+     l_Fullscreen = (ScreenMode == M64VIDEO_FULLSCREEN);
+     l_VideoOutputActive = 1;
++#ifdef VIDEXT_ROTATE
++    rot_setup(Width, Height);
++#endif
+     StateChanged(M64CORE_VIDEO_MODE, ScreenMode);
+     StateChanged(M64CORE_VIDEO_SIZE, (Width << 16) | Height);
+ 
+@@ -782,6 +793,13 @@ EXPORT m64p_error CALL VidExt_GL_SwapBuffers(void)
+     if (!SDL_WasInit(SDL_INIT_VIDEO))
+         return M64ERR_NOT_INIT;
+ 
++#ifdef VIDEXT_ROTATE
++    if (rot_active())
++    {
++        rot_present();
++        return M64ERR_SUCCESS;
++    }
++#endif
+     SDL_GL_SwapBuffers();
+     return M64ERR_SUCCESS;
+ }
+@@ -791,6 +809,15 @@ EXPORT uint32_t CALL VidExt_GL_GetDefaultFramebuffer(void)
+     if (l_VideoExtensionActive)
+         return (*l_ExternalVideoFuncTable.VidExtFuncGLGetDefaultFramebuffer)();
+ 
++#ifdef VIDEXT_ROTATE
++    if (rot_active())
++    {
++        static int logged = 0;
++        if (!logged++)
++            DebugMessage(M64MSG_INFO, "Rotate: default framebuffer requested -> fbo %u", l_Rot.fbo);
++        return l_Rot.fbo;
++    }
++#endif
+     return 0;
+ }
+ 
+diff --git a/src/api/vidext_rotate.h b/src/api/vidext_rotate.h
+new file mode 100644
+index 0000000..2fcd9f1
+--- /dev/null
++++ b/src/api/vidext_rotate.h
+@@ -0,0 +1,413 @@
++/* vidext_rotate.h: present the game rotated on portrait-native panels.
++ *
++ * Some handhelds (MagicX Mini Zero 28: 480x640 panel held landscape) expose an
++ * EGL surface in the panel's native portrait orientation, and their SDL2
++ * build cannot rotate GL output. With M64P_ROTATE set, the core hands the
++ * video plugin an offscreen framebuffer of the requested (landscape) size as
++ * the "default framebuffer", then draws it rotated onto the real window
++ * surface in VidExt_GL_SwapBuffers.
++ *
++ *   M64P_ROTATE=0|unset  off
++ *   M64P_ROTATE=1        rotate 90 degrees clockwise   (Zero 28)
++ *   M64P_ROTATE=2        rotate 180 degrees
++ *   M64P_ROTATE=3        rotate 90 degrees counter-clockwise
++ *
++ * Only included by vidext.c (all functions are static).
++ */
++
++#ifndef VIDEXT_ROTATE_H
++#define VIDEXT_ROTATE_H
++
++#include <dlfcn.h>
++#include <stdlib.h>
++/* SDL's bundled GLES2 headers, so the build needs no GLES/EGL headers in the sysroot */
++#define SDL_USE_BUILTIN_OPENGL_DEFINITIONS 1
++#include <SDL_opengles2.h>
++
++/* The few EGL types and enums used to ask the real surface size */
++typedef void *EGLDisplay;
++typedef void *EGLSurface;
++typedef int32_t EGLint;
++typedef unsigned int EGLBoolean;
++#define EGL_HEIGHT 0x3056
++#define EGL_WIDTH  0x3057
++#define EGL_DRAW   0x3059
++
++#ifndef RTLD_DEFAULT
++#define RTLD_DEFAULT ((void *) 0)  /* glibc's value; only exposed with _GNU_SOURCE */
++#endif
++
++/* GLES3 enums/entry points, resolved at runtime so this builds against GLES2 headers */
++#ifndef GL_READ_FRAMEBUFFER
++#define GL_READ_FRAMEBUFFER          0x8CA8
++#define GL_DRAW_FRAMEBUFFER          0x8CA9
++#define GL_READ_FRAMEBUFFER_BINDING  0x8CAA
++#endif
++#ifndef GL_VERTEX_ARRAY_BINDING
++#define GL_VERTEX_ARRAY_BINDING      0x85B5
++#endif
++#ifndef GL_SAMPLER_BINDING
++#define GL_SAMPLER_BINDING           0x8919
++#endif
++#ifndef GL_RASTERIZER_DISCARD
++#define GL_RASTERIZER_DISCARD        0x8C89
++#endif
++#ifndef GL_DEPTH24_STENCIL8
++#define GL_DEPTH24_STENCIL8          0x88F0
++#endif
++#ifndef GL_DEPTH_STENCIL_ATTACHMENT
++#define GL_DEPTH_STENCIL_ATTACHMENT  0x821A
++#endif
++
++typedef void (*rot_pfn_BindVertexArray)(GLuint);
++typedef void (*rot_pfn_GenVertexArrays)(GLsizei, GLuint*);
++typedef void (*rot_pfn_BindSampler)(GLuint, GLuint);
++typedef EGLBoolean (*rot_pfn_eglQuerySurface)(EGLDisplay, EGLSurface, EGLint, EGLint*);
++typedef EGLDisplay (*rot_pfn_eglGetCurrentDisplay)(void);
++typedef EGLSurface (*rot_pfn_eglGetCurrentSurface)(EGLint);
++
++static struct {
++    int mode;               /* 0 = off, 1/2/3 = quarter turns clockwise */
++    int logged;             /* first-frame diagnostics written */
++    SDL_GLContext context;  /* context the objects below belong to */
++    GLuint fbo, color_tex, depth_rb;
++    GLuint program, vbo, vao;
++    int fbo_w, fbo_h;       /* game (landscape) size */
++    int win_w, win_h;       /* real surface (portrait) size */
++    int es3;
++    rot_pfn_BindVertexArray BindVertexArray;
++    rot_pfn_GenVertexArrays GenVertexArrays;
++    rot_pfn_BindSampler BindSampler;
++} l_Rot;
++
++static int rot_mode_from_env(void)
++{
++    const char *env = getenv("M64P_ROTATE");
++    int mode = env ? atoi(env) : 0;
++    return (mode >= 1 && mode <= 3) ? mode : 0;
++}
++
++/* No current-context check here: GLideN64's threaded video asks for the
++ * default framebuffer from the emulator thread, where SDL reports no context. */
++static int rot_active(void)
++{
++    return l_Rot.mode != 0 && l_Rot.fbo != 0;
++}
++
++/* The real size of the window surface. SDL's mali-fbdev driver may report the
++ * requested size, so ask EGL first and fall back to SDL. */
++static void rot_query_window_size(int *w, int *h)
++{
++    rot_pfn_eglQuerySurface query = (rot_pfn_eglQuerySurface) dlsym(RTLD_DEFAULT, "eglQuerySurface");
++    rot_pfn_eglGetCurrentDisplay get_display = (rot_pfn_eglGetCurrentDisplay) dlsym(RTLD_DEFAULT, "eglGetCurrentDisplay");
++    rot_pfn_eglGetCurrentSurface get_surface = (rot_pfn_eglGetCurrentSurface) dlsym(RTLD_DEFAULT, "eglGetCurrentSurface");
++    EGLint ew = 0, eh = 0;
++    int sw = 0, sh = 0;
++
++    SDL_GL_GetDrawableSize(SDL_VideoWindow, &sw, &sh);
++    if (query && get_display && get_surface)
++    {
++        EGLSurface surface = get_surface(EGL_DRAW);
++        query(get_display(), surface, EGL_WIDTH, &ew);
++        query(get_display(), surface, EGL_HEIGHT, &eh);
++    }
++    DebugMessage(M64MSG_INFO, "Rotate: window size SDL=%ix%i EGL=%ix%i", sw, sh, (int) ew, (int) eh);
++
++    *w = ew > 0 ? ew : sw;
++    *h = eh > 0 ? eh : sh;
++}
++
++static GLuint rot_compile(GLenum type, const char *src)
++{
++    GLint ok = 0;
++    GLuint shader = glCreateShader(type);
++    glShaderSource(shader, 1, &src, NULL);
++    glCompileShader(shader);
++    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
++    if (!ok)
++    {
++        char log[512] = "";
++        glGetShaderInfoLog(shader, sizeof(log), NULL, log);
++        DebugMessage(M64MSG_ERROR, "Rotate: shader compile failed: %s", log);
++    }
++    return shader;
++}
++
++/* Vertex data: NDC position + texture coordinate for each window corner. The
++ * texture coordinate is the corner's position turned back by the rotation. */
++static void rot_fill_vertices(GLfloat *v)
++{
++    static const GLfloat corners[4][2] = { {-1.f, -1.f}, {1.f, -1.f}, {-1.f, 1.f}, {1.f, 1.f} };
++    int i;
++    for (i = 0; i < 4; i++)
++    {
++        GLfloat x = corners[i][0], y = corners[i][1], u, t;
++        switch (l_Rot.mode)
++        {
++            case 1:  u = -y; t =  x; break;  /* 90 cw  */
++            case 2:  u = -x; t = -y; break;  /* 180    */
++            default: u =  y; t = -x; break;  /* 90 ccw */
++        }
++        v[i * 4 + 0] = x;
++        v[i * 4 + 1] = y;
++        v[i * 4 + 2] = (u + 1.f) * 0.5f;
++        v[i * 4 + 3] = (t + 1.f) * 0.5f;
++    }
++}
++
++static void rot_setup(int width, int height)
++{
++    static const char *vs =
++        "attribute vec2 a_pos;\n"
++        "attribute vec2 a_uv;\n"
++        "varying vec2 v_uv;\n"
++        "void main() { v_uv = a_uv; gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
++    static const char *fs =
++        "precision mediump float;\n"
++        "uniform sampler2D u_tex;\n"
++        "varying vec2 v_uv;\n"
++        "void main() { gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb, 1.0); }\n";
++    GLfloat vertices[16];
++    GLint prev_tex = 0, prev_rb = 0, prev_buf = 0, prev_vao = 0, prev_prog = 0;
++    GLenum status;
++    const char *version;
++
++    l_Rot.mode = rot_mode_from_env();
++    if (l_Rot.mode == 0 || l_RenderMode != M64P_RENDER_OPENGL)
++        return;
++
++    /* A new context invalidates every object; the same one at the same size can be reused. */
++    if (l_Rot.context == SDL_GL_GetCurrentContext() && l_Rot.fbo != 0)
++    {
++        if (l_Rot.fbo_w == width && l_Rot.fbo_h == height)
++            return;
++        glDeleteFramebuffers(1, &l_Rot.fbo);
++        glDeleteTextures(1, &l_Rot.color_tex);
++        glDeleteRenderbuffers(1, &l_Rot.depth_rb);
++        l_Rot.fbo = 0;
++    }
++    else
++    {
++        l_Rot.program = 0;
++    }
++    l_Rot.context = SDL_GL_GetCurrentContext();
++    l_Rot.fbo_w = width;
++    l_Rot.fbo_h = height;
++    l_Rot.logged = 0;
++    rot_query_window_size(&l_Rot.win_w, &l_Rot.win_h);
++
++    version = (const char *) glGetString(GL_VERSION);
++    l_Rot.es3 = version && strstr(version, "OpenGL ES 3") != NULL;
++    l_Rot.BindVertexArray = (rot_pfn_BindVertexArray) SDL_GL_GetProcAddress("glBindVertexArray");
++    l_Rot.GenVertexArrays = (rot_pfn_GenVertexArrays) SDL_GL_GetProcAddress("glGenVertexArrays");
++    l_Rot.BindSampler = (rot_pfn_BindSampler) SDL_GL_GetProcAddress("glBindSampler");
++    if (!l_Rot.es3)
++        l_Rot.BindVertexArray = NULL, l_Rot.GenVertexArrays = NULL, l_Rot.BindSampler = NULL;
++
++    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev_tex);
++    glGetIntegerv(GL_RENDERBUFFER_BINDING, &prev_rb);
++    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prev_buf);
++    glGetIntegerv(GL_CURRENT_PROGRAM, &prev_prog);
++    if (l_Rot.BindVertexArray)
++        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prev_vao);
++
++    /* Offscreen target the plugin renders into, at the game's landscape size */
++    glGenTextures(1, &l_Rot.color_tex);
++    glBindTexture(GL_TEXTURE_2D, l_Rot.color_tex);
++    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++
++    glGenRenderbuffers(1, &l_Rot.depth_rb);
++    glBindRenderbuffer(GL_RENDERBUFFER, l_Rot.depth_rb);
++    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
++
++    glGenFramebuffers(1, &l_Rot.fbo);
++    glBindFramebuffer(GL_FRAMEBUFFER, l_Rot.fbo);
++    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, l_Rot.color_tex, 0);
++    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, l_Rot.depth_rb);
++    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, l_Rot.depth_rb);
++    status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
++    if (status != GL_FRAMEBUFFER_COMPLETE)
++    {
++        DebugMessage(M64MSG_ERROR, "Rotate: offscreen framebuffer incomplete (0x%x); rotation disabled", status);
++        glBindFramebuffer(GL_FRAMEBUFFER, 0);
++        glDeleteFramebuffers(1, &l_Rot.fbo);
++        l_Rot.fbo = 0;
++        l_Rot.mode = 0;
++    }
++    else
++    {
++        glViewport(0, 0, width, height);
++        glClearColor(0.f, 0.f, 0.f, 1.f);
++        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
++    }
++
++    /* Blit program + quad, built once per context */
++    if (l_Rot.mode != 0 && l_Rot.program == 0)
++    {
++        GLint linked = 0;
++        GLuint v = rot_compile(GL_VERTEX_SHADER, vs), f = rot_compile(GL_FRAGMENT_SHADER, fs);
++        l_Rot.program = glCreateProgram();
++        glAttachShader(l_Rot.program, v);
++        glAttachShader(l_Rot.program, f);
++        glBindAttribLocation(l_Rot.program, 0, "a_pos");
++        glBindAttribLocation(l_Rot.program, 1, "a_uv");
++        glLinkProgram(l_Rot.program);
++        glGetProgramiv(l_Rot.program, GL_LINK_STATUS, &linked);
++        glDeleteShader(v);
++        glDeleteShader(f);
++        if (!linked)
++        {
++            char log[512] = "";
++            glGetProgramInfoLog(l_Rot.program, sizeof(log), NULL, log);
++            DebugMessage(M64MSG_ERROR, "Rotate: program link failed: %s", log);
++        }
++        glUseProgram(l_Rot.program);
++        glUniform1i(glGetUniformLocation(l_Rot.program, "u_tex"), 0);
++
++        rot_fill_vertices(vertices);
++        glGenBuffers(1, &l_Rot.vbo);
++        glBindBuffer(GL_ARRAY_BUFFER, l_Rot.vbo);
++        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
++
++        /* Own VAO so the plugin's vertex attribute state is never touched */
++        l_Rot.vao = 0;
++        if (l_Rot.GenVertexArrays && l_Rot.BindVertexArray)
++        {
++            l_Rot.GenVertexArrays(1, &l_Rot.vao);
++            l_Rot.BindVertexArray(l_Rot.vao);
++            glEnableVertexAttribArray(0);
++            glEnableVertexAttribArray(1);
++            glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (const void *) 0);
++            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (const void *) (2 * sizeof(GLfloat)));
++            l_Rot.BindVertexArray((GLuint) prev_vao);
++        }
++    }
++
++    glBindTexture(GL_TEXTURE_2D, (GLuint) prev_tex);
++    glBindRenderbuffer(GL_RENDERBUFFER, (GLuint) prev_rb);
++    glBindBuffer(GL_ARRAY_BUFFER, (GLuint) prev_buf);
++    glUseProgram((GLuint) prev_prog);
++
++    /* Leave the offscreen target bound: plugins that never bind framebuffers (Rice) draw into it */
++    if (l_Rot.fbo != 0)
++        glBindFramebuffer(GL_FRAMEBUFFER, l_Rot.fbo);
++
++    DebugMessage(M64MSG_INFO, "Rotate: mode %i, game %ix%i -> window %ix%i, %s, fbo=%u vao=%u",
++                 l_Rot.mode, width, height, l_Rot.win_w, l_Rot.win_h,
++                 version ? version : "(no GL version)", l_Rot.fbo, l_Rot.vao);
++}
++
++/* Draw the offscreen frame rotated onto the window, swap, and restore all GL
++ * state touched so the plugin never notices. */
++static void rot_present(void)
++{
++    GLint draw_fb = 0, read_fb = 0, program = 0, active_tex = 0, tex = 0, sampler = 0;
++    GLint array_buf = 0, vao = 0, viewport[4];
++    GLboolean color_mask[4];
++    GLboolean scissor, blend, depth, cull, stencil, poly_offset, discard = GL_FALSE;
++    GLenum err;
++
++    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &draw_fb);
++    if (l_Rot.es3)
++        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fb);
++    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
++    glGetIntegerv(GL_ACTIVE_TEXTURE, &active_tex);
++    glActiveTexture(GL_TEXTURE0);
++    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
++    if (l_Rot.BindSampler)
++        glGetIntegerv(GL_SAMPLER_BINDING, &sampler);
++    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &array_buf);
++    if (l_Rot.vao)
++        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
++    glGetIntegerv(GL_VIEWPORT, viewport);
++    glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
++    scissor = glIsEnabled(GL_SCISSOR_TEST);
++    blend = glIsEnabled(GL_BLEND);
++    depth = glIsEnabled(GL_DEPTH_TEST);
++    cull = glIsEnabled(GL_CULL_FACE);
++    stencil = glIsEnabled(GL_STENCIL_TEST);
++    poly_offset = glIsEnabled(GL_POLYGON_OFFSET_FILL);
++    if (l_Rot.es3)
++        discard = glIsEnabled(GL_RASTERIZER_DISCARD);
++
++    glBindFramebuffer(GL_FRAMEBUFFER, 0);
++    glViewport(0, 0, l_Rot.win_w, l_Rot.win_h);
++    glDisable(GL_SCISSOR_TEST);
++    glDisable(GL_BLEND);
++    glDisable(GL_DEPTH_TEST);
++    glDisable(GL_CULL_FACE);
++    glDisable(GL_STENCIL_TEST);
++    glDisable(GL_POLYGON_OFFSET_FILL);
++    if (l_Rot.es3)
++        glDisable(GL_RASTERIZER_DISCARD);
++    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++
++    glUseProgram(l_Rot.program);
++    glBindTexture(GL_TEXTURE_2D, l_Rot.color_tex);
++    if (l_Rot.BindSampler)
++        l_Rot.BindSampler(0, 0);
++    if (l_Rot.vao)
++    {
++        l_Rot.BindVertexArray(l_Rot.vao);
++        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
++    }
++    else
++    {
++        /* No VAOs: use the shared attribute state, then put it back */
++        GLint en0 = 0, en1 = 0;
++        glGetVertexAttribiv(0, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &en0);
++        glGetVertexAttribiv(1, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &en1);
++        glBindBuffer(GL_ARRAY_BUFFER, l_Rot.vbo);
++        glEnableVertexAttribArray(0);
++        glEnableVertexAttribArray(1);
++        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (const void *) 0);
++        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (const void *) (2 * sizeof(GLfloat)));
++        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
++        if (!en0) glDisableVertexAttribArray(0);
++        if (!en1) glDisableVertexAttribArray(1);
++    }
++
++    if (!l_Rot.logged)
++    {
++        err = glGetError();
++        DebugMessage(M64MSG_INFO, "Rotate: first frame presented (plugin had fb %i bound, viewport %i,%i %ix%i, glError 0x%x)",
++                     draw_fb, viewport[0], viewport[1], viewport[2], viewport[3], err);
++        l_Rot.logged = 1;
++    }
++
++    SDL_GL_SwapBuffers();
++
++    /* Restore. A plugin that had the window (0) bound gets the offscreen target instead. */
++    if (l_Rot.vao)
++        l_Rot.BindVertexArray((GLuint) vao);
++    glBindBuffer(GL_ARRAY_BUFFER, (GLuint) array_buf);
++    if (l_Rot.BindSampler)
++        l_Rot.BindSampler(0, (GLuint) sampler);
++    glBindTexture(GL_TEXTURE_2D, (GLuint) tex);
++    glActiveTexture((GLenum) active_tex);
++    glUseProgram((GLuint) program);
++    glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
++    if (scissor) glEnable(GL_SCISSOR_TEST);
++    if (blend) glEnable(GL_BLEND);
++    if (depth) glEnable(GL_DEPTH_TEST);
++    if (cull) glEnable(GL_CULL_FACE);
++    if (stencil) glEnable(GL_STENCIL_TEST);
++    if (poly_offset) glEnable(GL_POLYGON_OFFSET_FILL);
++    if (discard) glEnable(GL_RASTERIZER_DISCARD);
++    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
++    if (l_Rot.es3)
++    {
++        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fb ? (GLuint) draw_fb : l_Rot.fbo);
++        glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fb ? (GLuint) read_fb : l_Rot.fbo);
++    }
++    else
++    {
++        glBindFramebuffer(GL_FRAMEBUFFER, draw_fb ? (GLuint) draw_fb : l_Rot.fbo);
++    }
++}
++
++#endif /* VIDEXT_ROTATE_H */
