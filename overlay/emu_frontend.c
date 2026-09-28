@@ -1667,6 +1667,19 @@ static void overlay_ensure_init(int w, int h) {
 		// Load the per-game input mode (Brick-only; no-op on other devices)
 		load_input_mode_from_file(&s_overlayConfig);
 
+		// Factory defaults are default.cfg plus the device's input fragment
+		// ($EMU_INPUT_CFG), i.e. exactly what launch.sh seeds a new config with.
+		const char* default_cfg = getenv("EMU_DEFAULT_CFG");
+		if (default_cfg && default_cfg[0] != '\0') {
+			load_button_mappings_from_file(default_cfg);
+			load_button_mappings_from_file(getenv("EMU_INPUT_CFG"));
+			for (int i = 0; i < N64_REMAP_COUNT; i++) {
+				s_buttonMappings[i].default_physical = s_buttonMappings[i].physical;
+				s_buttonMappings[i].default_is_axis = s_buttonMappings[i].is_axis;
+				s_buttonMappings[i].default_axis_dir = s_buttonMappings[i].axis_dir;
+			}
+		}
+
 		// Load saved button mappings: first from console config
 		// (mupen64plus.cfg), then per-game overrides on top.
 		load_button_mappings_from_file(s_overlayIniPath);
@@ -2146,6 +2159,21 @@ static EmuOvlAction run_overlay_loop(void) {
 		SDL_Delay(16);
 	}
 
+	// Hold the game until the button that closed the menu (A on Continue, B
+	// to back out) is released; otherwise the game reads it as one press.
+	if (s_joy) {
+		uint32_t release_start = SDL_GetTicks();
+		while (SDL_GetTicks() - release_start < 1000) {
+			SDL_JoystickUpdate();
+			bool held = pad_dpad() != 0;
+			int nb = SDL_JoystickNumButtons(s_joy);
+			for (int b = 0; b < nb && !held; b++)
+				held = SDL_JoystickGetButton(s_joy, b) != 0;
+			if (!held) break;
+			SDL_Delay(10);
+		}
+	}
+
 	// Resume audio (stays on main thread)
 	SDL_PauseAudio(0);
 
@@ -2161,6 +2189,23 @@ static EmuOvlAction run_overlay_loop(void) {
 	}
 
 	return action;
+}
+
+// Re-apply the device's input fragment ($EMU_INPUT_CFG) after default.cfg has
+// been copied over the user config, the way launch.sh does on first run. Uses
+// the bundled `ini` helper that ships next to default.cfg.
+static void merge_device_input_cfg(const char* default_cfg, const char* target) {
+	const char* fragment = getenv("EMU_INPUT_CFG");
+	if (!fragment || fragment[0] == '\0' || !default_cfg || !target) return;
+	char dir[512];
+	snprintf(dir, sizeof(dir), "%s", default_cfg);
+	char* slash = strrchr(dir, '/');
+	if (!slash) return;
+	*slash = '\0';
+	char cmd[2048];
+	snprintf(cmd, sizeof(cmd), "'%s/ini' merge '%s' '%s'", dir, target, fragment);
+	int rc = system(cmd);
+	fprintf(stderr, "[Overlay] Merged device input fragment %s (rc=%d)\n", fragment, rc);
 }
 
 // Path to the per-game config file for this ROM
@@ -2331,6 +2376,7 @@ static void handle_restore_defaults(void) {
 				}
 				fclose(src);
 			}
+			merge_device_input_cfg(default_cfg, s_overlayIniPath);
 		}
 		s_overlay.scope = EMU_SCOPE_NONE;
 		fprintf(stderr, "[Overlay] Restored defaults.\n");

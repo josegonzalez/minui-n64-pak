@@ -206,6 +206,11 @@ export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"
 export EMU_OVERLAY_INI="$DEVICE_CONFIG_DIR/mupen64plus.cfg"
 export EMU_OVERLAY_GAME="${ROM_BASE%.*}"
 export EMU_DEFAULT_CFG="$BIN_DIR/default.cfg"
+# The device's pad fragment, re-applied by the overlay's Restore Defaults and
+# used for its Button Remap defaults
+if [ -n "$PROFILE_INPUT_CFG" ] && [ -f "$BIN_DIR/$PROFILE_INPUT_CFG" ]; then
+    export EMU_INPUT_CFG="$BIN_DIR/$PROFILE_INPUT_CFG"
+fi
 
 # ── Video plugin selection (reads [NextUI] VideoPlugin from mupen64plus.cfg) ─
 VIDEO_PLUGIN_VALUE=$("$BIN_DIR/ini" get "$DEVICE_CFG" "NextUI" "VideoPlugin" 2>/dev/null)
