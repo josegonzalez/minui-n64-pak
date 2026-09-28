@@ -152,3 +152,17 @@ For build instructions, patch details, data paths, and other developer-facing in
 ### Debug Logging
 
 Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
+
+For bringing up a new device, create an empty file named `debug` in
+`$SDCARD_PATH/.userdata/$PLATFORM/N64-mupen64plus/`. Every launch then also writes:
+
+| Log | Contents |
+|---|---|
+| `N64.mupen64plus.txt` | mupen64plus `--verbose` output |
+| `N64.diag.txt` | device snapshot: framebuffer, input devices, CPU governor, audio, how every bundled library resolves |
+| `N64.input.txt` | raw pad events (buttons, hat, sticks) — press each button once to read a pad's numbering |
+| `N64.perf.txt` | CPU ticks per emulator thread every 3s, to tell "slow" from "hung" |
+| `N64.dmesg.txt` | the kernel log after the emulator exits |
+
+The previous run's logs are kept as `*.prev.txt`, and each run's set is copied to
+`logs/N64-runs/<time>-<plugin>/`.

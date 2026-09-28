@@ -4,9 +4,26 @@ EMU_TAG="$(basename "$PAK_DIR")"
 EMU_TAG="${EMU_TAG%.*}"
 set -x
 
-rm -f "$LOGS_PATH/$EMU_TAG.txt"
+# Debug mode, for bringing up a new device: create an empty file named `debug`
+# in $USERDATA_PATH/N64-mupen64plus/. It adds verbose emulator output, a device
+# snapshot, a raw pad event log, per-thread CPU samples, the kernel log and a
+# copy of every run's logs under $LOGS_PATH/N64-runs/.
+N64_DEBUG=0
+[ -f "$USERDATA_PATH/$EMU_TAG-mupen64plus/debug" ] && N64_DEBUG=1
+DEBUG_LOGS="$EMU_TAG $EMU_TAG.mupen64plus $EMU_TAG.diag $EMU_TAG.dmesg $EMU_TAG.perf $EMU_TAG.input"
+
+mkdir -p "$LOGS_PATH"
+if [ "$N64_DEBUG" = 1 ]; then
+    # Keep the previous run's logs so a crash isn't overwritten by the retry.
+    for log in $DEBUG_LOGS; do
+        [ -f "$LOGS_PATH/$log.txt" ] && mv -f "$LOGS_PATH/$log.txt" "$LOGS_PATH/$log.prev.txt"
+    done
+else
+    rm -f "$LOGS_PATH/$EMU_TAG.txt"
+fi
 exec >>"$LOGS_PATH/$EMU_TAG.txt"
 exec 2>&1
+echo "[launch] ==== $(date '+%F %T') $EMU_TAG launch: $1 (debug=$N64_DEBUG)"
 
 BIN_DIR="$PAK_DIR/$PLATFORM"
 ROM="$1"
@@ -325,6 +342,55 @@ case "$ROM" in
         ;;
 esac
 
+# ── Diagnostics snapshot (written to $LOGS_PATH/$EMU_TAG.diag.txt) ─────────
+# One-shot dump of everything useful for porting/debugging: display, input
+# devices, CPU state, and how every binary's libraries resolve on this device.
+if [ "$N64_DEBUG" = 1 ]; then
+    DIAG="$LOGS_PATH/$EMU_TAG.diag.txt"
+    {
+        set +x
+        section() { echo; echo "===== $* ====="; }
+        section "date / system"
+        date; uname -a; cat /etc/openwrt_release 2>/dev/null; cat "$SDCARD_PATH/.system/version.txt" 2>/dev/null
+        section "platform"
+        echo "PLATFORM=$PLATFORM DEVICE=$DEVICE RES=$DEVICE_RESOLUTION GFX=$GFX_PLUGIN"
+        echo "ROM=$ROM"; ls -la "$ROM"
+        section "environment"
+        env | sort
+        section "memory / storage"
+        free; df -h "$SDCARD_PATH" /tmp 2>/dev/null
+        section "cpu"
+        grep -E "processor|Hardware|model name|Features" /proc/cpuinfo | sort -u
+        for c in /sys/devices/system/cpu/cpu[0-9]*; do echo "$c online=$(cat $c/online 2>/dev/null)"; done
+        for f in scaling_governor scaling_available_governors scaling_min_freq scaling_max_freq scaling_cur_freq scaling_setspeed scaling_available_frequencies cpuinfo_max_freq; do
+            echo "$f: $(cat /sys/devices/system/cpu/cpu0/cpufreq/$f 2>/dev/null)"
+        done
+        section "display"
+        for f in /sys/class/graphics/fb0/*; do [ -f "$f" ] && echo "$(basename $f): $(cat $f 2>/dev/null | head -3 | tr '\n' ' ')"; done
+        fbset 2>&1
+        ls -la /dev/fb* /dev/dri /dev/pvr* /dev/ion /dev/disp /dev/mali* 2>&1
+        ls /sys/class/backlight/ 2>&1; ls /sys/class/devfreq/ 2>&1
+        section "input devices"
+        cat /proc/bus/input/devices
+        ls -la /dev/input/ 2>&1
+        section "audio"
+        cat /proc/asound/cards 2>&1; ls /sys/class/speaker 2>&1
+        section "pak files"
+        ls -la "$BIN_DIR"
+        section "library resolution (LD_LIBRARY_PATH=$M64P_LD_LIBRARY_PATH)"
+        for bin in "$BIN_DIR/mupen64plus" "$BIN_DIR"/*.so*; do
+            echo "--- $(basename "$bin")"
+            LD_LIBRARY_PATH="$M64P_LD_LIBRARY_PATH" /lib/ld-linux-aarch64.so.1 --list "$bin" 2>&1
+        done
+        echo "--- LD_PRELOAD target: $M64P_LD_PRELOAD"
+        for d in $(echo "$M64P_LD_LIBRARY_PATH:/lib:/usr/lib" | tr ':' ' '); do ls -la "$d/$M64P_LD_PRELOAD" 2>/dev/null; done
+        section "user config ($DEVICE_CFG)"
+        cat "$DEVICE_CFG"
+        set -x
+    } >"$DIAG" 2>&1
+    sync
+fi
+
 # Start power button sleep/poweroff handler (one-time; GLideN64 handles natively)
 command -v sleepmon.elf >/dev/null && sleepmon.elf &
 
@@ -384,10 +450,12 @@ while true; do
     (sleep 5; echo 0 > /sys/class/speaker/mute 2>/dev/null; command -v syncsettings.elf >/dev/null && syncsettings.elf) &
     SYNC_PID=$!
 
+    VERBOSE_FLAG=""
+    [ "$N64_DEBUG" = 1 ] && VERBOSE_FLAG="--verbose"
     # Launch from BIN_DIR so core library resolves via ./
     cd "$BIN_DIR"
     env LD_LIBRARY_PATH="$M64P_LD_LIBRARY_PATH" LD_PRELOAD="$M64P_LD_PRELOAD" \
-        ./mupen64plus --fullscreen --resolution "$DEVICE_RESOLUTION" \
+        ./mupen64plus $VERBOSE_FLAG --fullscreen --resolution "$DEVICE_RESOLUTION" \
         --configdir "$DEVICE_CONFIG_DIR" \
         --datadir "$BIN_DIR" \
         --plugindir "$BIN_DIR" \
@@ -404,6 +472,25 @@ while true; do
         --rsp mupen64plus-rsp-hle.so \
         "$ROM" > "$LOGS_PATH/$EMU_TAG.mupen64plus.txt" 2>&1 &
     EMU_PID=$!
+    echo "[launch] mupen64plus started pid=$EMU_PID at $(date '+%T')"
+    LOGSYNC_PID=""
+    if [ "$N64_DEBUG" = 1 ]; then
+        # Every 3s: log CPU ticks per emulator thread (to tell "slow" from "hung"),
+        # then flush all logs to the FAT card so a hard freeze still leaves them.
+        PERF="$LOGS_PATH/$EMU_TAG.perf.txt"
+        echo "# $(date '+%F %T') pid=$EMU_PID  cols: thread tid utime stime last_cpu (ticks, 100/s, cumulative)" >"$PERF"
+        (while kill -0 $EMU_PID 2>/dev/null; do
+            sleep 3
+            {
+                echo "$(date +%T) load=$(cut -d' ' -f1-3 /proc/loadavg) freq=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null) gov=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)"
+                for t in /proc/$EMU_PID/task/*; do
+                    awk -v n="$(cat $t/comm 2>/dev/null)" '{print "  " n, $1, $14, $15, $39}' $t/stat 2>/dev/null
+                done
+            } >>"$PERF"
+            sync
+        done) &
+        LOGSYNC_PID=$!
+    fi
     sleep 4
 
     # ── Thread pinning (CPU topology from the platform profile) ─────────────
@@ -442,7 +529,11 @@ while true; do
 
     # ── Wait for the emulator to exit ───────────────────────────────────────
     wait $EMU_PID
-    kill $SYNC_PID 2>/dev/null || true
+    EMU_RC=$?
+    echo "[launch] mupen64plus exited rc=$EMU_RC at $(date '+%T')"
+    kill $SYNC_PID $LOGSYNC_PID 2>/dev/null || true
+    [ "$N64_DEBUG" = 1 ] && dmesg 2>/dev/null | tail -150 >"$LOGS_PATH/$EMU_TAG.dmesg.txt"
+    sync
 
     # Restore console-backup so the next iteration starts from a clean console
     # cfg. If the user just did Save-and-Restart-Console while in game scope,
@@ -493,3 +584,16 @@ done
 [ -n "$ORIG_SPEAKER_MUTE" ] && echo "$ORIG_SPEAKER_MUTE" >/sys/class/speaker/mute 2>/dev/null
 [ -n "$PROFILE_SWAPFILE" ] && swapoff "$PROFILE_SWAPFILE" 2>/dev/null
 [ -n "$ORIG_VFS_CACHE" ] && echo "$ORIG_VFS_CACHE" >/proc/sys/vm/vfs_cache_pressure 2>/dev/null
+
+echo "[launch] ==== $(date '+%F %T') done"
+# Debug mode archives this run's logs so several test runs can be compared.
+if [ "$N64_DEBUG" = 1 ]; then
+    RUN_DIR="$LOGS_PATH/$EMU_TAG-runs/$(date '+%Y%m%d-%H%M%S')-$EMU_VIDEO_PLUGIN"
+    mkdir -p "$RUN_DIR"
+    for log in $DEBUG_LOGS; do
+        cp "$LOGS_PATH/$log.txt" "$RUN_DIR/" 2>/dev/null
+    done
+    cp "$DEVICE_CFG" "$RUN_DIR/mupen64plus.cfg" 2>/dev/null
+    [ -f "$PER_GAME_CFG" ] && cp "$PER_GAME_CFG" "$RUN_DIR/per-game.cfg"
+fi
+sync
