@@ -12,6 +12,7 @@ This pak supports the following MinUI Platforms and devices:
 - `tg5050`: TrimUI Smart Pro S
 - `my355`: Miyoo Flip
 - `h700`: Anbernic RG28XX, RG34XX, RG34XXSP, RG35XX Plus, RG35XXH, RG35XXPro, RG35XXSP, RG40XXH, RG40XXV, RGcubeXX and RGSP, running [NextUI for H700](https://github.com/pvaibhav/NextUI) **rc11 or newer**
+- `zero28`: MagicX Mini Zero 28, running stock [MinUI](https://github.com/shauninman/MinUI) on [MOSS-zero28](https://github.com/shauninman/Moss-zero28)
 
 Use the correct platform for your device.
 
@@ -22,6 +23,11 @@ The H700 devices are the slowest hardware this pak targets: a quad Cortex-A53 wi
 Mali-G31 MP1 and 1 GB of RAM on a 32-bit memory bus. Expect the Rice plugin and modest
 settings to be necessary, and avoid hi-res texture packs — unlike the other platforms
 there is no swapfile to fall back on.
+
+The Zero 28 has the same Allwinner A133P and PowerVR GE8300 as the TrimUI Smart Pro and
+runs the same binaries. Its 480x640 panel is portrait-native and MOSS's SDL2 cannot rotate
+GL output, so the pak's core draws each frame into a 640x480 offscreen framebuffer and
+turns it onto the panel itself (both video plugins and the overlay menu go through it).
 
 ## Installation
 
@@ -140,6 +146,13 @@ On models with no sticks the d-pad drives the N64 analog stick *and* the N64 d-p
 Nearly every N64 game reads one or the other, so this leaves neither dead.
 
 If anything feels wrong on your device, rebind it under Options → Controls.
+
+### Controls (MagicX Mini Zero 28)
+
+Both analog sticks and the d-pad work as they do on the Smart Pro: left stick for the N64
+analog stick, right stick for the C-buttons (X and Y also send C-Left and C-Down), and
+either L2 or R2 for Z. **Menu** opens the quick menu. Its pad numbers its buttons
+differently from every other supported device, so the pak ships its own mapping.
 
 ### Shortcuts
 

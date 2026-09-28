@@ -207,6 +207,17 @@ fi
 # ── Environment ───────────────────────────────────────────────────────────────
 export HOME="$USERDATA_PATH"
 export XDG_DATA_HOME="$DEVICE_CONFIG_DIR"
+# Screen rotation done by the core (vidext_rotate.h). N64_ROTATE overrides the
+# profile when testing a new panel.
+export M64P_ROTATE="${N64_ROTATE:-$PROFILE_ROTATE}"
+# Overlay menu button layout, for pads that don't use the TrimUI numbering
+if [ -n "$PROFILE_PAD" ]; then
+    export EMU_PAD="$PROFILE_PAD"
+fi
+# Raw pad events (buttons, hat, stick zones), for mapping a new device's pad
+if [ "$N64_DEBUG" = 1 ]; then
+    export EMU_INPUT_LOG="$LOGS_PATH/$EMU_TAG.input.txt"
+fi
 # LD_LIBRARY_PATH and LD_PRELOAD are scoped to the mupen64plus invocation
 # below to avoid affecting sleepmon.elf, syncsettings.elf, and taskset.
 M64P_LD_LIBRARY_PATH="$BIN_DIR:$SDCARD_PATH/.system/$PLATFORM/lib"

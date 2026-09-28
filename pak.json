@@ -9,7 +9,8 @@
     "tg5040",
     "tg5050",
     "my355",
-    "h700"
+    "h700",
+    "zero28"
   ],
   "launch": "launch.sh",
   "version": "0.8.0"

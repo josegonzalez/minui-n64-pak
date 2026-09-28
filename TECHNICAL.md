@@ -109,8 +109,9 @@ All paths are set via CLI flags or `--set` on the mupen64plus command line — `
 
 ## Pad layout
 
-Every supported pad reports the same SDL button and axis numbers, so `default.cfg` holds one
-mapping that fits them all:
+Every supported pad except the MagicX Zero 28's (see [below](#the-zero-28s-own-numbering))
+reports the same SDL button and axis numbers, so `default.cfg` holds one mapping that fits
+them all:
 
 | Input | SDL |
 |---|---|
@@ -132,9 +133,34 @@ resting at -32768, normalises the sticks to the full axis range, and drops the s
 Menu emits after a tap. `SDL_JOYSTICK_H700_FIXED_LAYOUT=0` restores the old behaviour for a
 single pak; this one does not set it.
 
-Because the numbering is now uniform, the pak carries no per-device button table and nothing
-reads pad indices from the environment. `tests/platform.bats` asserts that, so a
-reintroduced table fails the suite.
+Because the numbering is uniform on those platforms, they carry no per-device button table.
+`tests/platform.bats` asserts that only zero28 sets one, so a table reintroduced anywhere
+else fails the suite.
+
+### The Zero 28's own numbering
+
+The Zero 28 runs stock MinUI on MOSS, which does not normalise its pad the way NextUI rc11
+does. `magicx-input` reports 22 buttons, 4 axes and no hat, numbered as MinUI's
+`workspace/zero28/platform/platform.h` has them (confirmed on device with the debug input
+log):
+
+| Input | SDL |
+|---|---|
+| A, B, X, Y | buttons 0, 1, 2, 3 |
+| L1, R1, L2, R2 | buttons 4, 5, 6, 7 |
+| Select, Start | buttons 8, 9 |
+| L3, R3 | buttons 10, 11 |
+| D-pad up, left, right, down | buttons 13, 14, 15, 16 |
+| Volume -, + | buttons 17, 18 |
+| Menu | button 19 |
+| Left stick | axes 0, 1 |
+| Right stick | axes 2, 3 |
+
+So both input paths need it. The game side is `config/shared/input/zero28-pad.cfg`, merged
+over `default.cfg` like the other fragments but rebinding the face buttons, d-pad and
+triggers too. The overlay side is `PROFILE_PAD`, exported as `EMU_PAD` (for example
+`a=0,b=1,menu=19,select=8,up=13,down=16,left=14,right=15,l2axis=-1,r2axis=-1`); any key it
+omits keeps the TrimUI number, and d-pad entries of -1 mean hat 0.
 
 ### What still varies: analog sticks
 
@@ -189,9 +215,12 @@ The mapping above lives in `mupen64plus.cfg` and reaches the emulator through th
 plugin. The overlay menu does not use any of it: `poll_overlay_input()` and
 `check_menu_button()` in `overlay/emu_frontend.c` read the pad directly with
 `SDL_JoystickGetButton`, because `SDL_PollEvent` is unreliable inside mupen64plus's threaded
-plugin context. Those reads use fixed indices, which is correct only while every pad numbers
-its buttons the same way. If a future platform breaks that again, both paths need fixing, not
-just the config.
+plugin context. Those reads default to the TrimUI indices, and `$EMU_PAD` overrides them for
+a pad that numbers its buttons differently (only zero28 today).
+
+The overlay's Button Remap defaults are `default.cfg` plus the device's fragment
+(`$EMU_INPUT_CFG`), and Restore Defaults re-merges that fragment with the bundled `ini` after
+copying `default.cfg` back, so neither drops a device's mapping.
 
 ## Platform profile
 
@@ -433,6 +462,7 @@ Applied immediately when changed. Persisted only via Options → Save Changes.
 - **tg5040**: Uses `ghcr.io/loveretro/tg5040-toolchain:latest`. No special setup needed.
 - **tg5050**: Uses `ghcr.io/loveretro/tg5050-toolchain:latest`. The toolchain has broken libpng header symlinks — the Makefile automatically downloads libpng 1.6.37 headers as a workaround. It is also the source of the `libz.so.1` every platform bundles; see [Bundled zlib](#bundled-zlib).
 - **my355**: Uses `ghcr.io/loveretro/my355-toolchain:latest`. Cross-compiles libpng 1.6.37 from source and links it statically, so it bundles only `libz.so.1` (1.3.1, from its own sysroot).
+- **zero28**: Reuses the tg5040 image and binaries (`zero28: tg5040`); the MagicX Mini Zero 28 is the same A133P / GE8300 and MOSS ships the TrimUI Smart Pro's SDL2 blobs in `/usr/magicx/lib`. It additionally bundles `libsamplerate.so.0`, which TrimUI's firmware provides and MOSS does not. Its panel is 480x640 portrait-native, so `M64P_ROTATE=1` has the core rotate the output (see [Screen rotation](#screen-rotation)).
 - **h700**: Uses `ghcr.io/loveretro/h700-toolchain:latest`. That image is the tg5040 image plus a patched mali-fbdev SDL2 installed at `PREFIX_LOCAL=/opt/nextui` — same gcc 8.3 `aarch64-nextui-linux-gnu` cross compiler, same TrimUI TG5040 SDK sysroot, so no libpng build workaround is needed. `scripts/docker-env.sh` detects that SDL2 and points `SDL_CFLAGS`/`SDL_LDLIBS` at it, because that is the build NextUI installs on the device at `$SYSTEM_PATH/lib`. GLES symbols resolve straight from `-lGLESv2` with no standalone mali blob.
 
 ### Bundled libpng
@@ -465,3 +495,26 @@ Its one conditional is the h700 SDL2 lookup above: the toolchain's `sdl2.pc` rec
 ### Shared source trees
 
 All four platforms compile into the same `src/*/projects/unix` output paths, so each platform's recipes clear the previous platform's objects before building, and `make build` stages one platform fully before starting the next.
+
+## Screen rotation
+
+`patches/shared/mupen64plus-core-rotate.patch` adds `src/api/vidext_rotate.h` to the core. When
+`M64P_ROTATE` is 1, 2 or 3 (quarter turns clockwise), `VidExt_SetVideoMode` creates an
+offscreen framebuffer of the requested size and `VidExt_GL_GetDefaultFramebuffer` returns it,
+so the video plugin renders there instead of to the window. `VidExt_GL_SwapBuffers` then draws
+that texture rotated onto the real EGL surface (its size is asked from EGL, since mali-fbdev
+SDL2 reports the requested one), swaps, and restores every piece of GL state it touched.
+
+Rice never binds framebuffers, so it renders into the offscreen one it finds bound; GLideN64
+asks for the default framebuffer, from its emulator thread when video is threaded, which is why
+the check is not tied to the calling thread's current context. The overlay draws before the
+swap, so it is rotated too. Unset or 0, nothing changes. The cost is one 640x480 textured
+quad per frame.
+
+## GLideN64 and bzip2
+
+The toolchain images' `libbz2.a` holds objects built for the image's host architecture, so it
+links on the arm64 CI runners but not on an x86-64 host. `make clone` fetches bzip2 1.0.8
+(sha256-verified) and `make gliden64` cross-compiles `libbz2.a` from it, the same way it
+builds zlib; the GLideN64 toolchain file links that copy.
+

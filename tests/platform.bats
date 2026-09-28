@@ -233,6 +233,43 @@ profile() {
     [ "$status" -ne 0 ]
 }
 
+# ── zero28: portrait panel, its own pad numbering ───────────────────────────
+
+@test "zero28 renders 640x480 and has the core rotate it onto the portrait panel" {
+    profile zero28 ""
+    [ "$PROFILE_RESOLUTION" = "640x480" ]
+    [ "$PROFILE_ROTATE" -eq 1 ]
+    [ "$PROFILE_LEGACY_SUBDIR" = "zero28" ]
+}
+
+@test "zero28 loads MOSS's SDL2 and has nowhere for a swapfile" {
+    profile zero28 ""
+    [ "$PROFILE_LD_EXTRA_DIRS" = "/usr/magicx/lib" ]
+    [ "$PROFILE_LD_PRELOAD" = "libEGL.so" ]
+    [ -z "$PROFILE_SWAPFILE" ]
+    [ "$PROFILE_ANISOTROPY" -eq 0 ]
+}
+
+@test "zero28 ships its pad numbering for both the game and the overlay" {
+    profile zero28 ""
+    [ "$PROFILE_INPUT_CFG" = "input/zero28-pad.cfg" ]
+    [[ "$PROFILE_PAD" == *"a=0,b=1,"* ]]
+    [[ "$PROFILE_PAD" == *"menu=19"* ]]
+}
+
+@test "only zero28 rotates or carries an overlay pad layout" {
+    # Every other pad reports the shared numbering; a layout here would be the
+    # hardcoding fd2fe82 removed.
+    for spec in "tg5040 brick" "tg5040 brickpro" "tg5040 " "tg5050 " "my355 " \
+                "h700 rg35xxh" "h700 rg40xxv" "h700 rg28xx" "h700 "; do
+        # shellcheck disable=SC2086
+        set -- $spec
+        profile "$1" "${2:-}"
+        [ "$PROFILE_ROTATE" -eq 0 ]
+        [ -z "$PROFILE_PAD" ]
+    done
+}
+
 # ── every shipped platform must be covered ──────────────────────────────────
 
 @test "every platform in pak.json resolves a profile" {
