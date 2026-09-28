@@ -10,7 +10,7 @@ set -x
 # copy of every run's logs under $LOGS_PATH/N64-runs/.
 N64_DEBUG=0
 [ -f "$USERDATA_PATH/$EMU_TAG-mupen64plus/debug" ] && N64_DEBUG=1
-DEBUG_LOGS="$EMU_TAG $EMU_TAG.mupen64plus $EMU_TAG.diag $EMU_TAG.dmesg $EMU_TAG.perf $EMU_TAG.input"
+DEBUG_LOGS="$EMU_TAG $EMU_TAG.mupen64plus $EMU_TAG.diag $EMU_TAG.dmesg $EMU_TAG.perf $EMU_TAG.input $EMU_TAG.audio"
 
 mkdir -p "$LOGS_PATH"
 if [ "$N64_DEBUG" = 1 ]; then
@@ -458,6 +458,9 @@ while true; do
     # ── Launch ──────────────────────────────────────────────────────────────
     # Mute speaker before launch to prevent audio pop, then unmute after init
     echo 1 > /sys/class/speaker/mute 2>/dev/null || true
+    if [ "$PROFILE_AUDIO_RESYNC" = 1 ]; then
+        amixer -q sset 'DAC volume' 0 2>/dev/null || true
+    fi
     (sleep 5; echo 0 > /sys/class/speaker/mute 2>/dev/null; command -v syncsettings.elf >/dev/null && syncsettings.elf) &
     SYNC_PID=$!
 
@@ -484,6 +487,37 @@ while true; do
         "$ROM" > "$LOGS_PATH/$EMU_TAG.mupen64plus.txt" 2>&1 &
     EMU_PID=$!
     echo "[launch] mupen64plus started pid=$EMU_PID at $(date '+%T')"
+    # Re-apply MinUI's volume each time playback starts (launch, state load,
+    # save-and-restart) on devices whose codec comes up at full volume.
+    AUDIO_PID=""
+    if [ "$PROFILE_AUDIO_RESYNC" = 1 ]; then
+        AUDIO_LOG=/dev/null
+        [ "$N64_DEBUG" = 1 ] && AUDIO_LOG="$LOGS_PATH/$EMU_TAG.audio.txt"
+        (
+            set +x  # polled every 50ms; keep it out of the trace log
+            playing=0
+            t0=$(cut -d' ' -f1 /proc/uptime)
+            while kill -0 $EMU_PID 2>/dev/null; do
+                now=0
+                cat /proc/asound/card*/pcm*p/sub*/status 2>/dev/null | grep -q RUNNING && now=1
+                if [ "$now" = 1 ] && [ "$playing" = 0 ]; then
+                    syncsettings.elf >/dev/null 2>&1 &
+                    echo "$(cut -d' ' -f1 /proc/uptime) playback started, volume re-applied" >>"$AUDIO_LOG"
+                fi
+                playing=$now
+                # debug: sample the DAC level for the first 10s
+                if [ "$AUDIO_LOG" != /dev/null ]; then
+                    t=$(cut -d' ' -f1 /proc/uptime)
+                    if [ "$(echo "$t $t0" | awk '{print ($1-$2<10)}')" = 1 ]; then
+                        echo "$t playing=$now $(amixer sget 'DAC volume' 2>/dev/null | grep -o '[0-9]*%' | head -1)" >>"$AUDIO_LOG"
+                    fi
+                fi
+                sleep 0.05
+            done
+        ) &
+        AUDIO_PID=$!
+    fi
+
     LOGSYNC_PID=""
     if [ "$N64_DEBUG" = 1 ]; then
         # Every 3s: log CPU ticks per emulator thread (to tell "slow" from "hung"),
@@ -542,7 +576,7 @@ while true; do
     wait $EMU_PID
     EMU_RC=$?
     echo "[launch] mupen64plus exited rc=$EMU_RC at $(date '+%T')"
-    kill $SYNC_PID $LOGSYNC_PID 2>/dev/null || true
+    kill $SYNC_PID $LOGSYNC_PID $AUDIO_PID 2>/dev/null || true
     [ "$N64_DEBUG" = 1 ] && dmesg 2>/dev/null | tail -150 >"$LOGS_PATH/$EMU_TAG.dmesg.txt"
     sync
 

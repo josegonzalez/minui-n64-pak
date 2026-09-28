@@ -242,9 +242,10 @@ profile() {
     [ "$PROFILE_LEGACY_SUBDIR" = "zero28" ]
 }
 
-@test "zero28 loads MOSS's SDL2 and has nowhere for a swapfile" {
+@test "zero28 loads MOSS's SDL2, resyncs its volume and has nowhere for a swapfile" {
     profile zero28 ""
     [ "$PROFILE_LD_EXTRA_DIRS" = "/usr/magicx/lib" ]
+    [ "$PROFILE_AUDIO_RESYNC" -eq 1 ]
     [ "$PROFILE_LD_PRELOAD" = "libEGL.so" ]
     [ -z "$PROFILE_SWAPFILE" ]
     [ "$PROFILE_ANISOTROPY" -eq 0 ]
@@ -257,7 +258,7 @@ profile() {
     [[ "$PROFILE_PAD" == *"menu=19"* ]]
 }
 
-@test "only zero28 rotates or carries an overlay pad layout" {
+@test "only zero28 rotates, carries an overlay pad layout or resyncs its volume" {
     # Every other pad reports the shared numbering; a layout here would be the
     # hardcoding fd2fe82 removed.
     for spec in "tg5040 brick" "tg5040 brickpro" "tg5040 " "tg5050 " "my355 " \
@@ -267,6 +268,7 @@ profile() {
         profile "$1" "${2:-}"
         [ "$PROFILE_ROTATE" -eq 0 ]
         [ -z "$PROFILE_PAD" ]
+        [ "$PROFILE_AUDIO_RESYNC" -eq 0 ]
     done
 }
 

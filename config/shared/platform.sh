@@ -46,6 +46,10 @@ n64_platform_profile() {
     PROFILE_ROTATE=0
     # Overlay menu button layout (EMU_PAD); empty keeps the TrimUI numbering.
     PROFILE_PAD=""
+    # 1 where the codec's volume jumps when the emulator opens the sound card and
+    # there is no /sys/class/speaker/mute to hide it: launch.sh then silences the
+    # DAC and re-applies MinUI's volume the moment playback starts.
+    PROFILE_AUDIO_RESYNC=0
 
     case "$_platform" in
         tg5040)
@@ -168,6 +172,10 @@ n64_platform_profile() {
             # and PROFILE_PAD tells the overlay menu.
             PROFILE_INPUT_CFG="input/zero28-pad.cfg"
             PROFILE_PAD="a=0,b=1,l1=4,r1=5,menu=19,select=8,up=13,down=16,left=14,right=15,l2axis=-1,r2axis=-1"
+            # MinUI keeps the volume on the codec's 'DAC volume', which comes up
+            # at full level when the emulator opens the card; MinUI's own paks
+            # loop syncsettings.elf to undo it.
+            PROFILE_AUDIO_RESYNC=1
             ;;
     esac
 
