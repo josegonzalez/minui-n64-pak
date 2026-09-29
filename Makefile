@@ -37,6 +37,12 @@ ZLIB_TAG      := v1.3.2
 
 # 7-Zip standalone binary for ZIP/7Z ROM extraction. Pre-built AArch64 blob
 # published by the upstream 7-Zip project on GitHub. Sha256-verified.
+# bzip2 for GLideN64's static freetype. Built from source like zlib: the
+# toolchain images' libbz2.a holds host objects, so it only links on arm64 hosts.
+BZIP2_VERSION := 1.0.8
+BZIP2_URL     := https://sourceware.org/pub/bzip2/bzip2-$(BZIP2_VERSION).tar.gz
+BZIP2_SHA256  := ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269
+
 SEVENZ_VERSION := 26.00
 SEVENZ_TAG     := 2600
 SEVENZ_URL     := https://github.com/ip7z/7zip/releases/download/$(SEVENZ_VERSION)/7z$(SEVENZ_TAG)-linux-arm64.tar.xz
@@ -49,12 +55,17 @@ MY355_IMAGE  := ghcr.io/loveretro/my355-toolchain:latest
 # The h700 image is the tg5040 image plus a patched mali-fbdev SDL2 under
 # /opt/nextui: same cross compiler, same TrimUI SDK sysroot.
 H700_IMAGE   := ghcr.io/loveretro/h700-toolchain:latest
+# The MagicX Mini Zero 28 is the same Allwinner A133P / PowerVR GE8300 as the
+# TrimUI Smart Pro, and its MOSS firmware ships that device's SDL2, so it runs
+# the tg5040 binaries unchanged.
+ZERO28_IMAGE := $(TG5040_IMAGE)
 
 # ── Platform specific CPU flags ───────────────────────────────────────────────
 TG5040_CPUFLAGS := -mcpu=cortex-a53 -mtune=cortex-a53
 TG5050_CPUFLAGS := -mcpu=cortex-a55 -mtune=cortex-a55
 MY355_CPUFLAGS  := -mcpu=cortex-a55 -mtune=cortex-a55
 H700_CPUFLAGS   := -mcpu=cortex-a53 -mtune=cortex-a53
+ZERO28_CPUFLAGS := $(TG5040_CPUFLAGS)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 ROOT     := $(shell pwd)
@@ -80,9 +91,9 @@ DOCKER_SCRIPT := /build/scripts/docker-env.sh
 # Top-level targets
 # ══════════════════════════════════════════════════════════════════════════════
 
-.PHONY: all build tg5040 tg5050 my355 h700 gliden64 rice dist clone patch patches \
-	   clean ini-tg5040 ini-tg5050 ini-my355 ini-h700 \
-	   stage-tg5040 stage-tg5050 stage-my355 stage-h700
+.PHONY: all build tg5040 tg5050 my355 h700 zero28 gliden64 rice dist clone patch patches \
+	   clean ini-tg5040 ini-tg5050 ini-my355 ini-h700 ini-zero28 \
+	   stage-tg5040 stage-tg5050 stage-my355 stage-h700 stage-zero28
 
 # The emulator components share source output paths.  Build and stage each
 # platform before compiling the next one so dist never copies another
@@ -92,6 +103,7 @@ build: clone patch gliden64
 	$(MAKE) stage-tg5050
 	$(MAKE) stage-my355
 	$(MAKE) stage-h700
+	$(MAKE) stage-zero28
 
 all: dist
 
@@ -101,7 +113,7 @@ clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
        $(SRC)/mupen64plus-audio-sdl $(SRC)/mupen64plus-input-sdl \
        $(SRC)/mupen64plus-rsp-hle $(SRC)/GLideN64 \
        $(SRC)/mupen64plus-video-rice $(SRC)/nx-redux \
-       $(SRC)/zlib $(SRC)/7zip/7zzs
+       $(SRC)/zlib $(SRC)/bzip2 $(SRC)/7zip/7zzs
 	@# Populate GLES headers and unmodified patches from nx-redux
 	@# (overlay/ sources are vendored in the repo — not pulled from nx-redux)
 	@mkdir -p $(ROOT)/include
@@ -140,6 +152,15 @@ $(SRC)/nx-redux:
 $(SRC)/zlib:
 	git clone --depth 1 --branch $(ZLIB_TAG) $(ZLIB_REPO) $@
 
+$(SRC)/bzip2:
+	@mkdir -p $(SRC)
+	@echo "Fetching bzip2 $(BZIP2_VERSION) source…"
+	@curl -fsSL -o $(SRC)/bzip2.tar.gz $(BZIP2_URL)
+	@echo "$(BZIP2_SHA256)  $(SRC)/bzip2.tar.gz" | shasum -a 256 -c -
+	@tar -xzf $(SRC)/bzip2.tar.gz -C $(SRC)
+	@mv $(SRC)/bzip2-$(BZIP2_VERSION) $@
+	@rm -f $(SRC)/bzip2.tar.gz
+
 # 7-Zip standalone static binary for ZIP/7Z ROM extraction at launch time.
 # Downloaded pre-built from upstream and sha256-verified. Only 7zzs and the
 # License.txt are needed; everything else in the tarball is discarded.
@@ -166,6 +187,7 @@ $(PATCH_STAMP): | clone
 			cd $(SRC)/mupen64plus-audio-sdl && git apply $(PATCHES)/mupen64plus-audio-sdl.patch; \
 		fi; \
 		cd $(SRC)/mupen64plus-core && git apply $(PATCHES)/mupen64plus-core.patch; \
+		cd $(SRC)/mupen64plus-core && git apply $(PATCHES)/mupen64plus-core-rotate.patch; \
 		cd $(SRC)/GLideN64 && git apply --exclude='src/GLideNHQ/lib/*.a' $(PATCHES)/GLideN64-standalone.patch; \
 		cd $(SRC)/mupen64plus-input-sdl && git apply $(PATCHES)/mupen64plus-input-sdl.patch; \
 		cd $(SRC)/mupen64plus-video-rice && git apply $(PATCHES)/mupen64plus-video-rice.patch; \
@@ -180,6 +202,7 @@ DOCKER_RUN_TG5040  := docker run --rm -v $(ROOT):/build $(TG5040_IMAGE) $(DOCKER
 DOCKER_RUN_TG5050  := docker run --rm -v $(ROOT):/build $(TG5050_IMAGE) $(DOCKER_SCRIPT)
 DOCKER_RUN_MY355   := docker run --rm -v $(ROOT):/build $(MY355_IMAGE) $(DOCKER_SCRIPT)
 DOCKER_RUN_H700    := docker run --rm -v $(ROOT):/build $(H700_IMAGE) $(DOCKER_SCRIPT)
+DOCKER_RUN_ZERO28  := docker run --rm -v $(ROOT):/build $(ZERO28_IMAGE) $(DOCKER_SCRIPT)
 
 # Common plugin make flags (SDL_CFLAGS/SDL_LDLIBS exported by docker-env.sh)
 PLUGIN_MAKE := CROSS_COMPILE=$(CROSS) HOST_CPU=$(HOST_CPU) PIE=1 \
@@ -308,6 +331,8 @@ h700-rsp: $(PATCH_STAMP)
 gliden64: $(PATCH_STAMP)
 	@# Cross-compile zlib from source (tg5040 toolchain has 1.2.8, too old for GLideN64)
 	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/zlib && [ -f libz.a ] || (CC=aarch64-nextui-linux-gnu-gcc AR=aarch64-nextui-linux-gnu-ar RANLIB=aarch64-nextui-linux-gnu-ranlib ./configure --static && make -j$$(nproc))'
+	@# Cross-compile bzip2 for freetype (the sysroot's libbz2.a only works on arm64 hosts)
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/bzip2 && [ -f libbz2.a ] || make -j$$(nproc) libbz2.a CC=aarch64-nextui-linux-gnu-gcc AR=aarch64-nextui-linux-gnu-ar RANLIB=aarch64-nextui-linux-gnu-ranlib CFLAGS="-O2 -fPIC -D_FILE_OFFSET_BITS=64"'
 	@# Replace bundled static libs with ARM64 versions:
 	@#   libpng16.a from tg5050 sysroot (tg5040 only has libpng12)
 	@#   libz.a from zlib source build above
@@ -353,6 +378,18 @@ ini-h700:
 	mkdir -p $(ROOT)/tools/ini/dist/h700
 	cp $(ROOT)/tools/ini/build/ini $(ROOT)/tools/ini/dist/h700/ini
 
+# ── Zero28 build (reuses the tg5040 toolchain and binaries) ──────────────────
+
+.PHONY: rice-zero28
+
+zero28: tg5040
+
+rice-zero28: rice-tg5040
+
+ini-zero28: ini-tg5040
+	mkdir -p $(ROOT)/tools/ini/dist/zero28
+	cp $(ROOT)/tools/ini/dist/tg5040/ini $(ROOT)/tools/ini/dist/zero28/ini
+
 # ── Platform artifact staging ────────────────────────────────────────────────
 
 define STAGE_PLATFORM
@@ -378,9 +415,12 @@ stage-my355: my355 rice-my355 ini-my355
 stage-h700: h700 rice-h700 ini-h700
 	$(call STAGE_PLATFORM,h700)
 
+stage-zero28: zero28 rice-zero28 ini-zero28
+	$(call STAGE_PLATFORM,zero28)
+
 # ── Dist assembly ─────────────────────────────────────────────────────────────
 
-.PHONY: dist dist-tg5040 dist-tg5050 dist-my355 dist-h700
+.PHONY: dist dist-tg5040 dist-tg5050 dist-my355 dist-h700 dist-zero28
 
 # Shared data/config files copied into each platform dir
 define DIST_COMMON
@@ -404,6 +444,7 @@ dist:
 	$(MAKE) dist-tg5050
 	$(MAKE) dist-my355
 	$(MAKE) dist-h700
+	$(MAKE) dist-zero28
 	@echo "=== dist/N64.pak/ assembled ==="
 	@find $(DIST) -type f | sort
 
@@ -476,6 +517,24 @@ dist-h700: stage-h700 gliden64
 	@# tg5050 copy as the other platforms do.
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/h700/libz.so.1
 
+dist-zero28: stage-zero28 gliden64
+	mkdir -p $(DIST)/zero28
+	cp $(CONFIG)/shared/launch.sh $(DIST)/launch.sh
+	cp $(CONFIG)/shared/platform.sh $(DIST)/platform.sh
+	cp $(BUILD)/zero28/libmupen64plus.so.2 $(DIST)/zero28/
+	cp $(BUILD)/zero28/mupen64plus $(DIST)/zero28/
+	cp $(BUILD)/zero28/mupen64plus-audio-sdl.so $(DIST)/zero28/
+	cp $(BUILD)/zero28/mupen64plus-input-sdl.so $(DIST)/zero28/
+	cp $(BUILD)/zero28/mupen64plus-rsp-hle.so $(DIST)/zero28/
+	cp $(BUILD)/zero28/mupen64plus-video-rice.so $(DIST)/zero28/
+	$(call DIST_COMMON,$(DIST)/zero28)
+	cp $(BUILD)/zero28/ini $(DIST)/zero28/
+	@# Same libraries as tg5040: libpng12 from the sysroot it links, libz from tg5050.
+	$(DOCKER_RUN_ZERO28) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng12.so.0.56.0 /build/dist/N64.pak/zero28/libpng12.so.0
+	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.2.12 /build/dist/N64.pak/zero28/libz.so.1
+	@# TrimUI's firmware provides libsamplerate for the audio plugin; MOSS does not.
+	$(DOCKER_RUN_ZERO28) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libsamplerate.so.0.2.2 /build/dist/N64.pak/zero28/libsamplerate.so.0
+
 # ── Release ──────────────────────────────────────────────────────────────────
 
 release: dist
@@ -503,7 +562,7 @@ print-%:
 
 patches:
 	cd $(SRC)/GLideN64 && git add -N . && git diff -- . ':!src/GLideNHQ/lib/*.a' > $(PATCHES)/GLideN64-standalone.patch && git reset -q
-	cd $(SRC)/mupen64plus-core && git add -N . && git diff > $(PATCHES)/mupen64plus-core.patch && git reset -q
+	cd $(SRC)/mupen64plus-core && git add -N . && git diff -- . ':!src/api/vidext.c' ':!src/api/vidext_rotate.h' > $(PATCHES)/mupen64plus-core.patch && git reset -q
 	cd $(SRC)/mupen64plus-ui-console && git add -N . && git diff > $(PATCHES)/mupen64plus-ui-console.patch && git reset -q
 	cd $(SRC)/mupen64plus-input-sdl && git add -N . && git diff > $(PATCHES)/mupen64plus-input-sdl.patch && git reset -q
 	cd $(SRC)/mupen64plus-video-rice && git add -N . && git diff > $(PATCHES)/mupen64plus-video-rice.patch && git reset -q

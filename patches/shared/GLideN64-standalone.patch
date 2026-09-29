@@ -1854,7 +1854,7 @@ index 00000000..80840e90
 +
 +# Freetype2 for OSD text rendering
 +set(FREETYPE_INCLUDE_DIRS ${LIBC_ROOT}/usr/include/freetype2)
-+set(FREETYPE_LIBRARIES ${LIBC_ROOT}/usr/lib/libfreetype.a ${LIBC_ROOT}/usr/lib/libbz2.a)
++set(FREETYPE_LIBRARIES ${LIBC_ROOT}/usr/lib/libfreetype.a /build/src/bzip2/libbz2.a)
 +set(FREETYPE_FOUND TRUE)
 +
 +# SDL_ttf for overlay menu fonts

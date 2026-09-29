@@ -47,7 +47,7 @@ merged() {
     for spec in "tg5040 brick" "tg5040 brickpro" "tg5040 smartpro" "tg5050 " "my355 " \
                 "h700 rg35xxh" "h700 rg35xxpro" "h700 rg40xxh" "h700 rgcubexx" \
                 "h700 rg34xxsp" "h700 rg40xxv" "h700 rg28xx" "h700 rg34xx" \
-                "h700 rg35xxplus" "h700 rg35xxsp" "h700 rgsp" "h700 "; do
+                "h700 rg35xxplus" "h700 rg35xxsp" "h700 rgsp" "h700 " "zero28 "; do
         # shellcheck disable=SC2086
         set -- $spec
         n64_platform_profile "$1" "${2:-}"
@@ -64,8 +64,11 @@ merged() {
 
 @test "no fragment rebinds a button, only what a missing stick made unreachable" {
     # Face buttons, shoulders, Start and the d-pad are the same on every pad, so
-    # a fragment touching them would be re-introducing a per-device layout.
+    # a fragment touching them would be re-introducing a per-device layout. The
+    # one exception is the Zero 28, whose stock MinUI firmware does not remap its
+    # pad to the shared numbering the way NextUI rc11 does on H700.
     for f in "$INPUT_DIR"/*.cfg; do
+        [ "$(basename "$f")" = "zero28-pad.cfg" ] && continue
         for key in "A Button" "B Button" "Start" "Z Trig" "L Trig" "R Trig" \
                    "DPad U" "DPad D" "DPad L" "DPad R"; do
             run "$INI" get "$f" "Input-SDL-Control1" "$key"
@@ -93,7 +96,9 @@ merged() {
 }
 
 @test "no fragment leaves a C-button on an axis its device cannot reach" {
+    # zero28-pad.cfg moves the C-buttons to its real right stick; covered below.
     for f in "$INPUT_DIR"/*.cfg; do
+        [ "$(basename "$f")" = "zero28-pad.cfg" ] && continue
         for key in "C Button U" "C Button D" "C Button L" "C Button R"; do
             run "$INI" get "$f" "Input-SDL-Control1" "$key"
             [ "$status" -ne 0 ] || [[ "$output" != *"axis("* ]]
@@ -157,7 +162,7 @@ merged() {
 
 @test "every N64 button is reachable on every device" {
     for spec in "h700 rg35xxh" "h700 rg40xxv" "h700 rg35xxplus" "tg5040 brick" \
-                "tg5040 smartpro" "tg5050 " "my355 "; do
+                "tg5040 smartpro" "tg5050 " "my355 " "zero28 "; do
         # shellcheck disable=SC2086
         set -- $spec
         for key in "A Button" "B Button" "Start" "Z Trig" "L Trig" "R Trig" \
@@ -166,6 +171,49 @@ merged() {
             merged "$1" "${2:-}" "$key"
             [ -n "$output" ]
             [ "$output" != '""' ]
+        done
+    done
+}
+
+# ── the Zero 28's own numbering ─────────────────────────────────────────────
+#
+# magicx-input on stock MinUI: A=0 B=1 X=2 Y=3 L1=4 R1=5 L2=6 R2=7 Select=8
+# Start=9 L3=10 R3=11, d-pad buttons 13-16, Menu=19; left stick axes 0/1, right
+# stick axes 2/3; no hat and no trigger axes (22 buttons, 4 axes, 0 hats).
+
+@test "zero28 keeps every N64 button in its physical place" {
+    merged zero28 "" "A Button";   [ "$output" = "button(0)" ]
+    merged zero28 "" "B Button";   [ "$output" = "button(1)" ]
+    merged zero28 "" "Start";      [ "$output" = "button(9)" ]
+    merged zero28 "" "L Trig";     [ "$output" = "button(4)" ]
+    merged zero28 "" "R Trig";     [ "$output" = "button(5)" ]
+    merged zero28 "" "Z Trig";     [ "$output" = "button(6) button(7)" ]
+    merged zero28 "" "DPad U";     [ "$output" = "button(13)" ]
+    merged zero28 "" "DPad D";     [ "$output" = "button(16)" ]
+    merged zero28 "" "DPad L";     [ "$output" = "button(14)" ]
+    merged zero28 "" "DPad R";     [ "$output" = "button(15)" ]
+}
+
+@test "zero28 drives the C-buttons from its right stick, X and Y as before" {
+    merged zero28 "" "C Button R"; [ "$output" = "axis(2+,24000)" ]
+    merged zero28 "" "C Button L"; [ "$output" = "axis(2-,24000) button(2)" ]
+    merged zero28 "" "C Button D"; [ "$output" = "axis(3+,24000) button(3)" ]
+    merged zero28 "" "C Button U"; [ "$output" = "axis(3-,24000)" ]
+    merged zero28 "" "X Axis";     [ "$output" = "axis(0-,0+)" ]
+    merged zero28 "" "Y Axis";     [ "$output" = "axis(1-,1+)" ]
+}
+
+@test "zero28 binds nothing its pad does not have" {
+    for key in "A Button" "B Button" "Start" "Z Trig" "L Trig" "R Trig" \
+               "C Button U" "C Button D" "C Button L" "C Button R" \
+               "DPad U" "DPad D" "DPad L" "DPad R"; do
+        merged zero28 "" "$key"
+        [[ "$output" != *"hat("* ]]
+        for n in $(echo "$output" | grep -oE 'axis\([0-9]+' | grep -oE '[0-9]+'); do
+            [ "$n" -lt 4 ]
+        done
+        for n in $(echo "$output" | grep -oE 'button\([0-9]+' | grep -oE '[0-9]+'); do
+            [ "$n" -lt 22 ]
         done
     done
 }

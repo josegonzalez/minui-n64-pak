@@ -15,6 +15,8 @@ int g_frameSkip = 0;
 
 // Analog sensitivity: owned by ui-console main.c, written here, read by input-sdl
 extern int g_analogSensitivity;
+extern volatile int g_stateSaveCount;
+extern volatile int g_stateSaveResult;
 
 // Forward declarations for scope-aware save system
 static const char* get_per_game_path(void);
@@ -48,6 +50,20 @@ static char s_overlayIniPath[512] = "";
 static bool s_menuBtnPrev = false;
 static Uint8 s_prevHat = 0;
 static Uint32 s_prevButtons = 0;
+
+// ---------------------------------------------------------------------------
+// Pad layout for the overlay. Defaults are the TrimUI numbering; other devices
+// override any subset with $EMU_PAD, e.g. the MagicX Zero 28:
+//   EMU_PAD="a=0,b=1,menu=19,select=8,up=13,down=16,left=14,right=15,l2axis=-1,r2axis=-1"
+// D-pad entries of -1 mean "read hat 0". Axis entries of -1 disable that axis.
+// ---------------------------------------------------------------------------
+#define OVL_MAX_BUTTONS 32
+static struct {
+	int a, b, l1, r1, menu, select;
+	int up, down, left, right;
+	int l2axis, r2axis;
+} s_pad = { 1, 0, 4, 5, 8, 6, -1, -1, -1, -1, 2, 5 };
+static bool s_padLoaded = false;
 #define OVL_AXIS_DEADZONE 16000
 static int s_prevAxisX = 0;
 static int s_prevAxisY = 0;
@@ -412,11 +428,31 @@ static const char* s_btnLabels[] = {
 };
 
 static const char* mod_label(int mod) {
-	if (mod == 8) return "MENU";
-	if (mod == 6) return "SELECT";
-	if (mod == -3) return "L2";   // -(axis_id + 1)
-	if (mod == -6) return "R2";
+	if (mod > 0 && mod == s_pad.menu) return "MENU";
+	if (mod > 0 && mod == s_pad.select) return "SELECT";
+	if (s_pad.l2axis >= 0 && mod == -(s_pad.l2axis + 1)) return "L2";   // -(axis_id + 1)
+	if (s_pad.r2axis >= 0 && mod == -(s_pad.r2axis + 1)) return "R2";
 	return "MOD";
+}
+
+// Name of a physical button: from $EMU_PAD when a device sets one, else TrimUI's table
+static const char* pad_label(int index) {
+	static char other[16];
+	if (getenv("EMU_PAD")) {
+		if (index == s_pad.a) return "A";
+		if (index == s_pad.b) return "B";
+		if (index == s_pad.l1) return "L1";
+		if (index == s_pad.r1) return "R1";
+		if (index == s_pad.menu) return "Menu";
+		if (index == s_pad.select) return "Select";
+		if (index == s_pad.up) return "Up";
+		if (index == s_pad.down) return "Down";
+		if (index == s_pad.left) return "Left";
+		if (index == s_pad.right) return "Right";
+		snprintf(other, sizeof(other), "Btn %d", index);
+		return other;
+	}
+	return (index >= 0 && index < 11) ? s_btnLabels[index] : "?";
 }
 
 const char* emu_frontend_binding_label(const N64ButtonMapping* m) {
@@ -428,7 +464,7 @@ const char* emu_frontend_binding_label(const N64ButtonMapping* m) {
 		snprintf(axis_buf, sizeof(axis_buf), "Axis %d%s", m->physical, m->axis_dir > 0 ? "+" : "-");
 		base = axis_buf;
 	} else {
-		base = (m->physical >= 0 && m->physical < 11) ? s_btnLabels[m->physical] : "?";
+		base = pad_label(m->physical);
 	}
 	if (m->mod != 0) {
 		snprintf(buf, sizeof(buf), "%s+%s", mod_label(m->mod), base);
@@ -580,6 +616,7 @@ static void clear_turbo_files(void) {
 
 #define POWER_BUTTON 102
 #define DISP_LCD_SET_BRIGHTNESS 0x102
+#define DISP_LCD_GET_BRIGHTNESS 0x103
 #define DEEP_SLEEP_TIMEOUT_MS 120000
 
 static bool s_powerBtnPrev = false;
@@ -601,10 +638,24 @@ static void set_backlight(int brightness) {
 static int read_backlight(void) {
 	FILE* f = fopen("/sys/class/backlight/backlight0/brightness", "r");
 	if (f) { int v = 0; if (fscanf(f, "%d", &v) == 1) { fclose(f); return v; } fclose(f); }
-	return 200; // tg5040 default (no sysfs read path)
+	// Allwinner /dev/disp (tg5040, zero28): the ioctl returns the current level
+	int fd = open("/dev/disp", O_RDWR);
+	if (fd >= 0) {
+		unsigned long param[4] = {0, 0, 0, 0};
+		int v = ioctl(fd, DISP_LCD_GET_BRIGHTNESS, &param);
+		close(fd);
+		if (v > 0) return v;
+	}
+	return 200; // last resort
 }
 
-// Returns: 0 = nothing, 1 = short press (sleep), 2 = long press (poweroff)
+#define POWER_NONE 0
+#define POWER_SLEEP 1
+#define POWER_OFF 2
+#define POWER_PRESSED 3
+
+// Returns POWER_PRESSED on the press, then POWER_SLEEP on a release within a
+// second or POWER_OFF once held for a second; POWER_NONE otherwise.
 static int check_power_button(void) {
 	SDL_PumpEvents();
 	const Uint8* keys = SDL_GetKeyboardState(NULL);
@@ -615,46 +666,111 @@ static int check_power_button(void) {
 	bool justReleased = !pressed && s_powerBtnPrev;
 	s_powerBtnPrev = pressed;
 
-	if (justPressed)
+	if (justPressed) {
 		s_powerPressedAt = SDL_GetTicks();
-
+		return POWER_PRESSED;
+	}
 	if (pressed && s_powerPressedAt && SDL_GetTicks() - s_powerPressedAt >= 1000) {
 		s_powerPressedAt = 0;
-		return 2; // poweroff
+		return POWER_OFF;
 	}
 	if (justReleased && s_powerPressedAt) {
 		s_powerPressedAt = 0;
-		return 1; // sleep
+		return POWER_SLEEP;
 	}
-	return 0;
+	return POWER_NONE;
 }
 
-static void handle_sleep(void) {
-	// Auto-save state to slot 9 for NextUI game switcher resume
+// Sleep and power-off both start with MinUI's quicksave: save state slot 9,
+// then point auto_resume.txt at the ROM so the launcher resumes it on boot.
+// The core only captures a queued save after the current frame returns, and
+// writes it on a worker thread (~1s for N64), so the save is requested the
+// moment power is pressed, before it's known whether this is a tap (sleep) or
+// a hold (power off), and later frames finish the job once the core reports
+// the write done (g_stateSaveCount, from the core patch). Starting early
+// matters on MOSS, whose /etc/rc.button/power powers the device off by itself
+// when a long press is released. The screen and audio go off at the press,
+// so the frames the game runs in the meantime aren't seen.
+static void request_stop(void);
+
+#define QUICKSAVE_TIMEOUT_MS 5000
+#define AUTO_RESUME_PATH "/mnt/SDCARD/.userdata/shared/.minui/auto_resume.txt"
+#define MINUI_EXEC_PATH "/tmp/minui_exec"
+#define PAK_POWEROFF_PATH "/tmp/n64_poweroff" // launch.sh powers off when it finds this
+
+static int s_powerPending = POWER_NONE; // POWER_PRESSED until tap or hold is known
+static bool s_powerMarked = false;      // quicksave finished and auto_resume.txt settled
+static bool s_powerStockMinui = false;
+static int s_powerSaveBase = 0;
+static uint32_t s_powerRequestedAt = 0;
+static int s_powerBrightness = 0;
+static int s_menuPowerAction = POWER_NONE; // power pressed with the overlay open
+
+// Stock MinUI's launcher loop runs while /tmp/minui_exec exists (NextUI's
+// uses /tmp/nextui_exec). It doesn't act on /tmp/poweroff, and it powers off
+// after two minutes of sleep instead of suspending, so the pak does the same.
+static bool is_stock_minui(void) {
+	return access(MINUI_EXEC_PATH, F_OK) == 0;
+}
+
+static bool is_charging(void) {
+	const char* path = getenv("EMU_CHARGER_ONLINE");
+	if (!path || path[0] == '\0') return false;
+	FILE* f = fopen(path, "r");
+	if (!f) return false;
+	int online = 0;
+	if (fscanf(f, "%d", &online) != 1) online = 0;
+	fclose(f);
+	return online != 0;
+}
+
+static void begin_power_action(void) {
+	s_powerBrightness = read_backlight();
+	set_backlight(0);
+	SDL_PauseAudio(1);
+	system("echo 1 > /sys/class/speaker/mute 2>/dev/null");
+
+	s_powerStockMinui = is_stock_minui();
+	s_powerMarked = false;
+	s_powerSaveBase = g_stateSaveCount;
+	s_powerRequestedAt = SDL_GetTicks();
 	if (s_coreAPI.core_cmd) {
 		s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, 9, NULL);
 		s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 0, NULL);
 	}
-	// Write auto_resume.txt with relative ROM path so game switcher can resume
-	const char* rom_path = getenv("EMU_ROM_PATH");
-	if (rom_path) {
-		FILE* f = fopen("/mnt/SDCARD/.userdata/shared/.minui/auto_resume.txt", "w");
-		if (f) { fprintf(f, "%s", rom_path); fclose(f); }
-	}
+	s_powerPending = POWER_PRESSED;
+}
 
+// Stock MinUI: end its launcher loop now, as MinUI's PLAT_powerOff does, and
+// leave launch.sh the flag to power off and then wait. On MOSS the boot script
+// relaunches MinUI whenever its launcher exits, and MinUI would consume
+// auto_resume.txt reopening the game before the shutdown lands.
+// NextUI: its launcher powers off when it finds /tmp/poweroff.
+static void stop_launcher_for_poweroff(void) {
+	if (s_powerStockMinui) {
+		unlink(MINUI_EXEC_PATH);
+		FILE* f = fopen(PAK_POWEROFF_PATH, "w");
+		if (f) fclose(f);
+		sync();
+	} else {
+		system("touch /tmp/poweroff");
+	}
+}
+
+static void power_off(void) {
+	stop_launcher_for_poweroff();
+	request_stop();
+}
+
+// Returns true when woken by the power button, false when the device should
+// power off instead (stock MinUI, two minutes asleep, not charging).
+static bool sleep_until_wake(void) {
 	// Finalize game time tracking session (sleep time shouldn't count as play time)
 	system("command -v gametimectl.elf >/dev/null 2>&1 && gametimectl.elf stop_all");
 
-	// Enter sleep: pause audio, mute speaker, blank backlight
-	SDL_PauseAudio(1);
-	system("echo 1 > /sys/class/speaker/mute 2>/dev/null");
-	int saved_brightness = read_backlight();
-	set_backlight(0);
-
 	// Wait for wake: poll power button every 200ms
 	uint32_t sleep_start = SDL_GetTicks();
-	bool woken = false;
-	while (!woken) {
+	for (;;) {
 		SDL_Delay(200);
 		SDL_PumpEvents();
 		SDL_JoystickUpdate();
@@ -670,11 +786,16 @@ static void handle_sleep(void) {
 				pwrPressed = (keys && keys[POWER_BUTTON]) ||
 				             (s_joy && SDL_JoystickGetButton(s_joy, POWER_BUTTON));
 			} while (pwrPressed);
-			woken = true;
-			break;
+			return true;
 		}
-		// Deep sleep after timeout: suspend to RAM
 		if (SDL_GetTicks() - sleep_start >= DEEP_SLEEP_TIMEOUT_MS) {
+			if (is_stock_minui()) {
+				// Match MinUI: power off, unless charging (check again in a minute)
+				if (!is_charging()) return false;
+				sleep_start += 60000;
+				continue;
+			}
+			// Deep sleep after timeout: suspend to RAM
 			int fd = open("/sys/power/state", O_WRONLY);
 			if (fd >= 0) {
 				write(fd, "mem", 3);
@@ -683,21 +804,95 @@ static void handle_sleep(void) {
 			sleep_start = SDL_GetTicks();
 		}
 	}
+}
 
+static void wake_up(void) {
 	// Exit sleep: restore backlight, unmute, resume audio
-	set_backlight(saved_brightness);
+	set_backlight(s_powerBrightness);
 	system("echo 0 > /sys/class/speaker/mute 2>/dev/null");
 	SDL_PauseAudio(0);
+	// Re-apply MinUI's own brightness and volume, which are what its keys adjust from
+	system("command -v syncsettings.elf >/dev/null 2>&1 && syncsettings.elf >/dev/null 2>&1 &");
 
 	// Resume game time tracking session
 	system("command -v gametimectl.elf >/dev/null 2>&1 && gametimectl.elf resume");
 
 	// Clear auto-resume marker since user resumed in-session
-	unlink("/mnt/SDCARD/.userdata/shared/.minui/auto_resume.txt");
+	unlink(AUTO_RESUME_PATH);
 
 	// Reset edge detection so we don't immediately re-trigger
 	s_powerBtnPrev = false;
 	s_powerPressedAt = 0;
+}
+
+static void power_message_on_gl_thread(void* ctx) {
+	emu_ovl_render_message(&s_overlay, (const char*)ctx);
+	if (s_pluginOps.swap_buffers)
+		s_pluginOps.swap_buffers();
+}
+
+// MinUI's PWR_powerOff message, held for the two seconds its PLAT_powerOff
+// waits before blanking the screen.
+static void show_power_off_message(void) {
+	if (!s_overlayInitialized || !s_pluginOps.exec_on_video_thread)
+		return;
+	const char* msg = access(AUTO_RESUME_PATH, F_OK) == 0
+		? "Quicksave created,\npowering off" : "Powering off";
+	s_pluginOps.exec_on_video_thread(power_message_on_gl_thread, (void*)msg);
+	set_backlight(s_powerBrightness);
+	SDL_Delay(2000);
+	set_backlight(0);
+}
+
+// Called every frame while a power action is in progress.
+static void finish_power_action(void) {
+	if (s_powerPending == POWER_PRESSED) {
+		int pwr = check_power_button();
+		if (pwr == POWER_SLEEP || pwr == POWER_OFF) {
+			s_powerPending = pwr;
+			fprintf(stderr, "[Overlay] Power button: %s\n", pwr == POWER_SLEEP ? "sleep" : "power off");
+			if (pwr == POWER_OFF)
+				stop_launcher_for_poweroff();
+		}
+	}
+
+	if (!s_powerMarked) {
+		bool saved = g_stateSaveCount != s_powerSaveBase;
+		if (!saved && SDL_GetTicks() - s_powerRequestedAt < QUICKSAVE_TIMEOUT_MS)
+			return; // still writing; the game keeps running with the screen off
+		fprintf(stderr, "[Overlay] Quicksave: %s after %ums\n",
+			!saved ? "timed out" : g_stateSaveResult == 1 ? "saved" : "failed",
+			SDL_GetTicks() - s_powerRequestedAt);
+
+		// Only point the launcher at slot 9 once it holds this session's state
+		const char* rom_path = getenv("EMU_ROM_PATH");
+		if (saved && g_stateSaveResult == 1 && rom_path) {
+			FILE* f = fopen(AUTO_RESUME_PATH, "w");
+			if (f) { fprintf(f, "%s", rom_path); fclose(f); }
+		} else {
+			unlink(AUTO_RESUME_PATH);
+		}
+		sync();
+		s_powerMarked = true;
+	}
+
+	if (s_powerPending == POWER_PRESSED)
+		return; // saved, but still waiting to see whether it's a tap or a hold
+
+	int action = s_powerPending;
+	s_powerPending = POWER_NONE;
+	if (action == POWER_SLEEP && sleep_until_wake()) {
+		fprintf(stderr, "[Overlay] Woke from sleep\n");
+		wake_up();
+		return;
+	}
+	fprintf(stderr, "[Overlay] Powering off\n");
+	if (action == POWER_OFF) {
+		show_power_off_message();
+		request_stop(); // launcher already told
+	} else {
+		power_off(); // two minutes asleep: the screen stays off, as in MinUI
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -710,18 +905,57 @@ static uint32_t s_btnPrev = 0;
 static int32_t s_axisState[8];
 static int32_t s_axisPrev[8];
 
+// Raw pad event log for mapping new devices: set $EMU_INPUT_LOG to a file path.
+// Records button presses/releases, hat changes and sticks crossing half travel.
+static void log_input_changes(int nb, int na) {
+	static FILE* f = NULL;
+	static bool tried = false;
+	static Uint8 prevHat = 0;
+	static int prevZone[8];
+	if (!tried) {
+		tried = true;
+		const char* path = getenv("EMU_INPUT_LOG");
+		if (path && *path && (f = fopen(path, "w"))) {
+			fprintf(f, "# joystick '%s': %d buttons, %d axes, %d hats\n",
+			        SDL_JoystickName(s_joy), SDL_JoystickNumButtons(s_joy),
+			        SDL_JoystickNumAxes(s_joy), SDL_JoystickNumHats(s_joy));
+			fflush(f);
+		}
+	}
+	if (!f) return;
+	uint32_t t = SDL_GetTicks();
+	uint32_t changed = s_btnState ^ s_btnPrev;
+	for (int b = 0; b < nb; b++)
+		if (changed & (1u << b))
+			fprintf(f, "%u button %d %s\n", t, b, (s_btnState & (1u << b)) ? "down" : "up");
+	Uint8 hat = SDL_JoystickNumHats(s_joy) > 0 ? SDL_JoystickGetHat(s_joy, 0) : 0;
+	if (hat != prevHat)
+		fprintf(f, "%u hat 0 = 0x%x\n", t, hat);
+	prevHat = hat;
+	for (int a = 0; a < na; a++) {
+		int zone = s_axisState[a] > 16000 ? 1 : (s_axisState[a] < -16000 ? -1 : 0);
+		if (zone != prevZone[a])
+			fprintf(f, "%u axis %d %s (%d)\n", t, a, zone > 0 ? "+" : (zone < 0 ? "-" : "center"), s_axisState[a]);
+		prevZone[a] = zone;
+	}
+	fflush(f);
+}
+
 void emu_frontend_update_buttons(void) {
 	s_btnPrev = s_btnState;
 	s_btnState = 0;
 	memcpy(s_axisPrev, s_axisState, sizeof(s_axisPrev));
 	if (!s_joy) return;
-	for (int b = 0; b <= 10; b++)
+	int nb = SDL_JoystickNumButtons(s_joy);
+	if (nb > OVL_MAX_BUTTONS) nb = OVL_MAX_BUTTONS;
+	for (int b = 0; b < nb; b++)
 		if (SDL_JoystickGetButton(s_joy, b))
 			s_btnState |= (1u << b);
 	int na = SDL_JoystickNumAxes(s_joy);
 	if (na > 8) na = 8;
 	for (int a = 0; a < na; a++)
 		s_axisState[a] = SDL_JoystickGetAxis(s_joy, a);
+	log_input_changes(nb, na);
 }
 
 static bool btn_just_pressed(int b) {
@@ -788,7 +1022,7 @@ const char* emu_frontend_shortcut_label(const ShortcutBinding* s) {
 				 s->physical, s->axis_dir > 0 ? "+" : "-");
 		base = axis_buf;
 	} else {
-		base = (s->physical >= 0 && s->physical < 11) ? s_btnLabels[s->physical] : "?";
+		base = pad_label(s->physical);
 	}
 	if (s->mod != 0) {
 		snprintf(buf, sizeof(buf), "%s+%s", mod_label(s->mod), base);
@@ -1594,6 +1828,19 @@ static void overlay_ensure_init(int w, int h) {
 		// Load the per-game input mode (Brick-only; no-op on other devices)
 		load_input_mode_from_file(&s_overlayConfig);
 
+		// Factory defaults are default.cfg plus the device's input fragment
+		// ($EMU_INPUT_CFG), i.e. exactly what launch.sh seeds a new config with.
+		const char* default_cfg = getenv("EMU_DEFAULT_CFG");
+		if (default_cfg && default_cfg[0] != '\0') {
+			load_button_mappings_from_file(default_cfg);
+			load_button_mappings_from_file(getenv("EMU_INPUT_CFG"));
+			for (int i = 0; i < N64_REMAP_COUNT; i++) {
+				s_buttonMappings[i].default_physical = s_buttonMappings[i].physical;
+				s_buttonMappings[i].default_is_axis = s_buttonMappings[i].is_axis;
+				s_buttonMappings[i].default_axis_dir = s_buttonMappings[i].axis_dir;
+			}
+		}
+
 		// Load saved button mappings: first from console config
 		// (mupen64plus.cfg), then per-game overrides on top.
 		load_button_mappings_from_file(s_overlayIniPath);
@@ -1642,10 +1889,71 @@ static void overlay_ensure_init(int w, int h) {
 	fprintf(stderr, "[Overlay] Initialized successfully (%dx%d)\n", w, h);
 }
 
+static void load_pad_layout(void) {
+	if (s_padLoaded) return;
+	s_padLoaded = true;
+	const char* env = getenv("EMU_PAD");
+	if (!env || !*env) return;
+	char buf[256];
+	snprintf(buf, sizeof(buf), "%s", env);
+	for (char* tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")) {
+		char* eq = strchr(tok, '=');
+		if (!eq) continue;
+		*eq = '\0';
+		int v = atoi(eq + 1);
+		if (v >= OVL_MAX_BUTTONS) continue;
+		if      (!strcmp(tok, "a"))      s_pad.a = v;
+		else if (!strcmp(tok, "b"))      s_pad.b = v;
+		else if (!strcmp(tok, "l1"))     s_pad.l1 = v;
+		else if (!strcmp(tok, "r1"))     s_pad.r1 = v;
+		else if (!strcmp(tok, "menu"))   s_pad.menu = v;
+		else if (!strcmp(tok, "select")) s_pad.select = v;
+		else if (!strcmp(tok, "up"))     s_pad.up = v;
+		else if (!strcmp(tok, "down"))   s_pad.down = v;
+		else if (!strcmp(tok, "left"))   s_pad.left = v;
+		else if (!strcmp(tok, "right"))  s_pad.right = v;
+		else if (!strcmp(tok, "l2axis")) s_pad.l2axis = v;
+		else if (!strcmp(tok, "r2axis")) s_pad.r2axis = v;
+	}
+	fprintf(stderr, "[Overlay] Pad layout: a=%d b=%d l1=%d r1=%d menu=%d select=%d dpad=%d,%d,%d,%d l2axis=%d r2axis=%d\n",
+	        s_pad.a, s_pad.b, s_pad.l1, s_pad.r1, s_pad.menu, s_pad.select,
+	        s_pad.up, s_pad.down, s_pad.left, s_pad.right, s_pad.l2axis, s_pad.r2axis);
+}
+
+static bool pad_button(int index) {
+	return index >= 0 && s_joy && SDL_JoystickGetButton(s_joy, index) != 0;
+}
+
+static int pad_axis(int index) {
+	return (index >= 0 && s_joy) ? SDL_JoystickGetAxis(s_joy, index) : 0;
+}
+
+// Hat 0 plus any d-pad buttons, as SDL_HAT_* bits
+static Uint8 pad_dpad(void) {
+	Uint8 hat = s_joy ? SDL_JoystickGetHat(s_joy, 0) : 0;
+	if (pad_button(s_pad.up))    hat |= SDL_HAT_UP;
+	if (pad_button(s_pad.down))  hat |= SDL_HAT_DOWN;
+	if (pad_button(s_pad.left))  hat |= SDL_HAT_LEFT;
+	if (pad_button(s_pad.right)) hat |= SDL_HAT_RIGHT;
+	return hat;
+}
+
+// Overlay action buttons as bits: 0=a 1=b 2=l1 3=r1 4=menu
+static Uint32 pad_action_bits(void) {
+	Uint32 bits = 0;
+	if (pad_button(s_pad.a))    bits |= 1u << 0;
+	if (pad_button(s_pad.b))    bits |= 1u << 1;
+	if (pad_button(s_pad.l1))   bits |= 1u << 2;
+	if (pad_button(s_pad.r1))   bits |= 1u << 3;
+	if (pad_button(s_pad.menu)) bits |= 1u << 4;
+	return bits;
+}
+
 static bool check_menu_button(void) {
 	if (!s_joy) return false;
+	load_pad_layout();
 
-	bool pressed = SDL_JoystickGetButton(s_joy, 8) != 0;
+	bool pressed = pad_button(s_pad.menu);
 	bool justPressed = pressed && !s_menuBtnPrev;
 	s_menuBtnPrev = pressed;
 	return justPressed;
@@ -1660,8 +1968,8 @@ static EmuOvlInput poll_overlay_input(void) {
 	SDL_JoystickUpdate();
 	if (!s_joy) return input;
 
-	// D-pad (hat) — edge detect: only trigger on newly-pressed directions
-	Uint8 hat = SDL_JoystickGetHat(s_joy, 0);
+	// D-pad (hat and/or buttons) — edge detect: only trigger on newly-pressed directions
+	Uint8 hat = pad_dpad();
 	Uint8 hatPressed = hat & ~s_prevHat;
 	s_prevHat = hat;
 
@@ -1686,22 +1994,16 @@ static EmuOvlInput poll_overlay_input(void) {
 	s_prevAxisX = axisX;
 	s_prevAxisY = axisY;
 
-	// Buttons — edge detect: only trigger on newly-pressed buttons
-	// SDL button indices: 0=A(hw), 1=B(hw), 2=X(hw), 3=Y(hw), 4=L1, 5=R1, 8=Menu
-	static const int btnMap[] = {0, 1, 4, 5, 8};
-	Uint32 curButtons = 0;
-	for (int i = 0; i < 5; i++) {
-		if (SDL_JoystickGetButton(s_joy, btnMap[i]))
-			curButtons |= (1u << btnMap[i]);
-	}
+	// Buttons — edge detect: only trigger on newly-pressed buttons (layout from s_pad)
+	Uint32 curButtons = pad_action_bits();
 	Uint32 btnPressed = curButtons & ~s_prevButtons;
 	s_prevButtons = curButtons;
 
-	if (btnPressed & (1u << 0)) input.b    = true;
-	if (btnPressed & (1u << 1)) input.a    = true;
-	if (btnPressed & (1u << 4)) input.l1   = true;
-	if (btnPressed & (1u << 5)) input.r1   = true;
-	if (btnPressed & (1u << 8)) input.menu = true;
+	if (btnPressed & (1u << 0)) input.a    = true;
+	if (btnPressed & (1u << 1)) input.b    = true;
+	if (btnPressed & (1u << 2)) input.l1   = true;
+	if (btnPressed & (1u << 3)) input.r1   = true;
+	if (btnPressed & (1u << 4)) input.menu = true;
 
 	return input;
 }
@@ -1731,15 +2033,11 @@ static EmuOvlAction run_overlay_loop(void) {
 	s_pluginOps.exec_on_video_thread(overlay_open_on_gl_thread, NULL);
 
 	// Reset input edge detection state and drain pending SDL events
-	s_prevHat = SDL_JoystickGetHat(s_joy, 0);
+	load_pad_layout();
+	s_prevHat = pad_dpad();
 	s_prevAxisX = SDL_JoystickGetAxis(s_joy, 0);
 	s_prevAxisY = SDL_JoystickGetAxis(s_joy, 1);
-	s_prevButtons = 0;
-	static const int menu_btns[] = {0, 1, 4, 5, 8};
-	for (int i = 0; i < 5; i++) {
-		if (SDL_JoystickGetButton(s_joy, menu_btns[i]))
-			s_prevButtons |= (1u << menu_btns[i]);
-	}
+	s_prevButtons = pad_action_bits();
 	SDL_Event ev;
 	while (SDL_PollEvent(&ev)) {}
 	s_menuBtnPrev = true; // prevent re-trigger
@@ -1748,13 +2046,13 @@ static EmuOvlAction run_overlay_loop(void) {
 	while (emu_ovl_is_active(&s_overlay)) {
 		EmuOvlInput input = poll_overlay_input();
 
-		// Power button: sleep on short press, poweroff on long press
+		// Power button: sleep on short press, poweroff on long press.
+		// Both need the game running to take their quicksave, so close the
+		// menu and start them from emu_frontend_frame.
 		int pwr = check_power_button();
-		if (pwr == 1) {
-			handle_sleep();
-		} else if (pwr == 2) {
-			system("touch /tmp/poweroff");
-			s_overlay.action = EMU_OVL_ACTION_QUIT;
+		if (pwr == POWER_PRESSED) {
+			s_menuPowerAction = pwr;
+			s_overlay.action = EMU_OVL_ACTION_CONTINUE;
 			s_overlay.state = EMU_OVL_STATE_CLOSED;
 			break;
 		}
@@ -1798,7 +2096,7 @@ static EmuOvlAction run_overlay_loop(void) {
 		#define BC_TIMEOUT_MS 5500
 		#define BC_GRACE_MS 200
 		if (s_overlay.bind_capture >= 0 && s_joy) {
-			static int bc_prev_btn[16];
+			static int bc_prev_btn[OVL_MAX_BUTTONS];
 			static int bc_prev_axis[8];
 			static bool bc_baselines_set;
 			// Pending dual-purpose input (SELECT/L2/R2 with no combo yet).
@@ -1823,7 +2121,7 @@ static EmuOvlAction run_overlay_loop(void) {
 				// Listening — record baselines once, then edge-detect
 				if (!bc_baselines_set) {
 					int nb = SDL_JoystickNumButtons(s_joy);
-					if (nb > 16) nb = 16;
+					if (nb > OVL_MAX_BUTTONS) nb = OVL_MAX_BUTTONS;
 					for (int b = 0; b < nb; b++)
 						bc_prev_btn[b] = SDL_JoystickGetButton(s_joy, b);
 					int na = SDL_JoystickNumAxes(s_joy);
@@ -1845,10 +2143,10 @@ static EmuOvlAction run_overlay_loop(void) {
 				// MENU: always modifier-only.
 				// SELECT/L2/R2: dual-purpose — modifier if a combo button
 				// is pressed, standalone after a grace period if not.
-				#define MOD_BTN_MENU   8
-				#define MOD_BTN_SELECT 6
-				#define MOD_AXIS_L2    2
-				#define MOD_AXIS_R2    5
+				#define MOD_BTN_MENU   (s_pad.menu)
+				#define MOD_BTN_SELECT (s_pad.select)
+				#define MOD_AXIS_L2    (s_pad.l2axis)
+				#define MOD_AXIS_R2    (s_pad.r2axis)
 				int held_mod = 0;
 				bool select_active = false;
 				bool l2_active = false;
@@ -1858,14 +2156,14 @@ static EmuOvlAction run_overlay_loop(void) {
 					held_mod = MOD_BTN_MENU;
 				if (SDL_JoystickGetButton(s_joy, MOD_BTN_SELECT))
 					select_active = true;
-				{
-					int l2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_L2);
-					int r2 = SDL_JoystickGetAxis(s_joy, MOD_AXIS_R2);
-					int l2_delta = l2 - bc_prev_axis[MOD_AXIS_L2];
-					int r2_delta = r2 - bc_prev_axis[MOD_AXIS_R2];
+				if (MOD_AXIS_L2 >= 0 && MOD_AXIS_L2 < 8) {
+					int l2_delta = pad_axis(MOD_AXIS_L2) - bc_prev_axis[MOD_AXIS_L2];
 					if (l2_delta < 0) l2_delta = -l2_delta;
-					if (r2_delta < 0) r2_delta = -r2_delta;
 					if (l2_delta > 16000) l2_active = true;
+				}
+				if (MOD_AXIS_R2 >= 0 && MOD_AXIS_R2 < 8) {
+					int r2_delta = pad_axis(MOD_AXIS_R2) - bc_prev_axis[MOD_AXIS_R2];
+					if (r2_delta < 0) r2_delta = -r2_delta;
 					if (r2_delta > 16000) r2_active = true;
 				}
 
@@ -1882,7 +2180,7 @@ static EmuOvlAction run_overlay_loop(void) {
 				// Skip MENU (modifier-only). SELECT, L2, R2 are handled
 				// by the grace period logic below instead of being skipped.
 				int nb = SDL_JoystickNumButtons(s_joy);
-				if (nb > 16) nb = 16;
+				if (nb > OVL_MAX_BUTTONS) nb = OVL_MAX_BUTTONS;
 				for (int b = 0; b < nb; b++) {
 					int cur = SDL_JoystickGetButton(s_joy, b);
 					// MENU is always modifier-only (opens overlay)
@@ -2022,6 +2320,21 @@ static EmuOvlAction run_overlay_loop(void) {
 		SDL_Delay(16);
 	}
 
+	// Hold the game until the button that closed the menu (A on Continue, B
+	// to back out) is released; otherwise the game reads it as one press.
+	if (s_joy) {
+		uint32_t release_start = SDL_GetTicks();
+		while (SDL_GetTicks() - release_start < 1000) {
+			SDL_JoystickUpdate();
+			bool held = pad_dpad() != 0;
+			int nb = SDL_JoystickNumButtons(s_joy);
+			for (int b = 0; b < nb && !held; b++)
+				held = SDL_JoystickGetButton(s_joy, b) != 0;
+			if (!held) break;
+			SDL_Delay(10);
+		}
+	}
+
 	// Resume audio (stays on main thread)
 	SDL_PauseAudio(0);
 
@@ -2037,6 +2350,23 @@ static EmuOvlAction run_overlay_loop(void) {
 	}
 
 	return action;
+}
+
+// Re-apply the device's input fragment ($EMU_INPUT_CFG) after default.cfg has
+// been copied over the user config, the way launch.sh does on first run. Uses
+// the bundled `ini` helper that ships next to default.cfg.
+static void merge_device_input_cfg(const char* default_cfg, const char* target) {
+	const char* fragment = getenv("EMU_INPUT_CFG");
+	if (!fragment || fragment[0] == '\0' || !default_cfg || !target) return;
+	char dir[512];
+	snprintf(dir, sizeof(dir), "%s", default_cfg);
+	char* slash = strrchr(dir, '/');
+	if (!slash) return;
+	*slash = '\0';
+	char cmd[2048];
+	snprintf(cmd, sizeof(cmd), "'%s/ini' merge '%s' '%s'", dir, target, fragment);
+	int rc = system(cmd);
+	fprintf(stderr, "[Overlay] Merged device input fragment %s (rc=%d)\n", fragment, rc);
 }
 
 // Path to the per-game config file for this ROM
@@ -2207,6 +2537,7 @@ static void handle_restore_defaults(void) {
 				}
 				fclose(src);
 			}
+			merge_device_input_cfg(default_cfg, s_overlayIniPath);
 		}
 		s_overlay.scope = EMU_SCOPE_NONE;
 		fprintf(stderr, "[Overlay] Restored defaults.\n");
@@ -2299,12 +2630,13 @@ void emu_frontend_frame(int w, int h) {
 		s_joy = SDL_JoystickOpen(0);
 
 	// Power button: sleep on short press, poweroff on long press
-	int pwr = check_power_button();
-	if (pwr == 1) {
-		handle_sleep();
-	} else if (pwr == 2) {
-		system("touch /tmp/poweroff");
-		request_stop();
+	if (s_powerPending != POWER_NONE) {
+		finish_power_action();
+		return;
+	}
+	if (check_power_button() == POWER_PRESSED) {
+		begin_power_action();
+		return;
 	}
 
 	// Shortcut button processing
@@ -2321,8 +2653,11 @@ void emu_frontend_frame(int w, int h) {
 	// Overlay menu: ensure loaded, then handle menu button press
 	overlay_ensure_init(w, h);
 	if (s_overlayInitialized && check_menu_button()) {
+		s_menuPowerAction = POWER_NONE;
 		EmuOvlAction action = run_overlay_loop();
 		handle_overlay_action(action);
+		if (s_menuPowerAction != POWER_NONE)
+			begin_power_action();
 	}
 }
 

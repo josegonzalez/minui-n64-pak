@@ -12,6 +12,7 @@ This pak supports the following MinUI Platforms and devices:
 - `tg5050`: TrimUI Smart Pro S
 - `my355`: Miyoo Flip
 - `h700`: Anbernic RG28XX, RG34XX, RG34XXSP, RG35XX Plus, RG35XXH, RG35XXPro, RG35XXSP, RG40XXH, RG40XXV, RGcubeXX and RGSP, running [NextUI for H700](https://github.com/pvaibhav/NextUI) **rc11 or newer**
+- `zero28`: MagicX Mini Zero 28, running stock [MinUI](https://github.com/shauninman/MinUI) on [MOSS-zero28](https://github.com/shauninman/Moss-zero28)
 
 Use the correct platform for your device.
 
@@ -22,6 +23,11 @@ The H700 devices are the slowest hardware this pak targets: a quad Cortex-A53 wi
 Mali-G31 MP1 and 1 GB of RAM on a 32-bit memory bus. Expect the Rice plugin and modest
 settings to be necessary, and avoid hi-res texture packs — unlike the other platforms
 there is no swapfile to fall back on.
+
+The Zero 28 has the same Allwinner A133P and PowerVR GE8300 as the TrimUI Smart Pro and
+runs the same binaries. Its 480x640 panel is portrait-native and MOSS's SDL2 cannot rotate
+GL output, so the pak's core draws each frame into a 640x480 offscreen framebuffer and
+turns it onto the panel itself (both video plugins and the overlay menu go through it).
 
 ## Installation
 
@@ -73,10 +79,10 @@ There are 8 save slots per game. When Save or Load is highlighted, use **d-pad l
 
 | Press | Action |
 |-------|--------|
-| Short press (< 1 second) | Sleep — screen off, audio muted, game state auto-saved |
-| Long press (≥ 1 second) | Power off — exits the game cleanly |
+| Short press (< 1 second) | Sleep — game state auto-saved, then screen off and audio muted |
+| Long press (≥ 1 second) | Power off — game state auto-saved, then the game exits and the device shuts down |
 
-After 2 minutes of sleep the device suspends to RAM to save battery. Press the power button to wake.
+Both save to the hidden slot 9 and mark the game for auto-resume, so if the device powers off, or the battery runs out while asleep, the launcher reopens the game where you left it on the next boot. After 2 minutes of sleep the device suspends to RAM to save battery; on stock MinUI it powers off instead (unless charging), as MinUI's own emulators do. Press the power button to wake.
 
 ### Options
 
@@ -141,6 +147,13 @@ Nearly every N64 game reads one or the other, so this leaves neither dead.
 
 If anything feels wrong on your device, rebind it under Options → Controls.
 
+### Controls (MagicX Mini Zero 28)
+
+Both analog sticks and the d-pad work as they do on the Smart Pro: left stick for the N64
+analog stick, right stick for the C-buttons (X and Y also send C-Left and C-Down), and
+either L2 or R2 for Z. **Menu** opens the quick menu. Its pad numbers its buttons
+differently from every other supported device, so the pak ships its own mapping.
+
 ### Shortcuts
 
 You can assign buttons to common actions like fast forward, quick save/load, rewind, and screenshots. Go to Options → Shortcuts and set any face or shoulder button for each action.
@@ -152,3 +165,17 @@ For build instructions, patch details, data paths, and other developer-facing in
 ### Debug Logging
 
 Logs will be written to the`$SDCARD_PATH/.userdata/$PLATFORM/logs/` folder.
+
+For bringing up a new device, create an empty file named `debug` in
+`$SDCARD_PATH/.userdata/$PLATFORM/N64-mupen64plus/`. Every launch then also writes:
+
+| Log | Contents |
+|---|---|
+| `N64.mupen64plus.txt` | mupen64plus `--verbose` output |
+| `N64.diag.txt` | device snapshot: framebuffer, input devices, CPU governor, audio, how every bundled library resolves |
+| `N64.input.txt` | raw pad events (buttons, hat, sticks) — press each button once to read a pad's numbering |
+| `N64.perf.txt` | CPU ticks per emulator thread every 3s, to tell "slow" from "hung" |
+| `N64.dmesg.txt` | the kernel log after the emulator exits |
+
+The previous run's logs are kept as `*.prev.txt`, and each run's set is copied to
+`logs/N64-runs/<time>-<plugin>/`.

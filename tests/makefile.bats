@@ -58,8 +58,33 @@ mk() { # <VAR>
     for platform in $(jq -r '.platforms[]' "$REPO_ROOT/pak.json"); do
         upper="$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
         mk "${upper}_IMAGE"
+        # zero28 has no image of its own; it reuses tg5040's (see below).
+        [ "$platform" = "zero28" ] && continue
         [ "$output" = "${upper}_IMAGE=ghcr.io/loveretro/${platform}-toolchain:latest" ]
     done
+}
+
+@test "zero28 reuses the tg5040 toolchain, CPU flags and binaries" {
+    mk ZERO28_IMAGE
+    [ "$output" = "ZERO28_IMAGE=ghcr.io/loveretro/tg5040-toolchain:latest" ]
+    mk ZERO28_CPUFLAGS
+    [ "$output" = "ZERO28_CPUFLAGS=-mcpu=cortex-a53 -mtune=cortex-a53" ]
+    run grep -qx "zero28: tg5040" "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+    run grep -qx "rice-zero28: rice-tg5040" "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+}
+
+@test "zero28 bundles the libsamplerate MOSS lacks" {
+    bundles zero28 libsamplerate.so.0
+    bundles zero28 libpng12.so.0
+}
+
+@test "gliden64 links a bzip2 built for the target, not the sysroot's" {
+    run grep -q '/build/src/bzip2/libbz2.a' "$REPO_ROOT/patches/shared/GLideN64-standalone.patch"
+    [ "$status" -eq 0 ]
+    run grep -q 'usr/lib/libbz2.a' "$REPO_ROOT/patches/shared/GLideN64-standalone.patch"
+    [ "$status" -ne 0 ]
 }
 
 @test "h700 builds for the Cortex-A53 like tg5040, not the A55 platforms" {

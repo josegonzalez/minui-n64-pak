@@ -6,11 +6,12 @@
 # does no I/O — it reads its two arguments plus $SDL_VIDEO_EGL_DRIVER and sets
 # PROFILE_* variables.
 #
-# Every supported pad reports the same SDL button and axis numbers, so
-# default.cfg's mapping fits them all. NextUI h700 rc11 made that true: before
-# it, the Anbernic pad's numbers differed per model and from TrimUI's. What still
-# varies is which analog sticks a model physically has, which is what
-# PROFILE_HAS_LSTICK / PROFILE_HAS_RSTICK and PROFILE_INPUT_CFG describe.
+# Every supported pad except the MagicX Zero 28's reports the same SDL button
+# and axis numbers, so default.cfg's mapping fits them all. NextUI h700 rc11 made
+# that true: before it, the Anbernic pad's numbers differed per model and from
+# TrimUI's. What still varies is which analog sticks a model physically has,
+# which is what PROFILE_HAS_LSTICK / PROFILE_HAS_RSTICK and PROFILE_INPUT_CFG
+# describe. zero28 numbers its buttons differently and gets its own fragment.
 
 # n64_platform_profile <platform> <device>
 n64_platform_profile() {
@@ -40,6 +41,18 @@ n64_platform_profile() {
     PROFILE_HAS_LSTICK=1
     PROFILE_HAS_RSTICK=1
     PROFILE_INPUT_CFG=""
+    # Quarter turns clockwise the core applies to GL output (M64P_ROTATE), for
+    # panels whose EGL surface is in their native portrait orientation.
+    PROFILE_ROTATE=0
+    # Overlay menu button layout (EMU_PAD); empty keeps the TrimUI numbering.
+    PROFILE_PAD=""
+    # 1 where the codec's volume jumps when the emulator opens the sound card and
+    # there is no /sys/class/speaker/mute to hide it: launch.sh then silences the
+    # DAC and re-applies MinUI's volume the moment playback starts.
+    PROFILE_AUDIO_RESYNC=0
+    # Charger "online" node. Under stock MinUI the overlay powers off after two
+    # minutes asleep (as MinUI does) unless this reads 1; empty means unknown.
+    PROFILE_CHARGER_ONLINE=""
 
     case "$_platform" in
         tg5040)
@@ -139,6 +152,34 @@ n64_platform_profile() {
             # The stock OS keeps its EGL under /usr/lib or the multiarch dir;
             # NextUI has already resolved it for us.
             PROFILE_LD_PRELOAD="${SDL_VIDEO_EGL_DRIVER:-libEGL.so.1}"
+            ;;
+        zero28)
+            # MagicX Mini Zero 28 on MOSS (Tina Linux). Same Allwinner A133P /
+            # PowerVR GE8300 as tg5040, and MOSS ships the TrimUI Smart Pro's
+            # SDL2 blobs under /usr/magicx/lib. The panel is natively 480x640
+            # portrait (device tree: lcd_x=480 lcd_y=640).
+            PROFILE_RESOLUTION="640x480"
+            PROFILE_ANISOTROPY=0
+            PROFILE_LD_EXTRA_DIRS="/usr/magicx/lib"
+            # SD card is FAT32 and the rootfs is a read-only squashfs.
+            PROFILE_SWAPFILE=""
+            PROFILE_LEGACY_SUBDIR="zero28"
+            # The EGL surface is the panel's native 480x640; turn the 640x480
+            # game 90 degrees clockwise onto it (patched core, vidext_rotate.h).
+            PROFILE_ROTATE=1
+            # Unlike every other supported pad, magicx-input numbers its buttons
+            # MinUI's way (workspace/zero28/platform/platform.h, confirmed on
+            # device): A=0 B=1 X=2 Y=3 L1=4 R1=5 L2=6 R2=7 Select=8 Start=9
+            # L3=10 R3=11 d-pad=13-16 Menu=19, sticks on axes 0/1 and 2/3, no
+            # hat and no trigger axes. The fragment rebinds the game controls
+            # and PROFILE_PAD tells the overlay menu.
+            PROFILE_INPUT_CFG="input/zero28-pad.cfg"
+            PROFILE_PAD="a=0,b=1,l1=4,r1=5,menu=19,select=8,up=13,down=16,left=14,right=15,l2axis=-1,r2axis=-1"
+            # MinUI keeps the volume on the codec's 'DAC volume', which comes up
+            # at full level when the emulator opens the card; MinUI's own paks
+            # loop syncsettings.elf to undo it.
+            PROFILE_AUDIO_RESYNC=1
+            PROFILE_CHARGER_ONLINE="/sys/class/power_supply/axp2202-usb/online"
             ;;
     esac
 
