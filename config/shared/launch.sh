@@ -228,6 +228,7 @@ M64P_LD_LIBRARY_PATH="$M64P_LD_LIBRARY_PATH:$LD_LIBRARY_PATH"
 M64P_LD_PRELOAD="$PROFILE_LD_PRELOAD"
 # Relative ROM path for auto_resume.txt (strip /mnt/SDCARD prefix)
 export EMU_ROM_PATH="${ROM#/mnt/SDCARD}"
+export EMU_CHARGER_ONLINE="$PROFILE_CHARGER_ONLINE"
 
 # ── Overlay menu config ──────────────────────────────────────────────────────
 export EMU_OVERLAY_JSON="$BIN_DIR/overlay_settings.json"
@@ -401,6 +402,10 @@ if [ "$N64_DEBUG" = 1 ]; then
     } >"$DIAG" 2>&1
     sync
 fi
+
+# Left by the overlay for a power-off under stock MinUI (see the end of this
+# script); drop any left over so quitting normally doesn't power off.
+rm -f /tmp/n64_poweroff
 
 # Start power button sleep/poweroff handler (one-time; GLideN64 handles natively)
 command -v sleepmon.elf >/dev/null && sleepmon.elf &
@@ -642,3 +647,15 @@ if [ "$N64_DEBUG" = 1 ]; then
     [ -f "$PER_GAME_CFG" ] && cp "$PER_GAME_CFG" "$RUN_DIR/per-game.cfg"
 fi
 sync
+
+# Power-off under stock MinUI: the overlay has saved state slot 9, written
+# auto_resume.txt and removed /tmp/minui_exec. `poweroff` only asks init to shut
+# down, and returning would let MinUI's launcher, or MOSS's boot loop that
+# restarts it, reopen the menu and consume auto_resume.txt first, so wait here
+# until init stops us.
+if [ -f /tmp/n64_poweroff ]; then
+    rm -f /tmp/n64_poweroff
+    sync
+    poweroff
+    while :; do sleep 1; done
+fi

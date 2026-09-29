@@ -79,10 +79,10 @@ There are 8 save slots per game. When Save or Load is highlighted, use **d-pad l
 
 | Press | Action |
 |-------|--------|
-| Short press (< 1 second) | Sleep — screen off, audio muted, game state auto-saved |
-| Long press (≥ 1 second) | Power off — exits the game cleanly |
+| Short press (< 1 second) | Sleep — game state auto-saved, then screen off and audio muted |
+| Long press (≥ 1 second) | Power off — game state auto-saved, then the game exits and the device shuts down |
 
-After 2 minutes of sleep the device suspends to RAM to save battery. Press the power button to wake.
+Both save to the hidden slot 9 and mark the game for auto-resume, so if the device powers off, or the battery runs out while asleep, the launcher reopens the game where you left it on the next boot. After 2 minutes of sleep the device suspends to RAM to save battery; on stock MinUI it powers off instead (unless charging), as MinUI's own emulators do. Press the power button to wake.
 
 ### Options
 

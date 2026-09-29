@@ -10,6 +10,7 @@ Adds ROM-filename-based save naming so save files match NextUI's conventions:
 
 - Adds a `romfilename[256]` field to `ROM_PARAMS` and a new API command `M64CMD_SET_ROM_FILENAME` that the frontend calls with the ROM's basename (without path or extension).
 - Adds `SaveFilenameFormat` config option: when set to `2`, save files (`.sra`, `.eep`, `.fla`, `.mpk`, `.st*`) use `romfilename` instead of the internal ROM name or CRC. This produces stable, human-readable filenames like `Super Mario 64.sra`.
+- Exports `g_stateSaveCount` and `g_stateSaveResult`, updated in `StateChanged()` whenever a save state finishes writing, so the overlay can wait for its sleep / power-off quicksave to reach the card.
 - Exports `ROM_PARAMS` in the linker version script (`api_export.ver`) so the frontend can write `romfilename` via dlsym after `dlopen(RTLD_GLOBAL)`.
 
 ## mupen64plus-ui-console.patch

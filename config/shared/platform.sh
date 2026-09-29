@@ -50,6 +50,9 @@ n64_platform_profile() {
     # there is no /sys/class/speaker/mute to hide it: launch.sh then silences the
     # DAC and re-applies MinUI's volume the moment playback starts.
     PROFILE_AUDIO_RESYNC=0
+    # Charger "online" node. Under stock MinUI the overlay powers off after two
+    # minutes asleep (as MinUI does) unless this reads 1; empty means unknown.
+    PROFILE_CHARGER_ONLINE=""
 
     case "$_platform" in
         tg5040)
@@ -176,6 +179,7 @@ n64_platform_profile() {
             # at full level when the emulator opens the card; MinUI's own paks
             # loop syncsettings.elf to undo it.
             PROFILE_AUDIO_RESYNC=1
+            PROFILE_CHARGER_ONLINE="/sys/class/power_supply/axp2202-usb/online"
             ;;
     esac
 

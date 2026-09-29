@@ -246,6 +246,7 @@ profile() {
     profile zero28 ""
     [ "$PROFILE_LD_EXTRA_DIRS" = "/usr/magicx/lib" ]
     [ "$PROFILE_AUDIO_RESYNC" -eq 1 ]
+    [ "$PROFILE_CHARGER_ONLINE" = "/sys/class/power_supply/axp2202-usb/online" ]
     [ "$PROFILE_LD_PRELOAD" = "libEGL.so" ]
     [ -z "$PROFILE_SWAPFILE" ]
     [ "$PROFILE_ANISOTROPY" -eq 0 ]

@@ -116,6 +116,8 @@ int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,
 void emu_ovl_open(EmuOvl* ovl);
 bool emu_ovl_update(EmuOvl* ovl, EmuOvlInput* input);
 void emu_ovl_render(EmuOvl* ovl);
+// Draw a full-screen message (lines split on '\n'); works with the menu closed.
+void emu_ovl_render_message(EmuOvl* ovl, const char* text);
 bool emu_ovl_is_active(EmuOvl* ovl);
 EmuOvlAction emu_ovl_get_action(EmuOvl* ovl);
 int emu_ovl_get_action_param(EmuOvl* ovl);

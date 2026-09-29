@@ -1360,6 +1360,41 @@ void emu_ovl_render(EmuOvl* ovl) {
 	r->end_frame();
 }
 
+void emu_ovl_render_message(EmuOvl* ovl, const char* text) {
+	// Full-screen message on black, one centered line per '\n', as MinUI's
+	// GFX_blitMessage draws "Quicksave created, powering off".
+	EmuOvlRenderBackend* r = ovl->render;
+	if (!r || !text)
+		return;
+
+	char lines[4][128];
+	int count = 0;
+	const char* p = text;
+	while (count < 4) {
+		const char* nl = strchr(p, '\n');
+		size_t len = nl ? (size_t)(nl - p) : strlen(p);
+		if (len >= sizeof(lines[0]))
+			len = sizeof(lines[0]) - 1;
+		memcpy(lines[count], p, len);
+		lines[count][len] = '\0';
+		count++;
+		if (!nl)
+			break;
+		p = nl + 1;
+	}
+
+	int line_h = r->text_height(EMU_OVL_FONT_LARGE);
+	int y = (ovl->screen_h - line_h * count) / 2;
+
+	r->begin_frame();
+	r->draw_rect(0, 0, ovl->screen_w, ovl->screen_h, EMU_OVL_COLOR_BLACK);
+	for (int i = 0; i < count; i++) {
+		int x = (ovl->screen_w - r->text_width(lines[i], EMU_OVL_FONT_LARGE)) / 2;
+		r->draw_text(lines[i], x, y + i * line_h, EMU_OVL_COLOR_WHITE, EMU_OVL_FONT_LARGE);
+	}
+	r->end_frame();
+}
+
 bool emu_ovl_is_active(EmuOvl* ovl) {
 	return ovl->state != EMU_OVL_STATE_CLOSED;
 }

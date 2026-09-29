@@ -15,6 +15,8 @@ int g_frameSkip = 0;
 
 // Analog sensitivity: owned by ui-console main.c, written here, read by input-sdl
 extern int g_analogSensitivity;
+extern volatile int g_stateSaveCount;
+extern volatile int g_stateSaveResult;
 
 // Forward declarations for scope-aware save system
 static const char* get_per_game_path(void);
@@ -647,7 +649,13 @@ static int read_backlight(void) {
 	return 200; // last resort
 }
 
-// Returns: 0 = nothing, 1 = short press (sleep), 2 = long press (poweroff)
+#define POWER_NONE 0
+#define POWER_SLEEP 1
+#define POWER_OFF 2
+#define POWER_PRESSED 3
+
+// Returns POWER_PRESSED on the press, then POWER_SLEEP on a release within a
+// second or POWER_OFF once held for a second; POWER_NONE otherwise.
 static int check_power_button(void) {
 	SDL_PumpEvents();
 	const Uint8* keys = SDL_GetKeyboardState(NULL);
@@ -658,46 +666,111 @@ static int check_power_button(void) {
 	bool justReleased = !pressed && s_powerBtnPrev;
 	s_powerBtnPrev = pressed;
 
-	if (justPressed)
+	if (justPressed) {
 		s_powerPressedAt = SDL_GetTicks();
-
+		return POWER_PRESSED;
+	}
 	if (pressed && s_powerPressedAt && SDL_GetTicks() - s_powerPressedAt >= 1000) {
 		s_powerPressedAt = 0;
-		return 2; // poweroff
+		return POWER_OFF;
 	}
 	if (justReleased && s_powerPressedAt) {
 		s_powerPressedAt = 0;
-		return 1; // sleep
+		return POWER_SLEEP;
 	}
-	return 0;
+	return POWER_NONE;
 }
 
-static void handle_sleep(void) {
-	// Auto-save state to slot 9 for NextUI game switcher resume
+// Sleep and power-off both start with MinUI's quicksave: save state slot 9,
+// then point auto_resume.txt at the ROM so the launcher resumes it on boot.
+// The core only captures a queued save after the current frame returns, and
+// writes it on a worker thread (~1s for N64), so the save is requested the
+// moment power is pressed, before it's known whether this is a tap (sleep) or
+// a hold (power off), and later frames finish the job once the core reports
+// the write done (g_stateSaveCount, from the core patch). Starting early
+// matters on MOSS, whose /etc/rc.button/power powers the device off by itself
+// when a long press is released. The screen and audio go off at the press,
+// so the frames the game runs in the meantime aren't seen.
+static void request_stop(void);
+
+#define QUICKSAVE_TIMEOUT_MS 5000
+#define AUTO_RESUME_PATH "/mnt/SDCARD/.userdata/shared/.minui/auto_resume.txt"
+#define MINUI_EXEC_PATH "/tmp/minui_exec"
+#define PAK_POWEROFF_PATH "/tmp/n64_poweroff" // launch.sh powers off when it finds this
+
+static int s_powerPending = POWER_NONE; // POWER_PRESSED until tap or hold is known
+static bool s_powerMarked = false;      // quicksave finished and auto_resume.txt settled
+static bool s_powerStockMinui = false;
+static int s_powerSaveBase = 0;
+static uint32_t s_powerRequestedAt = 0;
+static int s_powerBrightness = 0;
+static int s_menuPowerAction = POWER_NONE; // power pressed with the overlay open
+
+// Stock MinUI's launcher loop runs while /tmp/minui_exec exists (NextUI's
+// uses /tmp/nextui_exec). It doesn't act on /tmp/poweroff, and it powers off
+// after two minutes of sleep instead of suspending, so the pak does the same.
+static bool is_stock_minui(void) {
+	return access(MINUI_EXEC_PATH, F_OK) == 0;
+}
+
+static bool is_charging(void) {
+	const char* path = getenv("EMU_CHARGER_ONLINE");
+	if (!path || path[0] == '\0') return false;
+	FILE* f = fopen(path, "r");
+	if (!f) return false;
+	int online = 0;
+	if (fscanf(f, "%d", &online) != 1) online = 0;
+	fclose(f);
+	return online != 0;
+}
+
+static void begin_power_action(void) {
+	s_powerBrightness = read_backlight();
+	set_backlight(0);
+	SDL_PauseAudio(1);
+	system("echo 1 > /sys/class/speaker/mute 2>/dev/null");
+
+	s_powerStockMinui = is_stock_minui();
+	s_powerMarked = false;
+	s_powerSaveBase = g_stateSaveCount;
+	s_powerRequestedAt = SDL_GetTicks();
 	if (s_coreAPI.core_cmd) {
 		s_coreAPI.core_cmd(M64CMD_STATE_SET_SLOT, 9, NULL);
 		s_coreAPI.core_cmd(M64CMD_STATE_SAVE, 0, NULL);
 	}
-	// Write auto_resume.txt with relative ROM path so game switcher can resume
-	const char* rom_path = getenv("EMU_ROM_PATH");
-	if (rom_path) {
-		FILE* f = fopen("/mnt/SDCARD/.userdata/shared/.minui/auto_resume.txt", "w");
-		if (f) { fprintf(f, "%s", rom_path); fclose(f); }
-	}
+	s_powerPending = POWER_PRESSED;
+}
 
+// Stock MinUI: end its launcher loop now, as MinUI's PLAT_powerOff does, and
+// leave launch.sh the flag to power off and then wait. On MOSS the boot script
+// relaunches MinUI whenever its launcher exits, and MinUI would consume
+// auto_resume.txt reopening the game before the shutdown lands.
+// NextUI: its launcher powers off when it finds /tmp/poweroff.
+static void stop_launcher_for_poweroff(void) {
+	if (s_powerStockMinui) {
+		unlink(MINUI_EXEC_PATH);
+		FILE* f = fopen(PAK_POWEROFF_PATH, "w");
+		if (f) fclose(f);
+		sync();
+	} else {
+		system("touch /tmp/poweroff");
+	}
+}
+
+static void power_off(void) {
+	stop_launcher_for_poweroff();
+	request_stop();
+}
+
+// Returns true when woken by the power button, false when the device should
+// power off instead (stock MinUI, two minutes asleep, not charging).
+static bool sleep_until_wake(void) {
 	// Finalize game time tracking session (sleep time shouldn't count as play time)
 	system("command -v gametimectl.elf >/dev/null 2>&1 && gametimectl.elf stop_all");
 
-	// Enter sleep: pause audio, mute speaker, blank backlight
-	SDL_PauseAudio(1);
-	system("echo 1 > /sys/class/speaker/mute 2>/dev/null");
-	int saved_brightness = read_backlight();
-	set_backlight(0);
-
 	// Wait for wake: poll power button every 200ms
 	uint32_t sleep_start = SDL_GetTicks();
-	bool woken = false;
-	while (!woken) {
+	for (;;) {
 		SDL_Delay(200);
 		SDL_PumpEvents();
 		SDL_JoystickUpdate();
@@ -713,11 +786,16 @@ static void handle_sleep(void) {
 				pwrPressed = (keys && keys[POWER_BUTTON]) ||
 				             (s_joy && SDL_JoystickGetButton(s_joy, POWER_BUTTON));
 			} while (pwrPressed);
-			woken = true;
-			break;
+			return true;
 		}
-		// Deep sleep after timeout: suspend to RAM
 		if (SDL_GetTicks() - sleep_start >= DEEP_SLEEP_TIMEOUT_MS) {
+			if (is_stock_minui()) {
+				// Match MinUI: power off, unless charging (check again in a minute)
+				if (!is_charging()) return false;
+				sleep_start += 60000;
+				continue;
+			}
+			// Deep sleep after timeout: suspend to RAM
 			int fd = open("/sys/power/state", O_WRONLY);
 			if (fd >= 0) {
 				write(fd, "mem", 3);
@@ -726,9 +804,11 @@ static void handle_sleep(void) {
 			sleep_start = SDL_GetTicks();
 		}
 	}
+}
 
+static void wake_up(void) {
 	// Exit sleep: restore backlight, unmute, resume audio
-	set_backlight(saved_brightness);
+	set_backlight(s_powerBrightness);
 	system("echo 0 > /sys/class/speaker/mute 2>/dev/null");
 	SDL_PauseAudio(0);
 	// Re-apply MinUI's own brightness and volume, which are what its keys adjust from
@@ -738,11 +818,81 @@ static void handle_sleep(void) {
 	system("command -v gametimectl.elf >/dev/null 2>&1 && gametimectl.elf resume");
 
 	// Clear auto-resume marker since user resumed in-session
-	unlink("/mnt/SDCARD/.userdata/shared/.minui/auto_resume.txt");
+	unlink(AUTO_RESUME_PATH);
 
 	// Reset edge detection so we don't immediately re-trigger
 	s_powerBtnPrev = false;
 	s_powerPressedAt = 0;
+}
+
+static void power_message_on_gl_thread(void* ctx) {
+	emu_ovl_render_message(&s_overlay, (const char*)ctx);
+	if (s_pluginOps.swap_buffers)
+		s_pluginOps.swap_buffers();
+}
+
+// MinUI's PWR_powerOff message, held for the two seconds its PLAT_powerOff
+// waits before blanking the screen.
+static void show_power_off_message(void) {
+	if (!s_overlayInitialized || !s_pluginOps.exec_on_video_thread)
+		return;
+	const char* msg = access(AUTO_RESUME_PATH, F_OK) == 0
+		? "Quicksave created,\npowering off" : "Powering off";
+	s_pluginOps.exec_on_video_thread(power_message_on_gl_thread, (void*)msg);
+	set_backlight(s_powerBrightness);
+	SDL_Delay(2000);
+	set_backlight(0);
+}
+
+// Called every frame while a power action is in progress.
+static void finish_power_action(void) {
+	if (s_powerPending == POWER_PRESSED) {
+		int pwr = check_power_button();
+		if (pwr == POWER_SLEEP || pwr == POWER_OFF) {
+			s_powerPending = pwr;
+			fprintf(stderr, "[Overlay] Power button: %s\n", pwr == POWER_SLEEP ? "sleep" : "power off");
+			if (pwr == POWER_OFF)
+				stop_launcher_for_poweroff();
+		}
+	}
+
+	if (!s_powerMarked) {
+		bool saved = g_stateSaveCount != s_powerSaveBase;
+		if (!saved && SDL_GetTicks() - s_powerRequestedAt < QUICKSAVE_TIMEOUT_MS)
+			return; // still writing; the game keeps running with the screen off
+		fprintf(stderr, "[Overlay] Quicksave: %s after %ums\n",
+			!saved ? "timed out" : g_stateSaveResult == 1 ? "saved" : "failed",
+			SDL_GetTicks() - s_powerRequestedAt);
+
+		// Only point the launcher at slot 9 once it holds this session's state
+		const char* rom_path = getenv("EMU_ROM_PATH");
+		if (saved && g_stateSaveResult == 1 && rom_path) {
+			FILE* f = fopen(AUTO_RESUME_PATH, "w");
+			if (f) { fprintf(f, "%s", rom_path); fclose(f); }
+		} else {
+			unlink(AUTO_RESUME_PATH);
+		}
+		sync();
+		s_powerMarked = true;
+	}
+
+	if (s_powerPending == POWER_PRESSED)
+		return; // saved, but still waiting to see whether it's a tap or a hold
+
+	int action = s_powerPending;
+	s_powerPending = POWER_NONE;
+	if (action == POWER_SLEEP && sleep_until_wake()) {
+		fprintf(stderr, "[Overlay] Woke from sleep\n");
+		wake_up();
+		return;
+	}
+	fprintf(stderr, "[Overlay] Powering off\n");
+	if (action == POWER_OFF) {
+		show_power_off_message();
+		request_stop(); // launcher already told
+	} else {
+		power_off(); // two minutes asleep: the screen stays off, as in MinUI
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1896,13 +2046,13 @@ static EmuOvlAction run_overlay_loop(void) {
 	while (emu_ovl_is_active(&s_overlay)) {
 		EmuOvlInput input = poll_overlay_input();
 
-		// Power button: sleep on short press, poweroff on long press
+		// Power button: sleep on short press, poweroff on long press.
+		// Both need the game running to take their quicksave, so close the
+		// menu and start them from emu_frontend_frame.
 		int pwr = check_power_button();
-		if (pwr == 1) {
-			handle_sleep();
-		} else if (pwr == 2) {
-			system("touch /tmp/poweroff");
-			s_overlay.action = EMU_OVL_ACTION_QUIT;
+		if (pwr == POWER_PRESSED) {
+			s_menuPowerAction = pwr;
+			s_overlay.action = EMU_OVL_ACTION_CONTINUE;
 			s_overlay.state = EMU_OVL_STATE_CLOSED;
 			break;
 		}
@@ -2480,12 +2630,13 @@ void emu_frontend_frame(int w, int h) {
 		s_joy = SDL_JoystickOpen(0);
 
 	// Power button: sleep on short press, poweroff on long press
-	int pwr = check_power_button();
-	if (pwr == 1) {
-		handle_sleep();
-	} else if (pwr == 2) {
-		system("touch /tmp/poweroff");
-		request_stop();
+	if (s_powerPending != POWER_NONE) {
+		finish_power_action();
+		return;
+	}
+	if (check_power_button() == POWER_PRESSED) {
+		begin_power_action();
+		return;
 	}
 
 	// Shortcut button processing
@@ -2502,8 +2653,11 @@ void emu_frontend_frame(int w, int h) {
 	// Overlay menu: ensure loaded, then handle menu button press
 	overlay_ensure_init(w, h);
 	if (s_overlayInitialized && check_menu_button()) {
+		s_menuPowerAction = POWER_NONE;
 		EmuOvlAction action = run_overlay_loop();
 		handle_overlay_action(action);
+		if (s_menuPowerAction != POWER_NONE)
+			begin_power_action();
 	}
 }
 
