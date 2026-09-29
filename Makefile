@@ -302,6 +302,8 @@ define DIST_COMMON
 	cp $(SRC)/7zip/7zzs                                $(1)/
 	cp $(SRC)/7zip/License.txt                         $(1)/7zzs.LICENSE
 	cp pak.json $(1)/
+	mkdir -p $(1)/language
+	cp language/*.txt $(1)/language/
 endef
 
 dist: dist-tg5040 dist-tg5050

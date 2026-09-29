@@ -225,10 +225,10 @@ index 00000000..82791025
 +- `UseNativeResolutionFactor = 2` (640x480) works well
 +- Can try `anisotropy = 4` or `UseNativeResolutionFactor = 3` on less demanding games
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index ff7e8a52..6f560aad 100644
+index ff7e8a52..c42051a8 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -147,6 +147,18 @@ set(GLideN64_SOURCES
+@@ -147,6 +147,19 @@ set(GLideN64_SOURCES
    uCodes/ZSortBOSS.cpp
  )
  
@@ -241,13 +241,14 @@ index ff7e8a52..6f560aad 100644
 +  ${OVERLAY_COMMON_DIR}/emu_overlay_cfg.c
 +  ${OVERLAY_COMMON_DIR}/emu_overlay_sdl.c
 +  ${OVERLAY_COMMON_DIR}/emu_frontend.c
++  ${OVERLAY_COMMON_DIR}/emu_i18n.c
 +  ${OVERLAY_COMMON_DIR}/cjson/cJSON.c
 +)
 +
  set(GLideNUI_SOURCES
    GLideNUI/AboutDialog.cpp
    GLideNUI/AboutDialog.ui
-@@ -235,7 +247,7 @@ if(EXISTS "${CMAKE_FIND_ROOT_PATH}/opt/vc/include/bcm_host.h" AND NOT MESA)
+@@ -235,7 +248,7 @@ if(EXISTS "${CMAKE_FIND_ROOT_PATH}/opt/vc/include/bcm_host.h" AND NOT MESA)
      "${CMAKE_FIND_ROOT_PATH}/opt/vc/lib/GL"
    )
  else(EXISTS "${CMAKE_FIND_ROOT_PATH}/opt/vc/include/bcm_host.h" AND NOT MESA)
@@ -256,7 +257,7 @@ index ff7e8a52..6f560aad 100644
  endif(EXISTS "${CMAKE_FIND_ROOT_PATH}/opt/vc/include/bcm_host.h" AND NOT MESA)
  
  if(MUPENPLUSAPI)
-@@ -244,6 +256,13 @@ if(MUPENPLUSAPI)
+@@ -244,6 +257,13 @@ if(MUPENPLUSAPI)
  		-DTXFILTER_LIB
    )
    include_directories( . inc )
@@ -270,7 +271,7 @@ index ff7e8a52..6f560aad 100644
    set(GLideN64_SOURCES_UNIX
  	MupenPlusPluginAPI.cpp
  	mupenplus/CommonAPIImpl_mupenplus.cpp
-@@ -405,42 +424,45 @@ if(ANDROID)
+@@ -405,42 +425,45 @@ if(ANDROID)
  endif(ANDROID)
  
  if(NOT NO_OSD)
@@ -352,7 +353,7 @@ index ff7e8a52..6f560aad 100644
  
    include_directories( ${FREETYPE_INCLUDE_DIRS} )
  else()
-@@ -559,6 +581,10 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" MATCH
+@@ -559,6 +582,10 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" MATCH
    set( CMAKE_SHARED_LINKER_FLAGS  "${CMAKE_SHARED_LINKER_FLAGS} ${GCC_STATIC_LINK_FLAGS}" )
  endif()
  
@@ -363,7 +364,7 @@ index ff7e8a52..6f560aad 100644
  set(CMAKE_CXX_STANDARD 17)
  set(CMAKE_CXX_STANDARD_REQUIRED YES)
  
-@@ -628,6 +654,9 @@ else(GLIDEN64_BUILD_TYPE STREQUAL "Debug")
+@@ -628,6 +655,9 @@ else(GLIDEN64_BUILD_TYPE STREQUAL "Debug")
    endif(SDL)
  endif(GLIDEN64_BUILD_TYPE STREQUAL "Debug")
  
@@ -2174,3 +2175,31 @@ index f0595819..2a353ca4 100644
  #ifndef M64P_GLIDENUI
  	if (Config_SetDefault()) {
  		config.version = ConfigGetParamInt(g_configVideoGliden64, "configVersion");
+diff --git a/src/toolchain-aarch64.cmake b/src/toolchain-aarch64.cmake
+new file mode 100644
+index 00000000..b078be4d
+--- /dev/null
++++ b/src/toolchain-aarch64.cmake
+@@ -0,0 +1,22 @@
++set(CMAKE_SYSTEM_NAME Linux)
++set(CMAKE_SYSTEM_PROCESSOR aarch64)
++set(CMAKE_C_COMPILER /opt/mlp1-toolchain/bin/aarch64-buildroot-linux-gnu-gcc)
++set(CMAKE_CXX_COMPILER /opt/mlp1-toolchain/bin/aarch64-buildroot-linux-gnu-g++)
++set(CMAKE_SYSROOT /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot)
++set(CMAKE_FIND_ROOT_PATH /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot)
++set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
++set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
++set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
++set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
++set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -mcpu=cortex-a55 -mtune=cortex-a55 -ffunction-sections -fdata-sections -DNDEBUG")
++set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -mcpu=cortex-a55 -mtune=cortex-a55 -ffunction-sections -fdata-sections -DNDEBUG")
++set(SDL_TTF_INCLUDE_DIRS /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/include/SDL2)
++set(SDL_TTF_LIBRARIES /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/lib/libSDL2_ttf.so)
++set(PNG_LIBRARY /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/lib/libpng16.so)
++set(PNG_PNG_INCLUDE_DIR /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/include/libpng16)
++set(ZLIB_LIBRARY /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/lib/libz.so)
++set(ZLIB_INCLUDE_DIR /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/include)
++set(FREETYPE_INCLUDE_DIRS /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/include/freetype2)
++set(FREETYPE_LIBRARIES /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/lib/libfreetype.so)
++set(LIBDRM_INCLUDE_DIRS /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/include /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/include/libdrm)
++set(LIBDRM_LIBRARIES /opt/mlp1-toolchain/aarch64-buildroot-linux-gnu/sysroot/usr/lib/libdrm.so)

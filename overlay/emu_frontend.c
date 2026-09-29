@@ -1,4 +1,5 @@
 #include "emu_frontend.h"
+#include "emu_i18n.h"
 #include "m64p_types.h"
 
 #include <fcntl.h>
@@ -773,8 +774,8 @@ static bool mapping_matches_factory_default(const N64ButtonMapping* m) {
 }
 
 static const char* mod_label(int mod) {
-	if (mod == menu_button_index()) return "MENU";
-	if (mod == select_button_index()) return "SELECT";
+	if (mod == menu_button_index()) return emu_i18n("MENU");
+	if (mod == select_button_index()) return emu_i18n("SELECT");
 	int l2_button = l2_button_index();
 	int r2_button = r2_button_index();
 	if (l2_button >= 0 && mod == l2_button) return "L2";
@@ -783,14 +784,14 @@ static const char* mod_label(int mod) {
 	int r2_axis = r2_axis_index();
 	if (l2_axis >= 0 && mod == -(l2_axis + 1)) return "L2";
 	if (r2_axis >= 0 && mod == -(r2_axis + 1)) return "R2";
-	return "MOD";
+	return emu_i18n("MOD");
 }
 
 static const char* button_label(int button) {
 	static char buf[16];
 
-	if (button == menu_button_index()) return "MENU";
-	if (button == select_button_index()) return "SELECT";
+	if (button == menu_button_index()) return emu_i18n("MENU");
+	if (button == select_button_index()) return emu_i18n("SELECT");
 	if (button == start_button_index()) return "START";
 	if (button == l1_button_index()) return "L1";
 	if (button == r1_button_index()) return "R1";
@@ -811,11 +812,11 @@ static const char* button_label(int button) {
 
 const char* emu_frontend_binding_label(const N64ButtonMapping* m) {
 	static char buf[64];
-	if (m->physical < 0) return "NONE";
+	if (m->physical < 0) return emu_i18n("NONE");
 	const char* base;
 	char axis_buf[32];
 	if (m->is_axis) {
-		snprintf(axis_buf, sizeof(axis_buf), "Axis %d%s", m->physical, m->axis_dir > 0 ? "+" : "-");
+		snprintf(axis_buf, sizeof(axis_buf), "%s %d%s", emu_i18n("Axis"), m->physical, m->axis_dir > 0 ? "+" : "-");
 		base = axis_buf;
 	} else {
 		base = button_label(m->physical);
@@ -1202,11 +1203,11 @@ static ShortcutBinding* find_shortcut(const char* key) {
 
 const char* emu_frontend_shortcut_label(const ShortcutBinding* s) {
 	static char buf[64];
-	if (!s || s->physical < 0) return "NONE";
+	if (!s || s->physical < 0) return emu_i18n("NONE");
 	const char* base;
 	char axis_buf[32];
 	if (s->is_axis) {
-		snprintf(axis_buf, sizeof(axis_buf), "Axis %d%s",
+		snprintf(axis_buf, sizeof(axis_buf), "%s %d%s", emu_i18n("Axis"),
 				 s->physical, s->axis_dir > 0 ? "+" : "-");
 		base = axis_buf;
 	} else {
@@ -1980,12 +1981,12 @@ static const char* cheat_get_description(int idx) {
 	return (idx >= 0 && idx < s_cheatCount) ? s_cheats[idx].description : "";
 }
 static const char* cheat_get_value_label(int idx) {
-	if (idx < 0 || idx >= s_cheatCount) return "OFF";
+	if (idx < 0 || idx >= s_cheatCount) return emu_i18n("Off");
 	CheatEntry* c = &s_cheats[idx];
-	if (!c->enabled) return "OFF";
+	if (!c->enabled) return emu_i18n("Off");
 	if (c->variant_count > 0 && c->selected_variant >= 0 && c->selected_variant < c->variant_count)
 		return c->variants[c->selected_variant].label;
-	return "ON";
+	return emu_i18n("On");
 }
 static int cheat_get_count(void) { return s_cheatCount; }
 static bool cheat_is_enabled(int idx) {

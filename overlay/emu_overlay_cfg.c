@@ -1,4 +1,5 @@
 #include "emu_overlay_cfg.h"
+#include "emu_i18n.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -108,10 +109,10 @@ static void parse_item(const cJSON* json_item, EmuOvlItem* item) {
 	safe_strcpy(item->key, sizeof(item->key), s);
 
 	s = json_get_string(json_item, "label");
-	safe_strcpy(item->label, sizeof(item->label), s);
+	safe_strcpy(item->label, sizeof(item->label), emu_i18n(s));
 
 	s = json_get_string(json_item, "description");
-	safe_strcpy(item->description, sizeof(item->description), s);
+	safe_strcpy(item->description, sizeof(item->description), emu_i18n(s));
 
 	// optional per-item INI section override (otherwise inherits section's)
 	s = json_get_string(json_item, "ini_section");
@@ -170,7 +171,7 @@ static void parse_item(const cJSON* json_item, EmuOvlItem* item) {
 		for (int i = 0; i < count; i++) {
 			const cJSON* l = cJSON_GetArrayItem(labels_arr, i);
 			if (cJSON_IsString(l) && l->valuestring)
-				safe_strcpy(item->labels[i], sizeof(item->labels[i]), l->valuestring);
+				safe_strcpy(item->labels[i], sizeof(item->labels[i]), emu_i18n(l->valuestring));
 		}
 	}
 
@@ -207,6 +208,7 @@ static void parse_section(const cJSON* json_sec, EmuOvlSection* sec, const char*
 	memset(sec, 0, sizeof(*sec));
 
 	const char* name = json_get_string(json_sec, "name");
+	/* Keep the English section key for internal routing; render translates it. */
 	safe_strcpy(sec->name, sizeof(sec->name), name);
 
 	const char* ini_sec = json_get_string(json_sec, "ini_section");
@@ -264,7 +266,7 @@ int emu_ovl_cfg_load(EmuOvlConfig* cfg, const char* json_path) {
 	safe_strcpy(cfg->config_section, sizeof(cfg->config_section), s);
 
 	s = json_get_string(root, "options_hint");
-	safe_strcpy(cfg->options_hint, sizeof(cfg->options_hint), s);
+	safe_strcpy(cfg->options_hint, sizeof(cfg->options_hint), emu_i18n(s));
 
 	cfg->save_state = json_get_bool(root, "save_state", false);
 	cfg->load_state = json_get_bool(root, "load_state", false);

@@ -1,5 +1,6 @@
 #include "emu_overlay.h"
 #include "emu_frontend.h"
+#include "emu_i18n.h"
 #include "cjson/cJSON.h"
 #include <dirent.h>
 #include <stdio.h>
@@ -338,8 +339,8 @@ static const char* main_item_label(EmuOvl* ovl, int index) {
 	if (!ovl || index < 0 || index >= ovl->main_item_count)
 		return "";
 	if (ovl->main_items[index].type == EMU_OVL_MAIN_QUIT)
-		return ovl->quit_save ? "Save & Quit" : "Quit";
-	return ovl->main_items[index].label;
+		return emu_i18n(ovl->quit_save ? "Save & Quit" : "Quit");
+	return emu_i18n(ovl->main_items[index].label);
 }
 
 static void cycle_item_next(EmuOvlItem* item) {
@@ -403,7 +404,7 @@ static void cycle_item_prev(EmuOvlItem* item) {
 static const char* get_item_display_value(EmuOvlItem* item, char* buf, int buf_size) {
 	switch (item->type) {
 	case EMU_OVL_TYPE_BOOL:
-		return item->staged_value ? "On" : "Off";
+		return emu_i18n(item->staged_value ? "On" : "Off");
 	case EMU_OVL_TYPE_CYCLE:
 		for (int i = 0; i < item->value_count; i++) {
 			if (item->values[i] == item->staged_value) {
@@ -520,6 +521,7 @@ static void free_slot_screenshots(EmuOvl* ovl) {
 int emu_ovl_init(EmuOvl* ovl, EmuOvlConfig* cfg, EmuOvlRenderBackend* render,
 				 const char* game_name, int screen_w, int screen_h) {
 	memset(ovl, 0, sizeof(*ovl));
+	emu_i18n_init();
 	ovl->config = cfg;
 	ovl->render = render;
 	ovl->state = EMU_OVL_STATE_CLOSED;
@@ -1308,7 +1310,7 @@ static void draw_button_group(EmuOvl* ovl, const char* hints[], int hint_count,
 		int pair_w = measure_button_glyph(ovl, hints[i], inner_h);
 		pair_w += bm;
 		if (i + 1 < hint_count)
-			pair_w += r->text_width(hints[i + 1], EMU_OVL_FONT_SMALL);
+			pair_w += r->text_width(emu_i18n(hints[i + 1]), EMU_OVL_FONT_SMALL);
 		pair_w += bm;
 		group_w += bm + pair_w;
 	}
@@ -1327,9 +1329,9 @@ static void draw_button_group(EmuOvl* ovl, const char* hints[], int hint_count,
 		int label_x = cx + gw + bm;
 		int label_w = 0;
 		if (i + 1 < hint_count) {
-			r->draw_text(hints[i + 1], label_x, text_y,
+			r->draw_text(emu_i18n(hints[i + 1]), label_x, text_y,
 						 ovl->theme.hint, EMU_OVL_FONT_SMALL);
-			label_w = r->text_width(hints[i + 1], EMU_OVL_FONT_SMALL);
+			label_w = r->text_width(emu_i18n(hints[i + 1]), EMU_OVL_FONT_SMALL);
 		}
 		// pair_w = gw + bm + label_w + bm; advance by pair_w + bm
 		cx += gw + bm + label_w + bm + bm;
@@ -1469,7 +1471,7 @@ static void render_main_menu(EmuOvl* ovl) {
 		if (icon_id >= 0 && r->draw_icon) {
 			r->draw_icon(icon_id, pv_x, pv_y);
 		} else {
-			draw_centered_text(r, "No save in this slot",
+			draw_centered_text(r, emu_i18n("No save in this slot"),
 							   pv_x + pv_w / 2, pv_y + pv_h / 2,
 							   ovl->theme.text, EMU_OVL_FONT_SMALL);
 		}
@@ -1501,7 +1503,7 @@ static void render_main_menu(EmuOvl* ovl) {
 static void render_section_list(EmuOvl* ovl) {
 	EmuOvlRenderBackend* r = ovl->render;
 
-	draw_menu_bar(ovl, "Options", NULL);
+	draw_menu_bar(ovl, emu_i18n("Options"), NULL);
 	draw_content_panel(ovl, content_panel_top(), content_bottom(ovl));
 
 	int row_h = S(PILL_SIZE);
@@ -1530,9 +1532,9 @@ static void render_section_list(EmuOvl* ovl) {
 		if (idx < ovl->config->section_count)
 			name = ovl->config->sections[idx].name;
 		else
-			name = "Save Changes";
+			name = (char *)emu_i18n("Save Changes");
 		draw_settings_row(ovl, x, iy, w, row_h,
-						  name, NULL, sel, false, EMU_OVL_FONT_LARGE);
+						  emu_i18n(name), NULL, sel, false, EMU_OVL_FONT_LARGE);
 	}
 
 	// Optional hint (e.g. "Restart game to apply changes")
@@ -1552,7 +1554,7 @@ static void render_section_items(EmuOvl* ovl) {
 	EmuOvlRenderBackend* r = ovl->render;
 	EmuOvlSection* sec = &ovl->config->sections[ovl->current_section];
 
-	draw_menu_bar(ovl, sec->name, NULL);
+	draw_menu_bar(ovl, emu_i18n(sec->name), NULL);
 	draw_content_panel(ovl, content_panel_top(), content_bottom(ovl));
 
 	int row_h = S(PILL_SIZE);
@@ -1589,7 +1591,7 @@ static void render_section_items(EmuOvl* ovl) {
 			char val_buf[64];
 			const char* val_str = get_item_display_value(item, val_buf, sizeof(val_buf));
 			draw_settings_row(ovl, x, iy, w, row_h,
-							  item->label, val_str, sel, true,
+						  emu_i18n(item->label), emu_i18n(val_str), sel, true,
 							  EMU_OVL_FONT_SMALL);
 		} else if (is_input && idx < sec->item_count + remap_rows) {
 			// Button remap row
@@ -1611,7 +1613,7 @@ static void render_section_items(EmuOvl* ovl) {
 				val = emu_frontend_binding_label(&mappings[ri]);
 			}
 			draw_settings_row(ovl, x, iy, w, row_h,
-							  mappings[ri].name, val, sel, false,
+							  emu_i18n(mappings[ri].name), val, sel, false,
 							  EMU_OVL_FONT_SMALL);
 		} else if (is_shortcuts && idx >= sec->item_count &&
 				   idx < sec->item_count + shortcut_rows) {
@@ -1639,12 +1641,12 @@ static void render_section_items(EmuOvl* ovl) {
 				val = emu_frontend_shortcut_label(shortcut);
 			}
 			draw_settings_row(ovl, x, iy, w, row_h,
-							  shortcut->label, val, sel, false,
+							  emu_i18n(shortcut->label), val, sel, false,
 							  EMU_OVL_FONT_SMALL);
 		} else {
 			// "Reset to Default" row (last)
 			draw_settings_row(ovl, x, iy, w, row_h,
-							  "Reset to Default", NULL, sel, false,
+							  emu_i18n("Reset to Default"), NULL, sel, false,
 							  EMU_OVL_FONT_SMALL);
 		}
 	}
@@ -1656,8 +1658,9 @@ static void render_section_items(EmuOvl* ovl) {
 	if (ovl->selected < sec->item_count) {
 		EmuOvlItem* sel_item = &sec->items[ovl->selected];
 		if (sel_item->description[0] != '\0') {
-			int tw = r->text_width(sel_item->description, EMU_OVL_FONT_TINY);
-			r->draw_text(sel_item->description,
+			const char *description = emu_i18n(sel_item->description);
+			int tw = r->text_width(description, EMU_OVL_FONT_TINY);
+			r->draw_text(description,
 						 (ovl->screen_w - tw) / 2, desc_cy,
 						 ovl->theme.hint, EMU_OVL_FONT_TINY);
 		}
@@ -1669,13 +1672,13 @@ static void render_section_items(EmuOvl* ovl) {
 
 static void render_cheats(EmuOvl* ovl) {
 	EmuOvlRenderBackend* r = ovl->render;
-	draw_menu_bar(ovl, "Cheats", NULL);
+	draw_menu_bar(ovl, emu_i18n("Cheats"), NULL);
 	draw_content_panel(ovl, content_panel_top(), content_bottom(ovl));
 
 	int count = ovl->cheat_cb.get_count ? ovl->cheat_cb.get_count() : 0;
 
 	if (count == 0) {
-		draw_centered_text(r, "No cheats available", ovl->screen_w / 2,
+		draw_centered_text(r, emu_i18n("No cheats available"), ovl->screen_w / 2,
 						   ovl->screen_h / 2, ovl->theme.hint, EMU_OVL_FONT_SMALL);
 		const char* hints[] = {"B", "Back"};
 		draw_footer_hints(ovl, hints, 2);
@@ -1706,7 +1709,7 @@ static void render_cheats(EmuOvl* ovl) {
 		const char* name = ovl->cheat_cb.get_name ? ovl->cheat_cb.get_name(idx) : "???";
 		const char* val = ovl->cheat_cb.get_value_label ? ovl->cheat_cb.get_value_label(idx) : "OFF";
 		draw_settings_row(ovl, x, iy, w, row_h,
-						  name, val, sel, true, EMU_OVL_FONT_SMALL);
+						  emu_i18n(name), emu_i18n(val), sel, true, EMU_OVL_FONT_SMALL);
 	}
 
 	// Description for selected cheat (inline, matching settings pattern)
@@ -1714,8 +1717,9 @@ static void render_cheats(EmuOvl* ovl) {
 	int desc_cy = desc_y + row_h / 2 - r->text_height(EMU_OVL_FONT_TINY) / 2;
 	const char* desc = ovl->cheat_cb.get_description ? ovl->cheat_cb.get_description(ovl->selected) : NULL;
 	if (desc && desc[0] != '\0') {
-		int tw = r->text_width(desc, EMU_OVL_FONT_TINY);
-		r->draw_text(desc, (ovl->screen_w - tw) / 2, desc_cy,
+		const char *description = emu_i18n(desc);
+		int tw = r->text_width(description, EMU_OVL_FONT_TINY);
+		r->draw_text(description, (ovl->screen_w - tw) / 2, desc_cy,
 					 ovl->theme.hint, EMU_OVL_FONT_TINY);
 	}
 
@@ -1725,9 +1729,9 @@ static void render_cheats(EmuOvl* ovl) {
 
 static const char* scope_label(EmuConfigScope scope) {
 	switch (scope) {
-	case EMU_SCOPE_NONE:    return "Using N64 defaults.";
-	case EMU_SCOPE_CONSOLE: return "Using N64 settings.";
-	case EMU_SCOPE_GAME:    return "Using this game's settings.";
+	case EMU_SCOPE_NONE:    return emu_i18n("Using N64 defaults.");
+	case EMU_SCOPE_CONSOLE: return emu_i18n("Using N64 settings.");
+	case EMU_SCOPE_GAME:    return emu_i18n("Using this game's settings.");
 	}
 	return "";
 }
@@ -1735,7 +1739,7 @@ static const char* scope_label(EmuConfigScope scope) {
 static void render_save_changes(EmuOvl* ovl) {
 	EmuOvlRenderBackend* r = ovl->render;
 
-	draw_menu_bar(ovl, "Save Changes", NULL);
+	draw_menu_bar(ovl, emu_i18n("Save Changes"), NULL);
 	draw_content_panel(ovl, content_panel_top(), content_bottom(ovl));
 
 	// Scope indicator below the title
@@ -1757,7 +1761,7 @@ static void render_save_changes(EmuOvl* ovl) {
 		int iy = list_y + i * row_h;
 		bool sel = (i == ovl->selected);
 		draw_settings_row(ovl, x, iy, w, row_h,
-						  items[i], NULL, sel, false, EMU_OVL_FONT_LARGE);
+						  emu_i18n(items[i]), NULL, sel, false, EMU_OVL_FONT_LARGE);
 	}
 
 	const char* hints[] = {"B", "Back", "A", "Save"};
@@ -1838,7 +1842,7 @@ void emu_ovl_render_status(EmuOvl* ovl, const char* message) {
 	r->draw_captured_frame(0.42f);
 	draw_menu_bar(ovl, ovl->game_name, ovl->console_name);
 	draw_content_panel(ovl, content_panel_top(), content_bottom(ovl));
-	draw_centered_text(r, message && message[0] ? message : "Working...",
+	draw_centered_text(r, message && message[0] ? emu_i18n(message) : emu_i18n("Working..."),
 					   ovl->screen_w / 2, (content_top() + content_bottom(ovl)) / 2,
 					   ovl->theme.text, EMU_OVL_FONT_LARGE);
 	r->end_frame();

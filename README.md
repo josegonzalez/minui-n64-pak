@@ -74,6 +74,11 @@ the console or per-game `.cfg` files.
 
 ## Options
 
+The overlay reads the language from Leaf/Jawaka's environment at startup.
+`EMU_LANGUAGE` takes precedence, followed by `UMRK_LANGUAGE` and then
+`JAWAKA_LANGUAGE`. The selected value is used directly as the language
+filename, so `JAWAKA_LANGUAGE=zh_CN` loads `language/zh_CN.txt`.
+
 The embedded options menu can save settings globally or per game. Video plugin
 changes require restarting the game; most input and shortcut changes apply
 during the current session.

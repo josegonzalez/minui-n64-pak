@@ -1,5 +1,5 @@
 diff --git a/projects/unix/Makefile b/projects/unix/Makefile
-index da26ff1..28c4af1 100755
+index da26ff1..ff988a9 100755
 --- a/projects/unix/Makefile
 +++ b/projects/unix/Makefile
 @@ -140,11 +140,12 @@ endif
@@ -27,7 +27,7 @@ index da26ff1..28c4af1 100755
  
  # set mupen64plus core API header path
  ifneq ("$(APIDIR)","")
-@@ -370,7 +371,12 @@ SOURCE = \
+@@ -370,7 +371,13 @@ SOURCE = \
  	$(SRCDIR)/TextureFilters_hq4x.cpp \
  	$(SRCDIR)/TextureManager.cpp \
  	$(SRCDIR)/VectorMath.cpp \
@@ -37,11 +37,12 @@ index da26ff1..28c4af1 100755
 +	$(OVERLAY_DIR)/emu_overlay_cfg.c \
 +	$(OVERLAY_DIR)/emu_overlay_sdl.c \
 +	$(OVERLAY_DIR)/emu_frontend.c \
++	$(OVERLAY_DIR)/emu_i18n.c \
 +	$(OVERLAY_DIR)/cjson/cJSON.c
  
  ifeq ($(OS),MINGW)
  SOURCE += \
-@@ -383,8 +389,11 @@ SOURCE += \
+@@ -383,8 +390,11 @@ SOURCE += \
  endif
  
  # generate a list of object files build, make a temporary directory for them
@@ -55,7 +56,7 @@ index da26ff1..28c4af1 100755
  OBJDIRS = $(dir $(OBJECTS))
  $(shell $(MKDIR) $(OBJDIRS))
  
-@@ -449,6 +458,10 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
+@@ -449,6 +459,10 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
  $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
  	$(COMPILE.cc) -o $@ $<
  
