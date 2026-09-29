@@ -252,7 +252,11 @@ static void load_theme(EmuOvl* ovl) {
 	theme.panel_strong = color_with_alpha(background, 230);
 	if (!have_accent)
 		theme.accent = color_with_alpha(background, 255);
-	if (!have_highlighted_text)
+	if (background == 0xFF0E0E0Eu && theme.text == 0xFFECECECu &&
+		theme.highlight == 0xFFCFCFCFu)
+		// Ebony's light selection pill needs its dark background color for contrast.
+		theme.highlighted_text = background;
+	else if (!have_highlighted_text)
 		theme.highlighted_text =
 			derive_highlighted_text(background, theme.text, theme.highlight);
 	if (!have_button_glyph_bg)
