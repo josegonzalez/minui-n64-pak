@@ -38,6 +38,10 @@ RICE_REPO    := https://github.com/mupen64plus/mupen64plus-video-rice
 # upstream master as of 2026-09-14
 RICE_REV     := f0a7b9f391b0e9bc14962b114f7da1ba553060be
 
+GLIDE64MK2_REPO := https://github.com/mupen64plus/mupen64plus-video-glide64mk2
+# upstream master as of 2026-06-23
+GLIDE64MK2_REV  := b07cb0bc8f29d6ee43efdf0a4d5a1b878ba98393
+
 NX_REDUX_REPO := https://github.com/mohammadsyuhada/nx-redux
 NX_REDUX_TAG  := v1.1.1
 
@@ -120,7 +124,8 @@ all: dist
 clone: $(SRC)/mupen64plus-core $(SRC)/mupen64plus-ui-console \
        $(SRC)/mupen64plus-audio-sdl $(SRC)/mupen64plus-input-sdl \
        $(SRC)/mupen64plus-rsp-hle $(SRC)/GLideN64 \
-       $(SRC)/mupen64plus-video-rice $(SRC)/nx-redux \
+       $(SRC)/mupen64plus-video-rice $(SRC)/mupen64plus-video-glide64mk2 \
+       $(SRC)/nx-redux \
        $(SRC)/zlib $(SRC)/zstd $(SRC)/7zip/7zzs
 	@# Populate GLES headers and unmodified patches from nx-redux
 	@# (overlay/ sources are vendored in the repo — not pulled from nx-redux)
@@ -159,6 +164,9 @@ $(SRC)/GLideN64:
 
 $(SRC)/mupen64plus-video-rice:
 	$(call CLONE_REV,$@,$(RICE_REPO),$(RICE_REV))
+
+$(SRC)/mupen64plus-video-glide64mk2:
+	$(call CLONE_REV,$@,$(GLIDE64MK2_REPO),$(GLIDE64MK2_REV))
 
 $(SRC)/nx-redux:
 	git clone --depth 1 --branch $(NX_REDUX_TAG) $(NX_REDUX_REPO) $@
@@ -201,6 +209,7 @@ $(PATCH_STAMP): | clone
 		cd $(SRC)/GLideN64 && git apply --exclude='src/GLideNHQ/lib/*.a' $(PATCHES)/GLideN64-standalone.patch; \
 		cd $(SRC)/mupen64plus-input-sdl && git apply $(PATCHES)/mupen64plus-input-sdl.patch; \
 		cd $(SRC)/mupen64plus-video-rice && git apply $(PATCHES)/mupen64plus-video-rice.patch; \
+		cd $(SRC)/mupen64plus-video-glide64mk2 && git apply $(PATCHES)/mupen64plus-video-glide64mk2.patch; \
 		touch $(PATCH_STAMP); \
 	fi
 
@@ -366,6 +375,25 @@ rice-my355: $(PATCH_STAMP) my355-libpng
 rice-h700: $(PATCH_STAMP)
 	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(H700_OPTFLAGS)" USE_GLES=1'
 
+# ── Glide64mk2 video plugin (built per-platform toolchain) ───────────────────
+# Same flags as Rice: it links the platform's libpng too. GlideHQ (HIRES) is
+# left at the upstream default so texture enhancement and Rice-format hi-res
+# packs work.
+
+.PHONY: glide64mk2-tg5040 glide64mk2-tg5050 glide64mk2-my355 glide64mk2-h700
+
+glide64mk2-tg5040: $(PATCH_STAMP)
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-video-glide64mk2/projects/unix && rm -rf _obj mupen64plus-video-glide64mk2.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5040_OPTFLAGS)" USE_GLES=1'
+
+glide64mk2-tg5050: $(PATCH_STAMP) tg5050-libpng-headers
+	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-video-glide64mk2/projects/unix && rm -rf _obj mupen64plus-video-glide64mk2.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5050_OPTFLAGS)" USE_GLES=1 CPPFLAGS="-I/build/include" LIBPNG_CFLAGS="-I/build/src/libpng-headers/libpng-1.6.37" LIBPNG_LDLIBS="-lpng16 -lz"'
+
+glide64mk2-my355: $(PATCH_STAMP) my355-libpng
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-video-glide64mk2/projects/unix && rm -rf _obj mupen64plus-video-glide64mk2.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(MY355_OPTFLAGS)" USE_GLES=1 CPPFLAGS="-I/build/include" LIBPNG_CFLAGS="-I/build/src/libpng-build/libpng-1.6.37" LIBPNG_LDLIBS="/build/src/libpng-build/libpng-1.6.37/.libs/libpng16.a -lz"'
+
+glide64mk2-h700: $(PATCH_STAMP)
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-video-glide64mk2/projects/unix && rm -rf _obj mupen64plus-video-glide64mk2.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(H700_OPTFLAGS)" USE_GLES=1'
+
 # ── INI CLI tool (pure C, no SDK dependencies) ──────────────────────────────
 
 ini-tg5040:
@@ -398,21 +426,22 @@ define STAGE_PLATFORM
 	cp $(SRC)/mupen64plus-input-sdl/projects/unix/mupen64plus-input-sdl.so $(BUILD)/$(1)/
 	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(BUILD)/$(1)/
 	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(BUILD)/$(1)/
+	cp $(SRC)/mupen64plus-video-glide64mk2/projects/unix/mupen64plus-video-glide64mk2.so $(BUILD)/$(1)/
 	cp $(ROOT)/tools/ini/dist/$(1)/ini $(BUILD)/$(1)/
 	@# Drop debug info from what ships; strip -s keeps .dynsym for dlsym lookups.
 	$(2) bash -c 'cd /build/build/$(1) && $(CROSS)strip -s libmupen64plus.so.2 mupen64plus mupen64plus-*.so'
 endef
 
-stage-tg5040: tg5040 rice-tg5040 ini-tg5040
+stage-tg5040: tg5040 rice-tg5040 glide64mk2-tg5040 ini-tg5040
 	$(call STAGE_PLATFORM,tg5040,$(DOCKER_RUN_TG5040))
 
-stage-tg5050: tg5050 rice-tg5050 ini-tg5050
+stage-tg5050: tg5050 rice-tg5050 glide64mk2-tg5050 ini-tg5050
 	$(call STAGE_PLATFORM,tg5050,$(DOCKER_RUN_TG5050))
 
-stage-my355: my355 rice-my355 ini-my355
+stage-my355: my355 rice-my355 glide64mk2-my355 ini-my355
 	$(call STAGE_PLATFORM,my355,$(DOCKER_RUN_MY355))
 
-stage-h700: h700 rice-h700 ini-h700
+stage-h700: h700 rice-h700 glide64mk2-h700 ini-h700
 	$(call STAGE_PLATFORM,h700,$(DOCKER_RUN_H700))
 
 # ── Dist assembly ─────────────────────────────────────────────────────────────
@@ -431,6 +460,9 @@ define DIST_COMMON
 	cp $(SRC)/mupen64plus-input-sdl/data/InputAutoCfg.ini $(1)/
 	cp $(SRC)/mupen64plus-core/data/mupencheat.txt     $(1)/
 	cp $(SRC)/mupen64plus-video-rice/data/RiceVideoLinux.ini $(1)/
+	cp $(SRC)/mupen64plus-video-glide64mk2/data/Glide64mk2.ini $(1)/
+	@# Glide64mk2 defaults merged once into configs seeded before the plugin shipped.
+	cp $(CONFIG)/shared/video-glide64mk2.cfg $(1)/
 	cp $(SRC)/7zip/7zzs                                $(1)/
 	cp $(SRC)/7zip/License.txt                         $(1)/7zzs.LICENSE
 	cp pak.json $(1)/
@@ -454,6 +486,7 @@ dist-tg5040: stage-tg5040 gliden64
 	cp $(BUILD)/tg5040/mupen64plus-input-sdl.so $(DIST)/tg5040/
 	cp $(BUILD)/tg5040/mupen64plus-rsp-hle.so $(DIST)/tg5040/
 	cp $(BUILD)/tg5040/mupen64plus-video-rice.so $(DIST)/tg5040/
+	cp $(BUILD)/tg5040/mupen64plus-video-glide64mk2.so $(DIST)/tg5040/
 	$(call DIST_COMMON,$(DIST)/tg5040)
 	cp $(BUILD)/tg5040/ini $(DIST)/tg5040/
 	@# The tg5040 sysroot carries libpng12, so that is what the core and Rice link
@@ -473,6 +506,7 @@ dist-tg5050: stage-tg5050 gliden64
 	cp $(BUILD)/tg5050/mupen64plus-input-sdl.so $(DIST)/tg5050/
 	cp $(BUILD)/tg5050/mupen64plus-rsp-hle.so $(DIST)/tg5050/
 	cp $(BUILD)/tg5050/mupen64plus-video-rice.so $(DIST)/tg5050/
+	cp $(BUILD)/tg5050/mupen64plus-video-glide64mk2.so $(DIST)/tg5050/
 	$(call DIST_COMMON,$(DIST)/tg5050)
 	cp $(BUILD)/tg5050/ini $(DIST)/tg5050/
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.so.16.37.0 /build/dist/N64.pak/tg5050/libpng16.so.16
@@ -488,6 +522,7 @@ dist-my355: stage-my355 gliden64
 	cp $(BUILD)/my355/mupen64plus-input-sdl.so $(DIST)/my355/
 	cp $(BUILD)/my355/mupen64plus-rsp-hle.so $(DIST)/my355/
 	cp $(BUILD)/my355/mupen64plus-video-rice.so $(DIST)/my355/
+	cp $(BUILD)/my355/mupen64plus-video-glide64mk2.so $(DIST)/my355/
 	$(call DIST_COMMON,$(DIST)/my355)
 	cp $(BUILD)/my355/ini $(DIST)/my355/
 	$(DOCKER_RUN_MY355) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libz.so.1.3.1 /build/dist/N64.pak/my355/libz.so.1
@@ -502,6 +537,7 @@ dist-h700: stage-h700 gliden64
 	cp $(BUILD)/h700/mupen64plus-input-sdl.so $(DIST)/h700/
 	cp $(BUILD)/h700/mupen64plus-rsp-hle.so $(DIST)/h700/
 	cp $(BUILD)/h700/mupen64plus-video-rice.so $(DIST)/h700/
+	cp $(BUILD)/h700/mupen64plus-video-glide64mk2.so $(DIST)/h700/
 	$(call DIST_COMMON,$(DIST)/h700)
 	cp $(BUILD)/h700/ini $(DIST)/h700/
 	@# The h700 sysroot carries libpng12, so that is what the core and Rice link
@@ -544,6 +580,7 @@ patches:
 	cd $(SRC)/mupen64plus-ui-console && git add -N . && git diff > $(PATCHES)/mupen64plus-ui-console.patch && git reset -q
 	cd $(SRC)/mupen64plus-input-sdl && git add -N . && git diff > $(PATCHES)/mupen64plus-input-sdl.patch && git reset -q
 	cd $(SRC)/mupen64plus-video-rice && git add -N . && git diff > $(PATCHES)/mupen64plus-video-rice.patch && git reset -q
+	cd $(SRC)/mupen64plus-video-glide64mk2 && git add -N . && git diff > $(PATCHES)/mupen64plus-video-glide64mk2.patch && git reset -q
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
