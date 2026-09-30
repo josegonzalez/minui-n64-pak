@@ -56,6 +56,13 @@ TG5050_CPUFLAGS := -mcpu=cortex-a55 -mtune=cortex-a55
 MY355_CPUFLAGS  := -mcpu=cortex-a55 -mtune=cortex-a55
 H700_CPUFLAGS   := -mcpu=cortex-a53 -mtune=cortex-a53
 
+# Upstream Makefiles default to -O3 -flto; keep LTO when adding CPU flags.
+# Plain -flto because the toolchain is GCC 8.3 and -flto=auto needs GCC 10.
+TG5040_OPTFLAGS := -O3 -flto $(TG5040_CPUFLAGS)
+TG5050_OPTFLAGS := -O3 -flto $(TG5050_CPUFLAGS)
+MY355_OPTFLAGS  := -O3 -flto $(MY355_CPUFLAGS)
+H700_OPTFLAGS   := -O3 -flto $(H700_CPUFLAGS)
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 ROOT     := $(shell pwd)
 SRC      := $(ROOT)/src
@@ -193,19 +200,19 @@ PLUGIN_MAKE := CROSS_COMPILE=$(CROSS) HOST_CPU=$(HOST_CPU) PIE=1 \
 tg5040: tg5040-core tg5040-ui tg5040-audio tg5040-input tg5040-rsp
 
 tg5040-core: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="$(TG5040_OPTFLAGS)"'
 
 tg5040-ui: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)" COREDIR="./" PLUGINDIR="./"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5040_OPTFLAGS)" COREDIR="./" PLUGINDIR="./"'
 
 tg5040-audio: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5040_OPTFLAGS)"'
 
 tg5040-input: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5040_OPTFLAGS)"'
 
 tg5040-rsp: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5040_OPTFLAGS)"'
 
 # ── TG5050 build ──────────────────────────────────────────────────────────────
 
@@ -226,19 +233,19 @@ $(TG5050_LIBPNG_DIR)/pnglibconf.h:
 tg5050: tg5050-core tg5050-ui tg5050-audio tg5050-input tg5050-rsp
 
 tg5050-core: $(PATCH_STAMP) tg5050-libpng-headers
-	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="-O3 $(TG5050_CPUFLAGS)" LIBPNG_CFLAGS="-I/build/src/libpng-headers/libpng-1.6.37" LIBPNG_LDLIBS="-lpng16 -lz"'
+	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="$(TG5050_OPTFLAGS)" LIBPNG_CFLAGS="-I/build/src/libpng-headers/libpng-1.6.37" LIBPNG_LDLIBS="-lpng16 -lz"'
 
 tg5050-ui: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5050_CPUFLAGS)" COREDIR="./" PLUGINDIR="./"'
+	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5050_OPTFLAGS)" COREDIR="./" PLUGINDIR="./"'
 
 tg5050-audio: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5050_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5050_OPTFLAGS)"'
 
 tg5050-input: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5050_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5050_OPTFLAGS)"'
 
 tg5050-rsp: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5050_CPUFLAGS)"'
+	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5050_OPTFLAGS)"'
 
 # ── MY355 build ──────────────────────────────────────────────────────────────
 
@@ -264,19 +271,19 @@ $(MY355_LIBPNG_DIR)/.libs/libpng16.a:
 my355: my355-core my355-ui my355-audio my355-input my355-rsp
 
 my355-core: $(PATCH_STAMP) my355-libpng
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="-O3 $(MY355_CPUFLAGS)" LIBPNG_CFLAGS="-I/build/src/libpng-build/libpng-1.6.37" LIBPNG_LDLIBS="/build/src/libpng-build/libpng-1.6.37/.libs/libpng16.a -lz"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="$(MY355_OPTFLAGS)" LIBPNG_CFLAGS="-I/build/src/libpng-build/libpng-1.6.37" LIBPNG_LDLIBS="/build/src/libpng-build/libpng-1.6.37/.libs/libpng16.a -lz"'
 
 my355-ui: $(PATCH_STAMP)
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)" COREDIR="./" PLUGINDIR="./"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(MY355_OPTFLAGS)" COREDIR="./" PLUGINDIR="./"'
 
 my355-audio: $(PATCH_STAMP)
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(MY355_OPTFLAGS)"'
 
 my355-input: $(PATCH_STAMP)
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(MY355_OPTFLAGS)"'
 
 my355-rsp: $(PATCH_STAMP)
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(MY355_OPTFLAGS)"'
 
 # ── H700 build ───────────────────────────────────────────────────────────────
 # Same cross compiler and sysroot as tg5040, so no libpng workaround is needed.
@@ -287,19 +294,19 @@ my355-rsp: $(PATCH_STAMP)
 h700: h700-core h700-ui h700-audio h700-input h700-rsp
 
 h700-core: $(PATCH_STAMP)
-	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="-O3 $(H700_CPUFLAGS)"'
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-core/projects/unix && rm -rf _obj libmupen64plus.so* ../../src/asm_defines/asm_defines_gas.h ../../src/asm_defines/asm_defines_nasm.h && make -j$$(nproc) all $(CORE_FLAGS) OPTFLAGS="$(H700_OPTFLAGS)"'
 
 h700-ui: $(PATCH_STAMP)
-	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)" COREDIR="./" PLUGINDIR="./"'
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-ui-console/projects/unix && rm -rf _obj mupen64plus && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(H700_OPTFLAGS)" COREDIR="./" PLUGINDIR="./"'
 
 h700-audio: $(PATCH_STAMP)
-	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)"'
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-audio-sdl/projects/unix && rm -rf _obj mupen64plus-audio-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(H700_OPTFLAGS)"'
 
 h700-input: $(PATCH_STAMP)
-	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)"'
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-input-sdl/projects/unix && rm -rf _obj mupen64plus-input-sdl.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(H700_OPTFLAGS)"'
 
 h700-rsp: $(PATCH_STAMP)
-	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)"'
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-rsp-hle/projects/unix && rm -rf _obj mupen64plus-rsp-hle.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(H700_OPTFLAGS)"'
 
 # ── GLideN64 (shared — built with tg5040 toolchain) ──────────────────────────
 
@@ -313,23 +320,23 @@ gliden64: $(PATCH_STAMP)
 	@#   libz.a from zlib source build above
 	$(DOCKER_RUN_TG5050) install -m 0644 /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr/lib/libpng16.a /build/src/GLideN64/src/GLideNHQ/lib/libpng.a
 	cp $(SRC)/zlib/libz.a $(SRC)/GLideN64/src/GLideNHQ/lib/libz.a
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/GLideN64/src && mkdir -p build && cd build && cmake -DCMAKE_TOOLCHAIN_FILE=../../toolchain-aarch64.cmake -DMUPENPLUSAPI=ON -DEGL=ON -DMESA=ON -DNEON_OPT=ON -DCRC_ARMV8=ON .. && make -j$$(nproc) mupen64plus-video-GLideN64'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/GLideN64/src && mkdir -p build && cd build && cmake -DCMAKE_TOOLCHAIN_FILE=../../toolchain-aarch64.cmake -DMUPENPLUSAPI=ON -DEGL=ON -DMESA=ON -DNEON_OPT=ON -DCRC_ARMV8=ON .. && make -j$$(nproc) mupen64plus-video-GLideN64 && $(CROSS)strip -s plugin/Release/mupen64plus-video-GLideN64.so'
 
 # ── Rice video plugin (built per-platform toolchain) ─────────────────────────
 
 .PHONY: rice-tg5040 rice-tg5050 rice-my355 rice-h700
 
 rice-tg5040: $(PATCH_STAMP)
-	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5040_CPUFLAGS)" USE_GLES=1'
+	$(DOCKER_RUN_TG5040) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5040_OPTFLAGS)" USE_GLES=1'
 
 rice-tg5050: $(PATCH_STAMP) tg5050-libpng-headers
-	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(TG5050_CPUFLAGS)" USE_GLES=1 CPPFLAGS="-I/build/include" LIBPNG_CFLAGS="-I/build/src/libpng-headers/libpng-1.6.37" LIBPNG_LDLIBS="-lpng16 -lz"'
+	$(DOCKER_RUN_TG5050) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(TG5050_OPTFLAGS)" USE_GLES=1 CPPFLAGS="-I/build/include" LIBPNG_CFLAGS="-I/build/src/libpng-headers/libpng-1.6.37" LIBPNG_LDLIBS="-lpng16 -lz"'
 
 rice-my355: $(PATCH_STAMP) my355-libpng
-	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(MY355_CPUFLAGS)" USE_GLES=1 CPPFLAGS="-I/build/include" LIBPNG_CFLAGS="-I/build/src/libpng-build/libpng-1.6.37" LIBPNG_LDLIBS="/build/src/libpng-build/libpng-1.6.37/.libs/libpng16.a -lz"'
+	$(DOCKER_RUN_MY355) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(MY355_OPTFLAGS)" USE_GLES=1 CPPFLAGS="-I/build/include" LIBPNG_CFLAGS="-I/build/src/libpng-build/libpng-1.6.37" LIBPNG_LDLIBS="/build/src/libpng-build/libpng-1.6.37/.libs/libpng16.a -lz"'
 
 rice-h700: $(PATCH_STAMP)
-	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="-O3 $(H700_CPUFLAGS)" USE_GLES=1'
+	$(DOCKER_RUN_H700) bash -c 'cd /build/src/mupen64plus-video-rice/projects/unix && rm -rf _obj mupen64plus-video-rice.so && make -j$$(nproc) all $(PLUGIN_MAKE) OPTFLAGS="$(H700_OPTFLAGS)" USE_GLES=1'
 
 # ── INI CLI tool (pure C, no SDK dependencies) ──────────────────────────────
 
@@ -364,19 +371,21 @@ define STAGE_PLATFORM
 	cp $(SRC)/mupen64plus-rsp-hle/projects/unix/mupen64plus-rsp-hle.so     $(BUILD)/$(1)/
 	cp $(SRC)/mupen64plus-video-rice/projects/unix/mupen64plus-video-rice.so $(BUILD)/$(1)/
 	cp $(ROOT)/tools/ini/dist/$(1)/ini $(BUILD)/$(1)/
+	@# Drop debug info from what ships; strip -s keeps .dynsym for dlsym lookups.
+	$(2) bash -c 'cd /build/build/$(1) && $(CROSS)strip -s libmupen64plus.so.2 mupen64plus mupen64plus-*.so'
 endef
 
 stage-tg5040: tg5040 rice-tg5040 ini-tg5040
-	$(call STAGE_PLATFORM,tg5040)
+	$(call STAGE_PLATFORM,tg5040,$(DOCKER_RUN_TG5040))
 
 stage-tg5050: tg5050 rice-tg5050 ini-tg5050
-	$(call STAGE_PLATFORM,tg5050)
+	$(call STAGE_PLATFORM,tg5050,$(DOCKER_RUN_TG5050))
 
 stage-my355: my355 rice-my355 ini-my355
-	$(call STAGE_PLATFORM,my355)
+	$(call STAGE_PLATFORM,my355,$(DOCKER_RUN_MY355))
 
 stage-h700: h700 rice-h700 ini-h700
-	$(call STAGE_PLATFORM,h700)
+	$(call STAGE_PLATFORM,h700,$(DOCKER_RUN_H700))
 
 # ── Dist assembly ─────────────────────────────────────────────────────────────
 

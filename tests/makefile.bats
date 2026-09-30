@@ -71,6 +71,37 @@ mk() { # <VAR>
     [ "$output" = "MY355_CPUFLAGS=-mcpu=cortex-a55 -mtune=cortex-a55" ]
 }
 
+# Passing OPTFLAGS overrides the upstream `-O3 -flto` default, so LTO has to be
+# carried along with the CPU flags or it silently drops out.
+@test "every platform keeps LTO alongside its CPU flags" {
+    for platform in $(jq -r '.platforms[]' "$REPO_ROOT/pak.json"); do
+        upper="$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
+        mk "${upper}_CPUFLAGS"
+        cpuflags="${output#*=}"
+
+        mk "${upper}_OPTFLAGS"
+        [ "$output" = "${upper}_OPTFLAGS=-O3 -flto $cpuflags" ]
+    done
+}
+
+@test "no build target bypasses the per-platform OPTFLAGS" {
+    run grep -n 'OPTFLAGS="-O3' "$REPO_ROOT/Makefile"
+    [ "$status" -ne 0 ]
+}
+
+@test "shipped binaries are stripped" {
+    run grep -q 'strip -s libmupen64plus.so.2 mupen64plus mupen64plus-\*.so' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+    run grep -q 'strip -s plugin/Release/mupen64plus-video-GLideN64.so' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+    # Each platform strips with its own toolchain.
+    for platform in $(jq -r '.platforms[]' "$REPO_ROOT/pak.json"); do
+        upper="$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
+        run grep -q "STAGE_PLATFORM,$platform,\$(DOCKER_RUN_${upper}))" "$REPO_ROOT/Makefile"
+        [ "$status" -eq 0 ]
+    done
+}
+
 # ── the docker env helper is checked in, not generated ──────────────────────
 
 @test "the docker runners invoke the checked-in env helper" {
