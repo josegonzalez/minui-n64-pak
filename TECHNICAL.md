@@ -58,21 +58,21 @@ make -C tools/ini test   # C unit tests for the ini CLI helper
 bats tests/              # shell tests
 ```
 
-`tests/platform.bats` unit-tests `n64_platform_profile` (see [Platform profile](#platform-profile)) across every platform and device variant. `tests/makefile.bats` asserts the per-platform build wiring by introspecting the Makefile through `make print-<VAR>`; several of its cases walk `pak.json`'s platform list, so a platform added there without its build targets fails the suite. CI runs both on every pull request.
+`tests/platform.bats` unit-tests `n64_platform_profile` (see [Platform profile](#platform-profile)) across every platform and device variant. `tests/makefile.bats` asserts the per-platform build wiring by introspecting the Makefile through `make print-<VAR>`; several of its cases walk `pak.json`'s platform list, so a platform added there without its build targets fails the suite. It also checks that every upstream component is pinned to a full commit SHA and that `make patch` stops at the first patch that fails to apply. CI runs both on every pull request.
 
 ## Components
 
-All components are built from upstream via Docker cross-compilation toolchains.
+All components are built from upstream via Docker cross-compilation toolchains, each pinned to a commit on upstream master (the `*_REV` variables in the `Makefile`).
 
 | Component | Source | Output |
 |-----------|--------|--------|
-| mupen64plus-core | `mupen64plus/mupen64plus-core` @ 2.6.0 | `libmupen64plus.so.2` |
-| mupen64plus-ui-console | `mupen64plus/mupen64plus-ui-console` @ 2.6.0 | `mupen64plus` |
-| mupen64plus-audio-sdl | `mupen64plus/mupen64plus-audio-sdl` @ 2.6.0 | `mupen64plus-audio-sdl.so` |
-| mupen64plus-input-sdl | `mupen64plus/mupen64plus-input-sdl` @ 2.6.0 | `mupen64plus-input-sdl.so` |
-| mupen64plus-rsp-hle | `mupen64plus/mupen64plus-rsp-hle` @ 2.6.0 | `mupen64plus-rsp-hle.so` |
-| GLideN64 | `gonetz/GLideN64` @ c8ef81c | `mupen64plus-video-GLideN64.so` |
-| mupen64plus-video-rice | `mupen64plus/mupen64plus-video-rice` @ 2.6.0 | `mupen64plus-video-rice.so` |
+| mupen64plus-core | `mupen64plus/mupen64plus-core` @ b20b27e | `libmupen64plus.so.2` |
+| mupen64plus-ui-console | `mupen64plus/mupen64plus-ui-console` @ c8ac486 | `mupen64plus` |
+| mupen64plus-audio-sdl | `mupen64plus/mupen64plus-audio-sdl` @ 2faed1c | `mupen64plus-audio-sdl.so` |
+| mupen64plus-input-sdl | `mupen64plus/mupen64plus-input-sdl` @ 842c39e | `mupen64plus-input-sdl.so` |
+| mupen64plus-rsp-hle | `mupen64plus/mupen64plus-rsp-hle` @ 8a7a472 | `mupen64plus-rsp-hle.so` |
+| GLideN64 | `gonetz/GLideN64` @ 41c7ba2 | `mupen64plus-video-GLideN64.so` |
+| mupen64plus-video-rice | `mupen64plus/mupen64plus-video-rice` @ f0a7b9f | `mupen64plus-video-rice.so` |
 
 ## ROM formats
 
@@ -365,7 +365,7 @@ The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagg
 | Frame Buffer | FB Emulation, Color to RDRAM, Depth to RDRAM, Color from RDRAM, N64 Depth Compare, Disable FB Info | |
 | Gamma | Force Gamma, Gamma Level | |
 | Hi-Res Textures | Enable Hi-Res, File Storage, Full Alpha Channel, Alt CRC, VRAM Limit | |
-| Performance | Inaccurate Tex Coords, Legacy Blending, Shader Cache, Fragment Depth Write, Backgrounds Mode, Threaded Video | |
+| Performance | Inaccurate Tex Coords, Legacy Blending, Shader Cache, Fragment Depth Write, Backgrounds Mode, Threaded Video, Async Shaders | |
 | Rendering | Resolution Factor, Aspect Ratio, FXAA, Multi-Sampling, Anisotropic Filtering, Bilinear Mode, Hybrid Filter, HW Lighting, LOD Emulation, Coverage, Clipping, Buffer Swap Mode | |
 | Texture Enhancement | Filter Mode, Enhancement Mode, Deposterize, Ignore BG Textures, Texture Cache Size | |
 
@@ -456,7 +456,7 @@ h700 has to bundle its own: the stock OS ships only a 32-bit libpng12 under `/mn
 ### Bundled zlib
 
 Every platform links `libz.so.1` through `libmupen64plus`, and all of them ship the tg5050 sysroot's 1.2.12 rather than the 1.2.8 the tg5040 and h700 sysroots carry. Only tg5050 strictly needs the newer one: `libpng16.so.16` is the sole library in the tree referencing `ZLIB_1.2.9`, and the pak's own binaries reference no versioned zlib symbols at all.
-- **GLideN64**: Built once using the tg5040 toolchain. The resulting `.so` is shared across every platform. It dlopens `libGLESv2.so.2` and `libEGL.so.1` at runtime rather than linking them.
+- **GLideN64**: Built once using the tg5040 toolchain. The resulting `.so` is shared across every platform. It dlopens `libGLESv2.so.2` and `libEGL.so.1` at runtime rather than linking them. GLideNHQ links the static `libpng.a`, `libz.a` and `libzstd.a` bundled in its `src/GLideNHQ/lib/`, which are x86-64 and macOS builds, so the `gliden64` target replaces them with aarch64 ones: libpng16 from the tg5050 sysroot, and zlib and zstd cross-built from source.
 - **Rice**: Built per-toolchain (one `.so` per platform) because it links against the platform-specific libpng. The overlay sources are injected into its Makefile by `patches/shared/mupen64plus-video-rice.patch`.
 
 ### Docker environment

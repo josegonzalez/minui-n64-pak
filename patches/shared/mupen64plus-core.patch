@@ -53,10 +53,10 @@ index cff288d..05d7797 100644
              iNumActiveSections++;
          }
 diff --git a/src/api/frontend.c b/src/api/frontend.c
-index 956f96f..b3d3235 100644
+index d9cc152..9e92e18 100644
 --- a/src/api/frontend.c
 +++ b/src/api/frontend.c
-@@ -371,6 +371,13 @@ EXPORT m64p_error CALL CoreDoCommand(m64p_command Command, int ParamInt, void *P
+@@ -377,6 +377,13 @@ EXPORT m64p_error CALL CoreDoCommand(m64p_command Command, int ParamInt, void *P
                  return M64ERR_INCOMPATIBLE;
          case M64CMD_NETPLAY_CLOSE:
              return netplay_stop();
@@ -85,7 +85,7 @@ index 088f011..daa9d63 100644
  
  typedef struct {
 diff --git a/src/main/main.c b/src/main/main.c
-index e317570..1b67f7c 100644
+index 87dab35..cf96466 100644
 --- a/src/main/main.c
 +++ b/src/main/main.c
 @@ -168,6 +168,12 @@ static char *get_save_filename(void)
@@ -111,10 +111,10 @@ index e317570..1b67f7c 100644
      /* handle upgrades */
      if (bUpgrade)
 diff --git a/src/main/rom.c b/src/main/rom.c
-index 325c5b6..e450c4f 100644
+index 445610a..d3bef13 100644
 --- a/src/main/rom.c
 +++ b/src/main/rom.c
-@@ -177,6 +177,7 @@ m64p_error open_rom(const unsigned char* romimage, unsigned int size)
+@@ -181,6 +181,7 @@ m64p_error open_rom(const unsigned char* romimage, unsigned int size)
      memcpy(ROM_PARAMS.headername, ROM_HEADER.Name, 20);
      ROM_PARAMS.headername[20] = '\0';
      trim(ROM_PARAMS.headername); /* Remove trailing whitespace from ROM name. */

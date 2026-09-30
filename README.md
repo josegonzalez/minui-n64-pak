@@ -1,6 +1,6 @@
 # N64 for MinUI
 
-A MinUI Emu Pak for N64, wrapping the standalone `mupen64plus` N64 emulator (version 2.6.0).
+A MinUI Emu Pak for N64, wrapping the standalone `mupen64plus` N64 emulator, built from pinned upstream commits.
 
 ![N64 for MinUI](n64.png)
 

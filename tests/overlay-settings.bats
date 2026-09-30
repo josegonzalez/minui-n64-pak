@@ -94,6 +94,20 @@ EOF
     [ "$output" = "0" ]
 }
 
+# GLideN64 reads AsyncShaderCompilation once, when it sets up the combiner, so
+# a change only takes effect after a restart.
+@test "GLideN64 async shaders is an off-by-default toggle that needs a restart" {
+    item gliden64 AsyncShaderCompilation type
+    [ "$output" = '"bool"' ]
+    item gliden64 AsyncShaderCompilation default
+    [ "$output" = "false" ]
+    item gliden64 AsyncShaderCompilation restart_required
+    [ "$output" = "true" ]
+    run "$INI" get "$CFG" "Video-GLideN64" "AsyncShaderCompilation"
+    [ "$status" -eq 0 ]
+    [ "$output" = "False" ]
+}
+
 @test "overlay defaults agree with default.cfg" {
     run python3 "$REPO_ROOT/scripts/check-defaults.py" --include-all-sections
     echo "$output"

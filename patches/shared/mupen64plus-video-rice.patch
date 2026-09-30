@@ -1,5 +1,5 @@
 diff --git a/projects/unix/Makefile b/projects/unix/Makefile
-index da26ff1..c778424 100755
+index da26ff1..c778424 100644
 --- a/projects/unix/Makefile
 +++ b/projects/unix/Makefile
 @@ -140,11 +140,12 @@ endif
