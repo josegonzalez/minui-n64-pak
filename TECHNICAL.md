@@ -429,7 +429,7 @@ Applied immediately when changed. Persisted only via Options → Save Changes.
 | `PLUGINDIR="./"` | Search for plugins relative to CWD |
 | `OPTFLAGS="$(<PLAT>_OPTFLAGS)"` | `-O3 -flto` plus the platform's `-mcpu`/`-mtune`. Passing `OPTFLAGS` replaces the upstream `-O3 -flto` default, so LTO is kept explicitly |
 
-GLideN64 gets LTO from its own CMake (`USE_IPO`, on by default for Release builds). Every shipped binary and plugin is stripped with `strip -s` at staging time; `.dynsym` survives, so `dlsym` lookups such as `ROM_PARAMS` keep working.
+GLideN64 gets LTO from its own CMake (`USE_IPO`, on by default for Release builds). Every shipped binary and plugin is stripped with `strip -s` at staging time; `.dynsym` survives, so `dlsym` lookups such as `ConfigOverrideUserPaths` and `CoreAddCheat` keep working.
 
 ## Platform differences
 
