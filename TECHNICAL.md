@@ -30,6 +30,7 @@ This clones upstream repos, applies patches, builds each platform sequentially, 
 | `make h700` | Build core + audio/input/rsp plugins for h700 |
 | `make gliden64` | Build GLideN64 video plugin (shared across platforms) |
 | `make rice-<platform>` | Build Rice video plugin per-toolchain |
+| `make glide64mk2-<platform>` | Build Glide64mk2 video plugin per-toolchain |
 | `make ini-<platform>` | Cross-compile the `ini` CLI helper per-toolchain |
 | `make stage-<platform>` | Collect one platform's artifacts into `build/<platform>/` |
 | `make dist-<platform>` | Assemble `dist/N64.pak/<platform>/` |
@@ -58,7 +59,7 @@ make -C tools/ini test   # C unit tests for the ini CLI helper
 bats tests/              # shell tests
 ```
 
-`tests/platform.bats` unit-tests `n64_platform_profile` (see [Platform profile](#platform-profile)) across every platform and device variant. `tests/makefile.bats` asserts the per-platform build wiring by introspecting the Makefile through `make print-<VAR>`; several of its cases walk `pak.json`'s platform list, so a platform added there without its build targets fails the suite. It also checks that every upstream component is pinned to a full commit SHA and that `make patch` stops at the first patch that fails to apply. CI runs both on every pull request.
+`tests/platform.bats` unit-tests `n64_platform_profile` (see [Platform profile](#platform-profile)) across every platform and device variant, and `n64_video_plugin`'s mapping from the menu's Video Plugin value to a plugin library. `tests/makefile.bats` asserts the per-platform build wiring by introspecting the Makefile through `make print-<VAR>`; several of its cases walk `pak.json`'s platform list, so a platform added there without its build targets fails the suite. It also checks that every upstream component is pinned to a full commit SHA and that `make patch` stops at the first patch that fails to apply. CI runs both on every pull request.
 
 ## Components
 
@@ -73,6 +74,7 @@ All components are built from upstream via Docker cross-compilation toolchains, 
 | mupen64plus-rsp-hle | `mupen64plus/mupen64plus-rsp-hle` @ 8a7a472 | `mupen64plus-rsp-hle.so` |
 | GLideN64 | `gonetz/GLideN64` @ 41c7ba2 | `mupen64plus-video-GLideN64.so` |
 | mupen64plus-video-rice | `mupen64plus/mupen64plus-video-rice` @ f0a7b9f | `mupen64plus-video-rice.so` |
+| mupen64plus-video-glide64mk2 | `mupen64plus/mupen64plus-video-glide64mk2` @ b07cb0b | `mupen64plus-video-glide64mk2.so` |
 
 ## ROM formats
 
@@ -212,8 +214,11 @@ It sets the following, and everything downstream in `launch.sh` reads them rathe
 | `PROFILE_SWAPFILE` | swapfile path; empty skips swap entirely |
 | `PROFILE_LD_EXTRA_DIRS` | extra loader directories for the mupen64plus invocation |
 | `PROFILE_LD_PRELOAD` | EGL library to preload |
+| `PROFILE_GLIDE64MK2_LD_PRELOAD` | EGL library to preload when Glide64mk2 is the video plugin; empty on `tg5040` (see [TECHNICAL-Glide64mk2.md](TECHNICAL-Glide64mk2.md)) |
 | `PROFILE_HAS_LSTICK` / `PROFILE_HAS_RSTICK` | analog sticks the device carries |
 | `PROFILE_INPUT_CFG` | pad mapping to merge at first run; empty when default.cfg already fits |
+
+`platform.sh` also defines `n64_video_plugin`, which maps `[NextUI] VideoPlugin` (0 = GLideN64, 1 = Rice, 2 = Glide64mk2, anything else = Rice) to the plugin library and the `EMU_VIDEO_PLUGIN` name the overlay filters its items on.
 
 `platform.sh` ships in the pak root next to `launch.sh`.
 
@@ -235,10 +240,13 @@ dist/N64.pak/
 │   ├── mupen64plus-rsp-hle.so          RSP plugin
 │   ├── mupen64plus-video-GLideN64.so   GLideN64 video plugin
 │   ├── mupen64plus-video-rice.so       Rice video plugin
+│   ├── mupen64plus-video-glide64mk2.so Glide64mk2 video plugin
 │   ├── default.cfg                     base config (patched at runtime)
 │   ├── overlay_settings.json           overlay menu config
 │   ├── mupen64plus.ini                 ROM database (GoodName lookups)
 │   ├── RiceVideoLinux.ini              Rice per-ROM rendering hints
+│   ├── Glide64mk2.ini                  Glide64mk2 per-ROM rendering hints
+│   ├── video-glide64mk2.cfg            Glide64mk2 defaults merged into older configs
 │   ├── InputAutoCfg.ini                input auto-config
 │   ├── mupencheat.txt                  cheat codes
 │   ├── ini                             INI get/merge helper used by launch.sh
@@ -340,14 +348,14 @@ Scale, padding and rows-per-page are chosen from the screen dimensions rather th
 
 ### Overlay menu sections
 
-The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagged `"plugin": "gliden64"` or `"plugin": "rice"` are only visible when the corresponding video plugin is active; untagged items always appear. The **Save Changes** entry at the bottom of the Options list lets users persist settings globally or per-game (see [Save scope](#save-scope) below).
+The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagged `"plugin": "gliden64"`, `"plugin": "rice"` or `"plugin": "glide64mk2"` are only visible when the corresponding video plugin is active; untagged items always appear. The **Save Changes** entry at the bottom of the Options list lets users persist settings globally or per-game (see [Save scope](#save-scope) below).
 
-#### Shared settings (visible with either video plugin)
+#### Shared settings (visible with every video plugin)
 
 | Section | Setting | Notes |
 |---|---|---|
 | Audio | Resampling | Trivial / Zero-Order Hold / Linear / Sinc Fast / Sinc Medium / Sinc Best (restart required) |
-| Core | Video Plugin | Rice (default) / GLideN64 (restart required) |
+| Core | Video Plugin | GLideN64 / Rice (default) / Glide64mk2 (restart required) |
 | Core | CPU Overclock | Off / 2× / 4× / 8× (restart required) |
 | Input | Input Mode | Joystick / D-Pad (Brick only, see [Per-game input mode](#per-game-input-mode-brick-only)) |
 | Performance | CPU Mode | Powersave / Ondemand / Performance / Auto (applied on-demand) |
@@ -380,6 +388,20 @@ The overlay menu is defined in `config/shared/overlay_settings.json`. Items tagg
 | Rendering | Resolution Factor, Aspect Ratio, Multi-Sampling, Anisotropic Filtering, Color Quality, Depth Buffer, Fog | |
 | Texture Enhancement | Texture Enhancement, Force Texture Filter, Mipmapping, Texture Quality | |
 
+#### Glide64mk2-only settings
+
+Every item lives in `[Video-Glide64mk2]` and needs a restart, because the plugin reads its settings once at startup. Most offer **Game default**, which defers to the per-ROM value in `Glide64mk2.ini`.
+
+| Section | Setting | Notes |
+|---|---|---|
+| Debug | Show Stats | Off / FPS / VI/s / % Speed |
+| Frame Buffer | Smart Frame Buffer, Hardware Frame Buffer, Read Frame Buffer Always, Frame Buffer to Screen, Buffer Swap Mode | |
+| Rendering | Aspect Ratio, Texture Filtering, Anisotropic Filtering | Aspect Ratio defaults to 4:3; Anisotropic Filtering defaults to off |
+
+`default.cfg` seeds new installs with these values. Configs seeded before Glide64mk2 shipped have no `[Video-Glide64mk2]` section, and the plugin would otherwise write its upstream defaults (anisotropic filtering on, aspect ratio from the game), so `launch.sh` merges `video-glide64mk2.cfg` into them once and records that in a `.glide64mk2-defaults-v1` stamp. `tests/overlay-settings.bats` checks the two copies stay identical.
+
+The **Cycle Aspect** shortcut steps Glide64mk2 through 4:3, 16:9, Stretch and Original live.
+
 #### Save scope
 
 Settings follow NextUI's minarch save model: changes are applied on-demand in memory where possible but only persisted to disk when the user explicitly picks a target from **Options → Save Changes**:
@@ -398,6 +420,8 @@ The scope indicator at the top of the Save Changes page shows `Using defaults.`,
 |---|---|---|---|
 | GLideN64 | `[Video-GLideN64] UseNativeResolutionFactor` | 2x | Nearest-neighbor while **Hybrid Filter** is off (the default); linear with integer pre-scaling when it is on |
 | Rice | `[Video-Rice] ResolutionFactor` | Screen | Nearest-neighbor |
+
+Glide64mk2 has no equivalent setting and always renders at the panel's resolution.
 
 GLideN64 supports this upstream. Rice does not, so `mupen64plus-video-rice.patch` adds it: `SetVIScales()` shrinks the render area to the chosen multiple, anchored at the bottom-left of the back buffer, and `UpdateFrame()` copies that corner into a texture and draws it over the aspect-corrected area just before the buffer swap. A factor that would not fit inside that area is clamped to the largest one that does, using the same scale on both axes. Rice's default stays at Screen, so installs that never touch the setting render as before.
 
@@ -458,6 +482,7 @@ h700 has to bundle its own: the stock OS ships only a 32-bit libpng12 under `/mn
 Every platform links `libz.so.1` through `libmupen64plus`, and all of them ship the tg5050 sysroot's 1.2.12 rather than the 1.2.8 the tg5040 and h700 sysroots carry. Only tg5050 strictly needs the newer one: `libpng16.so.16` is the sole library in the tree referencing `ZLIB_1.2.9`, and the pak's own binaries reference no versioned zlib symbols at all.
 - **GLideN64**: Built once using the tg5040 toolchain. The resulting `.so` is shared across every platform. It dlopens `libGLESv2.so.2` and `libEGL.so.1` at runtime rather than linking them. GLideNHQ links the static `libpng.a`, `libz.a` and `libzstd.a` bundled in its `src/GLideNHQ/lib/`, which are x86-64 and macOS builds, so the `gliden64` target replaces them with aarch64 ones: libpng16 from the tg5050 sysroot, and zlib and zstd cross-built from source.
 - **Rice**: Built per-toolchain (one `.so` per platform) because it links against the platform-specific libpng. The overlay sources are injected into its Makefile by `patches/shared/mupen64plus-video-rice.patch`.
+- **Glide64mk2**: Built per-toolchain like Rice, with the same flags, because it links the platform-specific libpng too. GlideHQ (texture enhancement and Rice-format hi-res packs) is left at the upstream default. The overlay sources are injected into its Makefile by `patches/shared/mupen64plus-video-glide64mk2.patch`. On `tg5040` it launches without the `libEGL.so` preload the other plugins use; see [TECHNICAL-Glide64mk2.md](TECHNICAL-Glide64mk2.md).
 
 ### Docker environment
 

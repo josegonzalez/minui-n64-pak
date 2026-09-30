@@ -138,6 +138,17 @@ if [ -n "$PROFILE_INPUT_CFG" ] && [ ! -f "$DEVICE_CONFIG_DIR/.input-mapped-v1" ]
     fi
     touch "$DEVICE_CONFIG_DIR/.input-mapped-v1"
 fi
+
+# Configs seeded before Glide64mk2 shipped have no [Video-Glide64mk2] section,
+# so the plugin would write upstream defaults that disagree with the menu (and
+# turn on anisotropic filtering, which the PowerVR GE8300 cannot handle). Merge
+# the pak's defaults in once; a user's later edits are left alone.
+if [ ! -f "$DEVICE_CONFIG_DIR/.glide64mk2-defaults-v1" ]; then
+    if [ -f "$BIN_DIR/video-glide64mk2.cfg" ]; then
+        "$BIN_DIR/ini" merge "$DEVICE_CFG" "$BIN_DIR/video-glide64mk2.cfg"
+    fi
+    touch "$DEVICE_CONFIG_DIR/.glide64mk2-defaults-v1"
+fi
 SCREEN_W="${DEVICE_RESOLUTION%x*}"
 SCREEN_H="${DEVICE_RESOLUTION#*x}"
 
@@ -209,16 +220,13 @@ export EMU_DEFAULT_CFG="$BIN_DIR/default.cfg"
 
 # ── Video plugin selection (reads [NextUI] VideoPlugin from mupen64plus.cfg) ─
 VIDEO_PLUGIN_VALUE=$("$BIN_DIR/ini" get "$DEVICE_CFG" "NextUI" "VideoPlugin" 2>/dev/null)
-case "$VIDEO_PLUGIN_VALUE" in
-    0)
-        GFX_PLUGIN="mupen64plus-video-GLideN64.so"
-        export EMU_VIDEO_PLUGIN=gliden64
-        ;;
-    *)
-        GFX_PLUGIN="mupen64plus-video-rice.so"
-        export EMU_VIDEO_PLUGIN=rice
-        ;;
-esac
+n64_video_plugin "$VIDEO_PLUGIN_VALUE"
+GFX_PLUGIN="$VIDEO_GFX_PLUGIN"
+export EMU_VIDEO_PLUGIN="$VIDEO_PLUGIN_NAME"
+# Glide64mk2 carries its own EGL preload (see platform.sh).
+if [ "$EMU_VIDEO_PLUGIN" = "glide64mk2" ]; then
+    M64P_LD_PRELOAD="$PROFILE_GLIDE64MK2_LD_PRELOAD"
+fi
 # Font: try NextUI's font1/font2.ttf (selected via minuisettings.txt font=),
 # then fall back to MinUI's BPreplayBold-unhinted.otf, then any .ttf/.otf in
 # the res directory. This keeps the overlay functional on both NextUI and MinUI.

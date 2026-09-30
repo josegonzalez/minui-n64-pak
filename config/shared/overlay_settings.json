@@ -134,11 +134,13 @@
           "type": "cycle",
           "values": [
             0,
-            1
+            1,
+            2
           ],
           "labels": [
             "GLideN64",
-            "Rice"
+            "Rice",
+            "Glide64mk2"
           ],
           "default": 1,
           "ini_section": "NextUI"
@@ -198,6 +200,28 @@
           "restart_required": true
         },
         {
+          "key": "show_fps",
+          "label": "Show Stats",
+          "description": "Display performance stats (restart required)",
+          "type": "cycle",
+          "values": [
+            0,
+            1,
+            2,
+            4
+          ],
+          "labels": [
+            "Off",
+            "FPS",
+            "VI/s",
+            "% Speed"
+          ],
+          "default": 0,
+          "plugin": "glide64mk2",
+          "ini_section": "Video-Glide64mk2",
+          "restart_required": true
+        },
+        {
           "key": "ShowVIS",
           "label": "Show VI/s",
           "description": "Display VI interrupts per second (restart required)",
@@ -211,6 +235,28 @@
     {
       "name": "Frame Buffer",
       "items": [
+        {
+          "key": "swapmode",
+          "label": "Buffer Swap Mode",
+          "description": "When to swap buffers; Conditions prevents flicker in some games (restart required)",
+          "type": "cycle",
+          "values": [
+            -1,
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "Game default",
+            "VI Interrupt",
+            "Conditions",
+            "Mixed"
+          ],
+          "default": -1,
+          "plugin": "glide64mk2",
+          "ini_section": "Video-Glide64mk2",
+          "restart_required": true
+        },
         {
           "key": "EnableCopyColorFromRDRAM",
           "label": "Color from RDRAM",
@@ -289,6 +335,48 @@
           "ini_section": "Video-Rice"
         },
         {
+          "key": "read_back_to_screen",
+          "label": "Frame Buffer to Screen",
+          "description": "Render the N64 frame buffer as a texture (restart required)",
+          "type": "cycle",
+          "values": [
+            -1,
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "Game default",
+            "Off",
+            "Mode 1",
+            "Mode 2"
+          ],
+          "default": -1,
+          "plugin": "glide64mk2",
+          "ini_section": "Video-Glide64mk2",
+          "restart_required": true
+        },
+        {
+          "key": "fb_hires",
+          "label": "Hardware Frame Buffer",
+          "description": "Render frame buffer effects on the GPU (restart required)",
+          "type": "cycle",
+          "values": [
+            -1,
+            0,
+            1
+          ],
+          "labels": [
+            "Game default",
+            "Off",
+            "On"
+          ],
+          "default": -1,
+          "plugin": "glide64mk2",
+          "ini_section": "Video-Glide64mk2",
+          "restart_required": true
+        },
+        {
           "key": "EnableN64DepthCompare",
           "label": "N64 Depth Compare",
           "description": "N64 depth compare (CPU intensive)",
@@ -305,6 +393,26 @@
           ],
           "default": 0,
           "plugin": "gliden64"
+        },
+        {
+          "key": "fb_read_always",
+          "label": "Read Frame Buffer Always",
+          "description": "Read the frame buffer every frame; slow, only for effects that need it (restart required)",
+          "type": "cycle",
+          "values": [
+            -1,
+            0,
+            1
+          ],
+          "labels": [
+            "Game default",
+            "Off",
+            "On"
+          ],
+          "default": -1,
+          "plugin": "glide64mk2",
+          "ini_section": "Video-Glide64mk2",
+          "restart_required": true
         },
         {
           "key": "RenderToTexture",
@@ -351,6 +459,26 @@
           "default": 4,
           "plugin": "rice",
           "ini_section": "Video-Rice"
+        },
+        {
+          "key": "fb_smart",
+          "label": "Smart Frame Buffer",
+          "description": "Emulate the frame buffer only when the game needs it (restart required)",
+          "type": "cycle",
+          "values": [
+            -1,
+            0,
+            1
+          ],
+          "labels": [
+            "Game default",
+            "Off",
+            "On"
+          ],
+          "default": -1,
+          "plugin": "glide64mk2",
+          "ini_section": "Video-Glide64mk2",
+          "restart_required": true
         }
       ]
     },
@@ -573,6 +701,16 @@
           "ini_section": "Video-Rice"
         },
         {
+          "key": "wrpAnisotropic",
+          "label": "Anisotropic Filtering",
+          "description": "Sharpen textures viewed at oblique angles (restart required)",
+          "type": "bool",
+          "default": false,
+          "plugin": "glide64mk2",
+          "ini_section": "Video-Glide64mk2",
+          "restart_required": true
+        },
+        {
           "key": "AspectRatio",
           "label": "Aspect Ratio",
           "description": "Display aspect ratio mode",
@@ -612,6 +750,30 @@
           "default": 1,
           "plugin": "rice",
           "ini_section": "Video-Rice"
+        },
+        {
+          "key": "aspect",
+          "label": "Aspect Ratio",
+          "description": "Screen aspect ratio (restart required)",
+          "type": "cycle",
+          "values": [
+            -1,
+            0,
+            1,
+            2,
+            3
+          ],
+          "labels": [
+            "Game default",
+            "4:3",
+            "16:9",
+            "Stretch",
+            "Original"
+          ],
+          "default": 0,
+          "plugin": "glide64mk2",
+          "ini_section": "Video-Glide64mk2",
+          "restart_required": true
         },
         {
           "key": "bilinearMode",
@@ -917,6 +1079,28 @@
           "default": 0,
           "plugin": "rice",
           "ini_section": "Video-Rice",
+          "restart_required": true
+        },
+        {
+          "key": "filtering",
+          "label": "Texture Filtering",
+          "description": "Texture filtering mode (restart required)",
+          "type": "cycle",
+          "values": [
+            -1,
+            0,
+            1,
+            2
+          ],
+          "labels": [
+            "Game default",
+            "Automatic",
+            "Bilinear",
+            "Point"
+          ],
+          "default": -1,
+          "plugin": "glide64mk2",
+          "ini_section": "Video-Glide64mk2",
           "restart_required": true
         }
       ]

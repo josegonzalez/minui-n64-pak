@@ -4,7 +4,7 @@
 # Sourced by launch.sh, which is the only consumer at runtime. Kept separate so
 # tests/platform.bats can assert the table without a device: n64_platform_profile
 # does no I/O — it reads its two arguments plus $SDL_VIDEO_EGL_DRIVER and sets
-# PROFILE_* variables.
+# PROFILE_* variables. n64_video_plugin is likewise pure.
 #
 # Every supported pad reports the same SDL button and axis numbers, so
 # default.cfg's mapping fits them all. NextUI h700 rc11 made that true: before
@@ -142,5 +142,37 @@ n64_platform_profile() {
             ;;
     esac
 
+    # EGL library to preload when Glide64mk2 is the video plugin. It follows
+    # PROFILE_LD_PRELOAD, which h700 only settles inside the case above, except
+    # on tg5040: there Glide64mk2 drew to the back buffer but never reached the
+    # PowerVR GE8300's panel with libEGL.so preloaded, and spruceOS runs the
+    # same upstream plugin on those devices without the preload.
+    if [ "$_platform" = "tg5040" ]; then
+        PROFILE_GLIDE64MK2_LD_PRELOAD=""
+    else
+        PROFILE_GLIDE64MK2_LD_PRELOAD="$PROFILE_LD_PRELOAD"
+    fi
+
     unset _platform _device
+}
+
+# n64_video_plugin <value>
+# Maps [NextUI] VideoPlugin from mupen64plus.cfg to the plugin library and the
+# name the overlay filters its menu items on. Anything unrecognised, including
+# an unset value, falls back to Rice.
+n64_video_plugin() {
+    case "$1" in
+        0)
+            VIDEO_GFX_PLUGIN="mupen64plus-video-GLideN64.so"
+            VIDEO_PLUGIN_NAME="gliden64"
+            ;;
+        2)
+            VIDEO_GFX_PLUGIN="mupen64plus-video-glide64mk2.so"
+            VIDEO_PLUGIN_NAME="glide64mk2"
+            ;;
+        *)
+            VIDEO_GFX_PLUGIN="mupen64plus-video-rice.so"
+            VIDEO_PLUGIN_NAME="rice"
+            ;;
+    esac
 }

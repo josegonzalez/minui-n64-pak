@@ -108,6 +108,87 @@ EOF
     [ "$output" = "False" ]
 }
 
+@test "the video plugin menu offers GLideN64, Rice and Glide64mk2" {
+    run python3 - "$JSON" <<'EOF'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+for sec in cfg["sections"]:
+    for it in sec["items"]:
+        if it["key"] == "VideoPlugin":
+            print(json.dumps([it["values"], it["labels"], it["ini_section"]]))
+EOF
+    [ "$status" -eq 0 ]
+    [ "$output" = '[[0, 1, 2], ["GLideN64", "Rice", "Glide64mk2"], "NextUI"]' ]
+}
+
+# The plugin reads its settings once at startup, so every item needs a restart,
+# and each has to land in the plugin's own INI section.
+@test "every Glide64mk2 item targets its section and needs a restart" {
+    run python3 - "$JSON" <<'EOF'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+items = [it for sec in cfg["sections"] for it in sec["items"]
+         if it.get("plugin") == "glide64mk2"]
+bad = [it["key"] for it in items
+       if it.get("ini_section") != "Video-Glide64mk2" or it.get("restart_required") is not True]
+print(len(items), bad)
+sys.exit(1 if bad or not items else 0)
+EOF
+    echo "$output"
+    [ "$status" -eq 0 ]
+}
+
+# The aspect shortcut syncs the menu through the item keyed "aspect".
+@test "Glide64mk2 aspect ratio defaults to 4:3 in the menu and default.cfg" {
+    item glide64mk2 aspect values
+    [ "$output" = "[-1, 0, 1, 2, 3]" ]
+    item glide64mk2 aspect default
+    [ "$output" = "0" ]
+    run "$INI" get "$CFG" "Video-Glide64mk2" "aspect"
+    [ "$status" -eq 0 ]
+    [ "$output" = "0" ]
+}
+
+# Upstream turns anisotropic filtering on, which the PowerVR GE8300 cannot handle.
+@test "Glide64mk2 anisotropic filtering is off by default" {
+    item glide64mk2 wrpAnisotropic default
+    [ "$output" = "false" ]
+    run "$INI" get "$CFG" "Video-Glide64mk2" "wrpAnisotropic"
+    [ "$status" -eq 0 ]
+    [ "$output" = "False" ]
+}
+
+# launch.sh merges video-glide64mk2.cfg into configs seeded before Glide64mk2
+# shipped, so it has to carry exactly what default.cfg seeds new installs with.
+@test "the Glide64mk2 defaults fragment matches default.cfg" {
+    FRAGMENT="$REPO_ROOT/config/shared/video-glide64mk2.cfg"
+    run python3 - "$FRAGMENT" "$CFG" <<'EOF'
+import sys
+
+def section(path, name):
+    out, cur = {}, None
+    for line in open(path):
+        line = line.strip()
+        if line.startswith("["):
+            cur = line[1:line.index("]")]
+        elif cur == name and line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            out[key.strip()] = value.strip()
+    return out
+
+fragment = section(sys.argv[1], "Video-Glide64mk2")
+default = section(sys.argv[2], "Video-Glide64mk2")
+print(fragment)
+print(default)
+sys.exit(0 if fragment and fragment == default else 1)
+EOF
+    echo "$output"
+    [ "$status" -eq 0 ]
+    # The fragment carries nothing but that section.
+    run grep -c '^\[' "$FRAGMENT"
+    [ "$output" = "1" ]
+}
+
 @test "overlay defaults agree with default.cfg" {
     run python3 "$REPO_ROOT/scripts/check-defaults.py" --include-all-sections
     echo "$output"

@@ -90,10 +90,11 @@ The menu shows whether you're using default, console, or game-specific settings.
 
 ### Video plugins
 
-Two video plugins are included:
+Three video plugins are included:
 
 - **Rice** (default) — faster, better performance on the Brick's hardware
 - **GLideN64** — more accurate rendering, heavier on the GPU
+- **Glide64mk2** — the Glide64 renderer ported to OpenGL ES
 
 Change the plugin in Options → Core → Video Plugin (requires restarting the game).
 

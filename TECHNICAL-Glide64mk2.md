@@ -1,6 +1,6 @@
 # Glide64mk2 on TrimUI: Investigation Summary
 
-This document records the investigation into adding mupen64plus-video-glide64mk2 as a third video plugin for TrimUI devices (PowerVR GE8300 / Mali-G57). The effort was ultimately unsuccessful due to a fundamental display presentation issue on PowerVR GE8300 that could not be resolved without an older gl4es build.
+This document records the investigation into adding mupen64plus-video-glide64mk2 as a third video plugin for TrimUI devices (PowerVR GE8300 / Mali-G57). The first effort was unsuccessful due to a display presentation issue on PowerVR GE8300 that could not be resolved without an older gl4es build. Glide64mk2 now ships on every platform using a different approach, described in [Current approach](#current-approach) at the end.
 
 ## The Core Problem
 
@@ -87,3 +87,16 @@ To ship Glide64mk2 without the `glReadPixels` overhead, one of:
 2. **A native OGLES fix** in the Glitch64 backend that makes `eglSwapBuffers` present correctly on PowerVR. This would likely require understanding exactly what GL state the PowerVR TBDR needs to see before swap — potentially by reverse-engineering the PowerVR driver's swap implementation or finding PowerVR-specific documentation.
 
 3. **A different display path** that bypasses `eglSwapBuffers` entirely (e.g., using DRM/KMS directly, or a custom EGL implementation that handles PowerVR's TBDR quirks).
+
+## Current approach
+
+spruceOS offers the standalone mupen64plus with a Glide64mk2 option on the TrimUI Brick, Brick Pro, Smart Pro and Smart Pro S (as well as the Miyoo Flip and Anbernic H700 devices). Its build (`spruceUI/mupen64plus-spruce`) uses stock upstream Glide64mk2: the only changes are an overlay hook and a viewport offset, with nothing touching the buffer swap, FBOs, the GL context or shaders, and no gl4es. spruceOS ships no EGL, GLES, SDL2 or PowerVR libraries for the TrimUI devices and does not bind-mount over the system ones; the plugin links the device's `libGLESv2.so.2` and `libSDL2`, and runs with `LD_LIBRARY_PATH` set to the emulator directory followed by `/usr/trimui/lib:/usr/lib:/lib`.
+
+Two differences from how this pak launched Glide64mk2 remained:
+
+1. This pak preloads `libEGL.so` for every plugin on tg5040. spruceOS preloads nothing.
+2. This pak puts `$SDCARD_PATH/.system/$PLATFORM/lib` ahead of `/usr/trimui/lib` in `LD_LIBRARY_PATH`.
+
+Glide64mk2 is now built from upstream with only the overlay integration (`patches/shared/mupen64plus-video-glide64mk2.patch`), and on tg5040 it launches without the `libEGL.so` preload (`PROFILE_GLIDE64MK2_LD_PRELOAD` in `config/shared/platform.sh`). The other plugins and platforms keep their preload. This has not yet been confirmed on a tg5040 device. If the black screen remains, the next step is to match spruceOS's library search order for Glide64mk2; if that also fails, Glide64mk2 should fall back to Rice on tg5040.
+
+The `gl_FragDepth` guard from Approach 2 is not carried over. It did not affect presentation, spruceOS ships without it, and `program_object_depth` is still used elsewhere in `OGLEScombiner.cpp`, so it needs more than a one-line guard.
