@@ -23,12 +23,13 @@ This clones upstream repos, applies patches, builds for both platforms sequentia
 | `make build` | Clone, patch, build core + all plugins for both platforms |
 | `make all` | Assemble `dist/` for both platforms (assumes artifacts are already built) |
 | `make clone` | Clone upstream repos into `src/` |
-| `make patch` | Apply patches from `patches/shared/` |
+| `make patch` | Apply patches from `patches/shared/`. The stamp in `src/.patched` fingerprints the patch set; when the patch files change, the patched trees are reset to pristine upstream and re-patched (uncaptured edits in `src/` are lost, run `make patches` first) |
 | `make tg5040` | Build core + audio/input/rsp plugins for tg5040 |
 | `make tg5050` | Build core + audio/input/rsp plugins for tg5050 |
 | `make gliden64` | Build GLideN64 video plugin (shared across platforms) |
 | `make rice-tg5040` / `make rice-tg5050` | Build Rice video plugin per-toolchain |
 | `make patches` | Regenerate `patches/shared/*.patch` from the current source trees |
+| `make verify-mlp1-symbols` | Re-run the undefined-symbol gate on `output/mlp1/build` (also runs at the end of every `make build-mlp1`); device-only providers are listed in `scripts/mlp1-symbol-allowlist.txt` |
 | `make dist` | Assemble `dist/N64.pak/` from current build outputs |
 | `make clean` | Remove `src/`, `dist/`, `include/`, and generated `mupen64plus-audio-sdl.patch` |
 

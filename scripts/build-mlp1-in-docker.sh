@@ -167,6 +167,10 @@ copy_file "$SRC/mupen64plus-video-rice/data/RiceVideoLinux.ini" "$BUILD_DIR/defa
 find "$BUILD_DIR/bin" "$BUILD_DIR/lib" -type f -exec chmod 755 {} +
 "$STRIP" -s "$BUILD_DIR/bin/mupen64plus" "$BUILD_DIR/bin/ini" "$BUILD_DIR/lib/"*.so* 2>/dev/null || true
 
+# Shared objects link with undefined symbols; catch them here instead of at
+# dlopen() on the device. Runs after strip: it reads the dynamic symbol table.
+CROSS_COMPILE="$CROSS_COMPILE" bash "$ROOT_DIR/scripts/verify-mlp1-symbols.sh" "$BUILD_DIR"
+
 if [ -x /mlp1-toolchain/scripts/verify-binary.sh ]; then
     /mlp1-toolchain/scripts/verify-binary.sh "$BUILD_DIR/bin/mupen64plus" \
         >"$BUILD_DIR/mupen64plus.verify.txt"

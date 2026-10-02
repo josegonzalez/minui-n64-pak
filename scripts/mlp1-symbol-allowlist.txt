@@ -1,0 +1,11 @@
+# Symbols verify-mlp1-symbols.sh may leave unresolved against the sysroot
+# because the device resolves them differently. One symbol per line; keep the
+# reason next to each group. Add here only after confirming on a device.
+#
+# On the MLP1, /usr/lib/libGLESv2.so.2 and libEGL.so.1 are 5 KB stubs that
+# NEED libmali.so.1, and the Mali blob exports both GLES and EGL. The core's
+# libGLESv2.so.2 dependency therefore brings EGL into the global scope on the
+# device, while the sysroot's Mesa libGLESv2 exports no EGL entry points.
+# GLideN64 references these two directly (the rest of EGL goes through dlsym).
+eglGetDisplay
+eglQueryString
