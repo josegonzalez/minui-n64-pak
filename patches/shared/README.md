@@ -2,6 +2,8 @@
 
 These patches are applied to the freshly-cloned upstream sources during `make patch`. They are regenerated from the modified source trees via `make patches` — never edit them by hand (unified diff `@@` hunk headers are fragile).
 
+`make patch` keeps a fingerprint of the whole patch set in `src/.patched`. If any patch file changes after the trees were patched (for example after pulling a PR that touched a plugin's build file list), the patched trees are reset to pristine upstream and re-patched on the next build, so a cached checkout never builds with stale build files. `make patches` refreshes the fingerprint, so regenerating patches from your own edited trees never triggers a reset.
+
 ## mupen64plus-core.patch
 
 **Target**: `src/mupen64plus-core/` (upstream tag 2.6.0)

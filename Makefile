@@ -72,7 +72,7 @@ DOCKER_SCRIPT := /build/src/.docker-env.sh
 # Top-level targets
 # ══════════════════════════════════════════════════════════════════════════════
 
-.PHONY: all build build-mlp1 package-mlp1 check-loong-autocfg tg5040 tg5050 gliden64 rice dist clone patch patches clean \
+.PHONY: all build build-mlp1 package-mlp1 verify-mlp1-symbols check-loong-autocfg tg5040 tg5050 gliden64 rice dist clone patch patches clean \
        ini-tg5040 ini-tg5050
 
 build: clone patch
@@ -100,6 +100,11 @@ build-mlp1: check-loong-autocfg
 
 package-mlp1: build-mlp1
 	./package-mlp1.sh
+
+# Re-run the undefined-symbol gate against an existing MLP1 build output.
+verify-mlp1-symbols:
+	$(DOCKER) run --rm -v $(ROOT):/build -w /build $(TOOLCHAIN_IMAGE) \
+		bash /build/scripts/verify-mlp1-symbols.sh /build/output/mlp1/build
 
 # ── Clone ─────────────────────────────────────────────────────────────────────
 
@@ -162,25 +167,45 @@ $(SRC)/7zip/7zzs:
 	@rm -f $(SRC)/7zip/7z-linux-arm64.tar.xz
 
 # ── Patch ─────────────────────────────────────────────────────────────────────
+# The stamp records a fingerprint of the patch set that is currently applied to
+# the source trees. When any patch file changes (a pull, a regenerated patch),
+# the patched trees are reset to pristine upstream and re-patched, so a cached
+# workdir can never build against stale plugin build files. Edits made directly
+# in the source trees that have not been captured with `make patches` are lost
+# by that reset; `make patches` refreshes the stamp so a regeneration never
+# triggers one.
 
-PATCH_STAMP := $(SRC)/.patched
+PATCH_STAMP   := $(SRC)/.patched
+PATCHED_TREES := mupen64plus-ui-console mupen64plus-audio-sdl mupen64plus-core \
+                 GLideN64 mupen64plus-input-sdl mupen64plus-video-rice
+# Evaluated at recipe time so the generated audio-sdl placeholder is included.
+PATCH_FINGERPRINT = ls $(PATCHES)/*.patch | LC_ALL=C sort | xargs cat | shasum -a 256 | cut -d' ' -f1
 
 patch: $(PATCH_STAMP)
 
-$(PATCH_STAMP): | clone
-	@if [ ! -f $(PATCH_STAMP) ]; then \
-		set -e; \
-		echo "Applying patches..."; \
-		cd $(SRC)/mupen64plus-ui-console && git apply $(PATCHES)/mupen64plus-ui-console.patch; \
-		if [ -s $(PATCHES)/mupen64plus-audio-sdl.patch ]; then \
-			cd $(SRC)/mupen64plus-audio-sdl && git apply $(PATCHES)/mupen64plus-audio-sdl.patch; \
-		fi; \
-		cd $(SRC)/mupen64plus-core && git apply $(PATCHES)/mupen64plus-core.patch; \
-		cd $(SRC)/GLideN64 && git apply --exclude='src/GLideNHQ/lib/*.a' $(PATCHES)/GLideN64-standalone.patch; \
-		cd $(SRC)/mupen64plus-input-sdl && git apply $(PATCHES)/mupen64plus-input-sdl.patch; \
-		cd $(SRC)/mupen64plus-video-rice && git apply $(PATCHES)/mupen64plus-video-rice.patch; \
-		touch $(PATCH_STAMP); \
-	fi
+$(PATCH_STAMP): $(wildcard $(PATCHES)/*.patch) | clone
+	@set -e; \
+	want="$$($(PATCH_FINGERPRINT))"; \
+	have="$$(cat $(PATCH_STAMP) 2>/dev/null || true)"; \
+	if [ "$$want" = "$$have" ]; then touch $(PATCH_STAMP); exit 0; fi; \
+	if [ -e $(PATCH_STAMP) ]; then \
+		echo "Patch set changed (was $${have:-unfingerprinted}, now $$want); resetting source trees..."; \
+	fi; \
+	for tree in $(PATCHED_TREES); do \
+		git -C $(SRC)/$$tree checkout -q -- .; \
+		git -C $(SRC)/$$tree clean -qfdx; \
+	done; \
+	rm -f $(PATCH_STAMP); \
+	echo "Applying patches..."; \
+	cd $(SRC)/mupen64plus-ui-console && git apply $(PATCHES)/mupen64plus-ui-console.patch; \
+	if [ -s $(PATCHES)/mupen64plus-audio-sdl.patch ]; then \
+		cd $(SRC)/mupen64plus-audio-sdl && git apply $(PATCHES)/mupen64plus-audio-sdl.patch; \
+	fi; \
+	cd $(SRC)/mupen64plus-core && git apply $(PATCHES)/mupen64plus-core.patch; \
+	cd $(SRC)/GLideN64 && git apply --exclude='src/GLideNHQ/lib/*.a' $(PATCHES)/GLideN64-standalone.patch; \
+	cd $(SRC)/mupen64plus-input-sdl && git apply $(PATCHES)/mupen64plus-input-sdl.patch; \
+	cd $(SRC)/mupen64plus-video-rice && git apply $(PATCHES)/mupen64plus-video-rice.patch; \
+	echo "$$want" > $(PATCH_STAMP)
 
 # ── Docker helpers ────────────────────────────────────────────────────────────
 # DOCKER_RUN_5040 / DOCKER_RUN_5050: run a command inside the toolchain container
@@ -363,6 +388,8 @@ patches:
 	cd $(SRC)/mupen64plus-ui-console && git add -N . && git diff > $(PATCHES)/mupen64plus-ui-console.patch && git reset -q
 	cd $(SRC)/mupen64plus-input-sdl && git add -N . && git diff > $(PATCHES)/mupen64plus-input-sdl.patch && git reset -q
 	cd $(SRC)/mupen64plus-video-rice && git add -N . && git diff > $(PATCHES)/mupen64plus-video-rice.patch && git reset -q
+	@# The trees already carry this patch set; refresh the stamp so `make patch` does not reset them.
+	@$(PATCH_FINGERPRINT) > $(PATCH_STAMP)
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
