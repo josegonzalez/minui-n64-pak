@@ -83,3 +83,20 @@ Rice's plugin ops are simpler than GLideN64's because Rice is single-threaded:
 - `rice_cycle_aspect()` steps `AspectRatio` through Auto, 4:3, 16:9 and Stretch and reruns `SetVIScales()`.
 
 The patch also resolves `CoreDoCommand`, `CoreAddCheat`, and `CoreCheatEnabled` via dlsym in `PluginStartup()` for the cheat and save-state systems.
+
+## mupen64plus-video-glide64mk2.patch
+
+**Target**: `src/mupen64plus-video-glide64mk2/` (upstream commit b07cb0b)
+
+Wires the Glide64mk2 video plugin into the same `emu_frontend` overlay module as GLideN64 and Rice. Nothing in the Glitch64 GLES backend is changed; spruceOS ships the same upstream plugin with only an overlay hook.
+
+**What it modifies in Glide64mk2**:
+
+- **`projects/unix/Makefile`**: adds the overlay source files as build targets (`OVERLAY_DIR = ../../../../overlay`), builds their objects under `$(OBJDIR)/overlay/`, adds the overlay header path, and links SDL2_ttf.
+- **`src/Glide64/Main.cpp`**: includes `emu_frontend.h` (via `extern "C"`), resolves `CoreDoCommand`, `CoreAddCheat`, and `CoreCheatEnabled` in `PluginStartup()`, adds four static `glide_*` plugin-op callback functions, adds `ensure_frontend_init()`, and calls `emu_frontend_frame(settings.scr_res_x, settings.scr_res_y)` at the start of `UpdateScreen()` once the window is open. It runs at the start rather than the end because with `swapmode` 1 or 2 the buffer swap happens in `rdp.cpp`.
+
+Like Rice, Glide64mk2 is single-threaded:
+- `glide_exec_on_video_thread(fn, ctx)` just calls `fn(ctx)` directly.
+- `glide_swap_buffers()` calls `CoreVideo_GL_SwapBuffers()`.
+- `glide_get_render()` returns the SDL overlay backend.
+- `glide_cycle_aspect()` steps `settings.aspectmode` through 4:3, 16:9, Stretch and Original, reruns `ChangeSize()`, and syncs the overlay item keyed `aspect`.

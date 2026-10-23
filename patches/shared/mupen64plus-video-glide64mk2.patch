@@ -1,0 +1,176 @@
+diff --git a/projects/unix/Makefile b/projects/unix/Makefile
+index c9cd475..5c3c3cc 100644
+--- a/projects/unix/Makefile
++++ b/projects/unix/Makefile
+@@ -146,12 +146,13 @@ ifeq ("$(CPU)","NONE")
+ endif
+ 
+ SRCDIR = ../../src
++OVERLAY_DIR = ../../../../overlay
+ OBJDIR = _obj$(POSTFIX)
+ 
+ # base CFLAGS, LDLIBS, and LDFLAGS
+ OPTFLAGS ?= -O3 -flto
+ WARNFLAGS ?= -Wall -Wno-unused-function
+-CFLAGS += $(OPTFLAGS) $(WARNFLAGS) -ffast-math -fno-strict-aliasing -fvisibility=hidden -I$(SRCDIR) -I$(SRCDIR)/Glitch64/inc -DGCC
++CFLAGS += $(OPTFLAGS) $(WARNFLAGS) -ffast-math -fno-strict-aliasing -fvisibility=hidden -I$(SRCDIR) -I$(SRCDIR)/Glitch64/inc -I$(OVERLAY_DIR) -DGCC
+ CXXFLAGS += -fvisibility-inlines-hidden -std=gnu++17
+ LDFLAGS += $(SHARED)
+ 
+@@ -299,7 +300,7 @@ ifeq ($(origin SDL_CFLAGS) $(origin SDL_LDLIBS), undefined undefined)
+   endif
+ endif
+ CFLAGS += $(SDL_CFLAGS)
+-LDLIBS += $(SDL_LDLIBS)
++LDLIBS += $(SDL_LDLIBS) -lSDL2_ttf
+ 
+ ifneq ($(OS), MINGW)
+   CPPFLAGS += -D__unix__
+@@ -456,12 +457,22 @@ SOURCE += \
+ 	$(SRCDIR)/Glide64/osal_dynamiclib_unix.c \
+ 	$(SRCDIR)/GlideHQ/osal_files_unix.c
+ endif
++
++SOURCE += \
++	$(OVERLAY_DIR)/emu_overlay.c \
++	$(OVERLAY_DIR)/emu_overlay_cfg.c \
++	$(OVERLAY_DIR)/emu_overlay_sdl.c \
++	$(OVERLAY_DIR)/emu_frontend.c \
++	$(OVERLAY_DIR)/cjson/cJSON.c
+  
+ 
+ 
+ # generate a list of object files build, make a temporary directory for them
+-OBJECTS := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(filter %.c, $(SOURCE)))
+-OBJECTS += $(patsubst $(SRCDIR)/%.cpp, $(OBJDIR)/%.o, $(filter %.cpp, $(SOURCE)))
++GLIDE_SOURCES := $(filter $(SRCDIR)/%,$(SOURCE))
++OVERLAY_SOURCES := $(filter $(OVERLAY_DIR)/%,$(SOURCE))
++OBJECTS := $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(filter %.c, $(GLIDE_SOURCES)))
++OBJECTS += $(patsubst $(SRCDIR)/%.cpp, $(OBJDIR)/%.o, $(filter %.cpp, $(GLIDE_SOURCES)))
++OBJECTS += $(patsubst $(OVERLAY_DIR)/%.c, $(OBJDIR)/overlay/%.o, $(filter %.c, $(OVERLAY_SOURCES)))
+ OBJDIRS = $(dir $(OBJECTS))
+ $(shell $(MKDIR) $(OBJDIRS))
+ 
+@@ -530,6 +541,10 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
+ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
+ 	$(COMPILE.cc) -o $@ $<
+ 
++# overlay sources live outside the Glide64mk2 source tree
++$(OBJDIR)/overlay/%.o: $(OVERLAY_DIR)/%.c
++	$(COMPILE.c) -o $@ $<
++
+ $(TARGET): $(OBJECTS)
+ 	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
+ 
+diff --git a/src/Glide64/Main.cpp b/src/Glide64/Main.cpp
+index 7c09722..8a761d5 100644
+--- a/src/Glide64/Main.cpp
++++ b/src/Glide64/Main.cpp
+@@ -59,6 +59,18 @@
+   #define PATH_MAX 4096
+ #endif
+ #include "osal_dynamiclib.h"
++#include "m64p_frontend.h"
++
++extern "C" {
++#include "emu_overlay_sdl.h"
++#include "emu_frontend.h"
++}
++
++/* definitions of pointers to Core functions (used by emu_frontend for state,
++ * cheats, and core-state commands) */
++static ptr_CoreDoCommand    CoreDoCommand = NULL;
++static ptr_CoreAddCheat     CoreAddCheat = NULL;
++static ptr_CoreCheatEnabled CoreCheatEnabled = NULL;
+ #ifdef TEXTURE_FILTER // Hiroshi Morii <koolsmoky@users.sourceforge.net>
+ #include <stdarg.h>
+ int  ghq_dmptex_toggle_key = 0;
+@@ -1577,6 +1589,11 @@ EXPORT m64p_error CALL PluginStartup(m64p_dynlib_handle CoreLibHandle, void *Con
+         return M64ERR_INCOMPATIBLE;
+     }
+ 
++    /* Core functions for the overlay frontend; optional, so no failure if absent */
++    CoreDoCommand = (ptr_CoreDoCommand) osal_dynlib_getproc(CoreLibHandle, "CoreDoCommand");
++    CoreAddCheat = (ptr_CoreAddCheat) osal_dynlib_getproc(CoreLibHandle, "CoreAddCheat");
++    CoreCheatEnabled = (ptr_CoreCheatEnabled) osal_dynlib_getproc(CoreLibHandle, "CoreCheatEnabled");
++
+     const char *configDir = ConfigGetSharedDataFilepath("Glide64mk2.ini");
+     if (configDir)
+     {
+@@ -2086,9 +2103,76 @@ set
+ input:    none
+ output:   none
+ *******************************************************************/
++static void glide_swap_buffers(void)
++{
++  CoreVideo_GL_SwapBuffers();
++}
++
++static EmuOvlRenderBackend* glide_get_render(void)
++{
++  return overlay_sdl_get_backend();
++}
++
++// Glide64mk2 is single-threaded — no GL thread pool — so dispatch is a direct call.
++static void glide_exec_on_video_thread(void (*fn)(void*), void* ctx)
++{
++  fn(ctx);
++}
++
++static void glide_cycle_aspect(void)
++{
++  // Cycle: 4:3(0) -> 16:9(1) -> Stretch(2) -> Original(3) -> 4:3(0)
++  int cur = (settings.aspectmode + 1) % 4;
++  settings.aspectmode = cur;
++  ChangeSize();
++
++  // Sync overlay config so the menu shows the updated value
++  EmuOvlConfig* cfg = emu_frontend_get_overlay_config();
++  if (cfg) {
++    for (int s = 0; s < cfg->section_count; s++)
++      for (int i = 0; i < cfg->sections[s].item_count; i++)
++        if (strcmp(cfg->sections[s].items[i].key, "aspect") == 0) {
++          cfg->sections[s].items[i].current_value = cur;
++          cfg->sections[s].items[i].staged_value = cur;
++        }
++  }
++}
++
++static bool s_frontendInitialized = false;
++
++static void ensure_frontend_init(void)
++{
++  if (s_frontendInitialized) return;
++  s_frontendInitialized = true;
++
++  EmuFrontendCoreAPI api;
++  memset(&api, 0, sizeof(api));
++  api.core_cmd      = (emu_fe_core_cmd_fn)      CoreDoCommand;
++  api.add_cheat     = (emu_fe_add_cheat_fn)     CoreAddCheat;
++  api.cheat_enabled = (emu_fe_cheat_enabled_fn) CoreCheatEnabled;
++
++  EmuFrontendPluginOps ops;
++  memset(&ops, 0, sizeof(ops));
++  ops.swap_buffers         = glide_swap_buffers;
++  ops.cycle_aspect         = glide_cycle_aspect;
++  ops.get_render           = glide_get_render;
++  ops.exec_on_video_thread = glide_exec_on_video_thread;
++
++  emu_frontend_init(&api, &ops);
++}
++
+ wxUint32 update_screen_count = 0;
+ EXPORT void CALL UpdateScreen (void)
+ {
++  // Runs first: with swapmode 1/2 the buffer swap happens in rdp.cpp, so the
++  // end of this function is not reached on every frame. fullscreen is set once
++  // InitGfx has opened the window, so the overlay only touches a live context.
++  if (fullscreen)
++  {
++    ensure_frontend_init();
++    emu_frontend_frame(settings.scr_res_x, settings.scr_res_y);
++  }
++
+ #ifdef USE_FRAMESKIPPER
+   frameSkipper.update();
+ #endif

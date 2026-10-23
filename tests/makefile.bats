@@ -34,7 +34,7 @@ mk() { # <VAR>
 
 @test "every platform in pak.json has build, stage and dist targets" {
     for platform in $(jq -r '.platforms[]' "$REPO_ROOT/pak.json"); do
-        for target in "$platform" "rice-$platform" "ini-$platform" \
+        for target in "$platform" "rice-$platform" "glide64mk2-$platform" "ini-$platform" \
                       "stage-$platform" "dist-$platform"; do
             run make --no-print-directory -C "$REPO_ROOT" -n "$target" --dry-run --question
             # `make -n` on an unknown target exits 2 with "No rule to make target"
@@ -66,6 +66,7 @@ mupen64plus-input-sdl INPUT_REV
 mupen64plus-rsp-hle RSP_REV
 GLideN64 GLIDEN64_REV
 mupen64plus-video-rice RICE_REV
+mupen64plus-video-glide64mk2 GLIDE64MK2_REV
 "
 
 @test "every emulator component is pinned to a full commit SHA" {
@@ -111,6 +112,17 @@ mupen64plus-video-rice RICE_REV
     # The stamp is written only after the last patch is applied.
     after_last_apply="${output##*git apply}"
     [[ "$after_last_apply" == *"touch $REPO_ROOT/src/.patched"* ]]
+}
+
+@test "every upstream patch is applied and regenerated" {
+    for component in mupen64plus-core mupen64plus-ui-console mupen64plus-input-sdl \
+                     mupen64plus-video-rice mupen64plus-video-glide64mk2; do
+        [ -f "$REPO_ROOT/patches/shared/$component.patch" ]
+        run grep -qF "cd \$(SRC)/$component && git apply \$(PATCHES)/$component.patch" "$REPO_ROOT/Makefile"
+        [ "$status" -eq 0 ]
+        run grep -qF "cd \$(SRC)/$component && git add -N . && git diff > \$(PATCHES)/$component.patch" "$REPO_ROOT/Makefile"
+        [ "$status" -eq 0 ]
+    done
 }
 
 # ── toolchain images ─────────────────────────────────────────────────────────
@@ -298,6 +310,39 @@ omits() {
     # DIST_COMMON runs for every platform, so one copy step covers them all.
     run grep -c 'DIST_COMMON,$(DIST)/' "$REPO_ROOT/Makefile"
     [ "$output" -eq "$(jq -r '.platforms | length' "$REPO_ROOT/pak.json")" ]
+}
+
+# ── Glide64mk2 ──────────────────────────────────────────────────────────────
+
+@test "every platform stages and ships its own Glide64mk2 build" {
+    run grep -qF 'cp $(SRC)/mupen64plus-video-glide64mk2/projects/unix/mupen64plus-video-glide64mk2.so $(BUILD)/$(1)/' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+    for platform in $(jq -r '.platforms[]' "$REPO_ROOT/pak.json"); do
+        run grep -q "^stage-$platform: .*glide64mk2-$platform" "$REPO_ROOT/Makefile"
+        [ "$status" -eq 0 ]
+        run grep -qF "cp \$(BUILD)/$platform/mupen64plus-video-glide64mk2.so \$(DIST)/$platform/" "$REPO_ROOT/Makefile"
+        [ "$status" -eq 0 ]
+    done
+}
+
+# The plugin refuses to start without Glide64mk2.ini, and launch.sh merges the
+# pak's [Video-Glide64mk2] defaults from video-glide64mk2.cfg.
+@test "every platform dir gets the Glide64mk2 data and defaults" {
+    run grep -qF 'cp $(SRC)/mupen64plus-video-glide64mk2/data/Glide64mk2.ini $(1)/' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+    run grep -qF 'cp $(CONFIG)/shared/video-glide64mk2.cfg $(1)/' "$REPO_ROOT/Makefile"
+    [ "$status" -eq 0 ]
+    [ -f "$REPO_ROOT/config/shared/video-glide64mk2.cfg" ]
+}
+
+# Glide64mk2 links libpng like Rice, so it needs the same per-platform flags.
+@test "Glide64mk2 builds with the same flags as Rice on every platform" {
+    for platform in $(jq -r '.platforms[]' "$REPO_ROOT/pak.json"); do
+        rice="$(make --no-print-directory -C "$REPO_ROOT" -n "rice-$platform" | grep 'make -j')"
+        glide="$(make --no-print-directory -C "$REPO_ROOT" -n "glide64mk2-$platform" | grep 'make -j')"
+        [ -n "$rice" ]
+        [ "${glide//glide64mk2/rice}" = "$rice" ]
+    done
 }
 
 @test "the pak metadata drives the artifact and install paths" {

@@ -1,10 +1,11 @@
 #!/usr/bin/env bats
 #
-# Unit tests for n64_platform_profile in config/shared/platform.sh.
+# Unit tests for n64_platform_profile and n64_video_plugin in
+# config/shared/platform.sh.
 #
-# The function does no I/O — it reads its two arguments plus $SDL_VIDEO_EGL_DRIVER
-# and sets PROFILE_* variables — so these run on any host with no device, no
-# toolchain and no cloned upstream tree.
+# Neither function does I/O — they read their arguments plus $SDL_VIDEO_EGL_DRIVER
+# and set PROFILE_* / VIDEO_* variables — so these run on any host with no
+# device, no toolchain and no cloned upstream tree.
 
 setup() {
     REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -155,6 +156,35 @@ profile() {
     [ "$PROFILE_LD_PRELOAD" = "/usr/lib/aarch64-linux-gnu/libEGL.so.1" ]
 }
 
+# ── Glide64mk2 EGL preload ──────────────────────────────────────────────────
+#
+# Glide64mk2 showed a black screen on the tg5040's PowerVR GE8300 with libEGL.so
+# preloaded. spruceOS runs the same upstream plugin there without the preload,
+# so tg5040 drops it for Glide64mk2 alone.
+
+@test "Glide64mk2 skips the EGL preload on every tg5040 device" {
+    for device in brick brickpro ""; do
+        profile tg5040 "$device"
+        [ -z "$PROFILE_GLIDE64MK2_LD_PRELOAD" ]
+        # The other plugins keep theirs.
+        [ "$PROFILE_LD_PRELOAD" = "libEGL.so" ]
+    done
+}
+
+@test "Glide64mk2 keeps the platform EGL preload everywhere else" {
+    for platform in tg5050 my355 h700; do
+        profile "$platform" ""
+        [ -n "$PROFILE_GLIDE64MK2_LD_PRELOAD" ]
+        [ "$PROFILE_GLIDE64MK2_LD_PRELOAD" = "$PROFILE_LD_PRELOAD" ]
+    done
+}
+
+@test "Glide64mk2 on h700 follows the EGL library NextUI resolved" {
+    SDL_VIDEO_EGL_DRIVER=/usr/lib/aarch64-linux-gnu/libEGL.so.1
+    profile h700 rg35xxplus
+    [ "$PROFILE_GLIDE64MK2_LD_PRELOAD" = "/usr/lib/aarch64-linux-gnu/libEGL.so.1" ]
+}
+
 # ── swap is only for platforms with a writable non-FAT partition ─────────────
 
 @test "the TrimUI and Miyoo platforms all swap to /mnt/UDISK" {
@@ -242,5 +272,56 @@ profile() {
         [ -n "$PROFILE_RESOLUTION" ]
         [ -n "$PROFILE_CPUFREQ_PATH" ]
         [ -n "$PROFILE_LEGACY_SUBDIR" ]
+    done
+}
+
+# ── video plugin selection ──────────────────────────────────────────────────
+#
+# [NextUI] VideoPlugin uses the overlay's values: 0=GLideN64, 1=Rice,
+# 2=Glide64mk2. VIDEO_PLUGIN_NAME is what the overlay filters its items on.
+
+@test "VideoPlugin 0 selects GLideN64" {
+    n64_video_plugin 0
+    [ "$VIDEO_GFX_PLUGIN" = "mupen64plus-video-GLideN64.so" ]
+    [ "$VIDEO_PLUGIN_NAME" = "gliden64" ]
+}
+
+@test "VideoPlugin 1 selects Rice" {
+    n64_video_plugin 1
+    [ "$VIDEO_GFX_PLUGIN" = "mupen64plus-video-rice.so" ]
+    [ "$VIDEO_PLUGIN_NAME" = "rice" ]
+}
+
+@test "VideoPlugin 2 selects Glide64mk2" {
+    n64_video_plugin 2
+    [ "$VIDEO_GFX_PLUGIN" = "mupen64plus-video-glide64mk2.so" ]
+    [ "$VIDEO_PLUGIN_NAME" = "glide64mk2" ]
+}
+
+@test "an unset or unknown VideoPlugin falls back to Rice" {
+    for value in "" 3 -1 glide64mk2; do
+        n64_video_plugin "$value"
+        [ "$VIDEO_GFX_PLUGIN" = "mupen64plus-video-rice.so" ]
+        [ "$VIDEO_PLUGIN_NAME" = "rice" ]
+    done
+}
+
+@test "every plugin the selector names is one the overlay offers" {
+    run python3 -c '
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+for sec in cfg["sections"]:
+    for it in sec["items"]:
+        if it["key"] == "VideoPlugin":
+            print(" ".join(str(v) for v in it["values"]))
+' "$REPO_ROOT/config/shared/overlay_settings.json"
+    [ "$status" -eq 0 ]
+    [ "$output" = "0 1 2" ]
+    # Unknown values fall back to Rice, so check each one lands on its own plugin.
+    seen=""
+    for value in $output; do
+        n64_video_plugin "$value"
+        [[ " $seen " != *" $VIDEO_PLUGIN_NAME "* ]]
+        seen="$seen $VIDEO_PLUGIN_NAME"
     done
 }
